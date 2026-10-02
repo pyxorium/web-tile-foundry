@@ -1,8 +1,8 @@
 # Web Tile Foundry
 
 Make a Web Tile from your own atproto things and publish it to your own repo.
-Lives at `thunderbird-cafe\web-tile-foundry\`; will be served from
-`foundry.thunderbird.cafe`.
+Lives at `thunderbird-cafe\web-tile-foundry\`; served from
+https://foundry.thunderbird.cafe/ (repository: pyxorium/web-tile-foundry).
 
 **Current stage: publishing (first real tests).** Three steps:
 **Sign in** with an atproto handle; **Make your tile** (your rpg.actor sprite
@@ -116,4 +116,4 @@ exports an object following `src/core/contract.js`, and registering it in
 
 ## Not yet done
 
-- The success screen's embed snippet, hosting at foundry.thunderbird.cafe.
+- The success screen's embed snippet.

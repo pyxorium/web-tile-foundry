@@ -43,12 +43,8 @@ export function SignIn({ account, onSignIn }) {
       {account.error && <p className="field-error" role="alert">{account.error}</p>}
       <div className="heads-up">
         <p>
-          <strong>What happens next:</strong> your account will ask you to approve{" "}
-          <strong>{appAddress()}</strong>. It will say <em>“Repository: Publish changes”</em>.
-        </p>
-        <p>
-          That only covers Web Tiles and their files. The Foundry can't touch your posts, likes,
-          follows or anything else.
+          Signing in allows <strong>{appAddress()}</strong> to publish Web Tile changes to your repo.
+          The Foundry doesn't touch your posts, likes, follows or anything else.
         </p>
       </div>
       <p className="fineprint">
