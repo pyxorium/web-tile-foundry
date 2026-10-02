@@ -10,7 +10,9 @@ is read from your account automatically; pick a background, and a title and
 optional description for the link preview card, with a live preview); and
 **Publish**: a plain confirmation, then the files are uploaded, one new
 Web Tile record is created, and everything is read back and checked. The
-success screen links to the tile on webtil.es. In `?debug`, a "Delete this
+success screen links to the tile on webtil.es, offers a copyable share link
+(for a Bluesky post), and, tucked away, a copyable snippet for Astro sites
+that have a WebTile component (like thunderbird.cafe). In `?debug`, a "Delete this
 test tile" button removes the tile just published (only that one). The tile-type picker appears automatically once there is more than
 one tile type.
 
@@ -119,4 +121,6 @@ exports an object following `src/core/contract.js`, and registering it in
 
 ## Not yet done
 
-- The success screen's embed snippet.
+- An embed snippet for any website (not just Astro). Open questions: which
+  tile server other people's sites should use (load.tiles.thunderbird.cafe, or
+  a public one), and loading the tile loader from a public CDN.

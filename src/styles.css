@@ -240,3 +240,15 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .heads-up { padding: 12px 14px; border-radius: 12px; background: var(--surface-2); font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
 .heads-up p { margin: 0; }
+
+/* Share link and embed (success screen) */
+.share { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; }
+.share-label { margin: 0; font-weight: 650; }
+.share .field-help { margin: 0; }
+.share-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.share-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.embed { border-top: 1px solid var(--line); padding-top: 10px; }
+.embed summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 15px; }
+.embed[open] { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.embed pre { width: 100%; margin: 0; padding: 12px; border-radius: 10px; background: var(--surface-2); overflow-x: auto; font-size: 13px; white-space: pre; }
+.embed .field-help { margin: 0; }

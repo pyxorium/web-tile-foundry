@@ -12,7 +12,12 @@ const STEPS = [
   { id: "verify", label: "Checking everything arrived safely" },
 ];
 
-function CopyButton({ text }) {
+/** How an Astro site with the WebTile component (as on thunderbird.cafe) embeds a tile. */
+export function astroSnippet(uri, height = 400) {
+  return `---\nimport WebTile from "../components/WebTile.astro";\n---\n\n<WebTile uri="${uri}" height={${height}} />`;
+}
+
+function CopyButton({ text, label = "Copy" }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try {
@@ -25,7 +30,7 @@ function CopyButton({ text }) {
   }
   return (
     <button type="button" className="btn btn-quiet btn-small" onClick={copy}>
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : label}
     </button>
   );
 }
@@ -79,11 +84,28 @@ export function PublishPanel({ result, account, who }) {
                 <a className="btn" href={link} target="_blank" rel="noopener">View on webtil.es</a>
                 <button type="button" className="btn btn-quiet" onClick={() => setState({ phase: "idle" })}>Make another tile</button>
               </div>
-              <p className="publish-address">
-                <span className="field-help">Your tile's address</span>
-                <span className="mono">{out.uri}</span>
-                <CopyButton text={out.uri} />
-              </p>
+              <div className="share">
+                <p className="share-label">Share it</p>
+                <p className="field-help">Paste this link into a Bluesky post, or send it to a friend.</p>
+                <div className="share-row">
+                  <span className="mono share-text">{link}</span>
+                  <CopyButton text={link} label="Copy link" />
+                </div>
+              </div>
+              <details className="embed">
+                <summary>Embed on an Astro site</summary>
+                <p className="field-help">
+                  For Astro sites that have a WebTile component, like thunderbird.cafe. Adjust the import
+                  path to wherever the component lives on your site.
+                </p>
+                <pre className="mono">{astroSnippet(out.uri)}</pre>
+                <CopyButton text={astroSnippet(out.uri)} label="Copy code" />
+                <p className="publish-address">
+                  <span className="field-help">Your tile's address</span>
+                  <span className="mono">{out.uri}</span>
+                  <CopyButton text={out.uri} />
+                </p>
+              </details>
             </>
           )}
           {DEBUG && !state.deleted && (
