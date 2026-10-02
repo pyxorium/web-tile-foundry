@@ -115,9 +115,9 @@ exports an object following `src/core/contract.js`, and registering it in
   same 500 / 300 / 900 / 1000 ms beats.
 - The sprite sheet is inlined in the page, so the tile works anywhere with no
   network access.
-- Card art (icon 256×256, banner 1200×630) is drawn from the idle pose in
-  the chosen background. Sizes
-  are provisional until the recommended sizes are confirmed.
+- Card art is drawn from the idle pose in the chosen background: banner
+  1280×720 (the tile loader shows it in a 16:9 box) and icon 256×256 (shown at
+  48×48). Checked against @dasl/tile-loader 2.0.0's renderCard.
 
 ## Not yet done
 

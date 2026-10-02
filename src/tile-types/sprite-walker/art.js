@@ -4,11 +4,14 @@ import { paintShadow } from "./shadow.js";
 // chosen background: the card's icon and banner, and the background swatches
 // shown in the Foundry. All use the same scene code as the tile, so they match.
 //
-// Card sizes are PROVISIONAL until the recommended sizes are confirmed.
-// Changing them here changes nothing else.
+// Card sizes, checked against @dasl/tile-loader 2.0.0's renderCard (Oct 2 2026):
+//   - the banner (first `screenshots` entry) fills a 16:9 box, cropped to
+//     cover and centred, so it is made exactly 16:9;
+//   - the icon (first `icons` entry) is shown at 48x48; 256 stays sharp even
+//     on 3x screens.
 export const ICON_SIZE = 256;
-export const BANNER_WIDTH = 1200;
-export const BANNER_HEIGHT = 630;
+export const BANNER_WIDTH = 1280;
+export const BANNER_HEIGHT = 720;
 export const SWATCH_WIDTH = 192;
 export const SWATCH_HEIGHT = 120;
 
