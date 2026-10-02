@@ -1,0 +1,7 @@
+import { registerTileType } from "../core/registry.js";
+import { spriteWalker } from "./sprite-walker/index.js";
+
+// Every tile type the Foundry offers. To add one: make a folder next to
+// sprite-walker/ that exports an object following src/core/contract.js,
+// then register it here.
+registerTileType(spriteWalker);

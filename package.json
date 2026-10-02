@@ -1,0 +1,26 @@
+{
+  "name": "web-tile-foundry",
+  "private": true,
+  "version": "0.6.1",
+  "description": "Make Web Tiles from your own atproto things and publish them to your own repo.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "@atproto/oauth-client-browser": "0.5.8",
+    "@dasl/tile-loader": "2.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

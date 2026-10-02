@@ -1,0 +1,22 @@
+{
+  "$type": "ing.dasl.masl",
+  "cid": "bafyreifcyhz7bsooojogmptsn4nzndiaqv6buwip2lhj4yvh7xvs4jcm2i",
+  "tile": {
+    "name": "Creative Collaborator -- Color Scheme Palette",
+    "description": "Offers curated color-scheme options to any tile that wishes for a color scheme.",
+    "resources": {
+      "/": {
+        "src": {
+          "$type": "blob",
+          "ref": {
+            "$link": "bafkreiec5wxithf5ubca34yaihrm2ikzp667purutqswqojualqvpsmxum"
+          },
+          "size": 23322,
+          "mimeType": "application/octet-stream"
+        },
+        "content-type": "text/html"
+      }
+    }
+  },
+  "createdAt": "2026-09-28T19:36:35.489Z"
+}
