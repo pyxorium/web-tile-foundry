@@ -12,11 +12,17 @@ export function useAccount() {
     let cancelled = false;
     (async () => {
       let session = null;
+      const returning = /[?#&](code|error|iss)=/.test(location.search + location.hash);
       try {
         session = await restoreSession();
       } catch (err) {
         console.error("[sign-in]", err);
-        if (!cancelled) setAccount({ status: "signedOut", error: `Sign-in isn't working right now: ${err.message}` });
+        // Restoring an old sign-in can fail harmlessly (it expired, or the app's
+        // address changed): just start signed out. A failed return from the
+        // sign-in page is worth telling the user about.
+        if (!cancelled) {
+          setAccount(returning ? { status: "signedOut", error: `Sign-in didn't complete: ${err.message}` } : { status: "signedOut" });
+        }
         return;
       } finally {
         // Tidy the address after returning from the sign-in page.

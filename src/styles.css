@@ -238,3 +238,5 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .debug-tools pre { background: var(--surface-2); padding: 12px; border-radius: 10px; overflow: auto; font-size: 12px; max-width: 100%; }
 .debug-tools summary { cursor: pointer; color: var(--accent); font-size: 14px; }
 .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.heads-up { padding: 12px 14px; border-radius: 12px; background: var(--surface-2); font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
+.heads-up p { margin: 0; }

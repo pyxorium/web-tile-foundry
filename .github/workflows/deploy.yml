@@ -30,7 +30,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: Check the sign-in file was generated
-        run: test -f dist/client-metadata.json && cat dist/client-metadata.json
+        run: test -f dist/oauth.json && cat dist/oauth.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,4 +1,12 @@
 import { useState } from "react";
+import { isLoopbackHost } from "../auth/client-config.js";
+
+// What the account's approval screen will name the app: the live site's
+// address, or "localhost" for the copy running on this computer.
+function appAddress() {
+  if (typeof location === "undefined") return "foundry.thunderbird.cafe";
+  return isLoopbackHost(location.hostname) ? "localhost (your test copy)" : location.hostname;
+}
 
 // Signing in with an atproto handle, and the "signed in as" bar.
 
@@ -33,10 +41,16 @@ export function SignIn({ account, onSignIn }) {
         </div>
       </form>
       {account.error && <p className="field-error" role="alert">{account.error}</p>}
-      <p className="fineprint">
-        Signing in lets the Foundry add, change or remove Web Tiles in your account, and upload
-        their files. It can't touch your posts, likes, follows or anything else.
-      </p>
+      <div className="heads-up">
+        <p>
+          <strong>What happens next:</strong> your account will ask you to approve{" "}
+          <strong>{appAddress()}</strong>. It will say <em>“Repository: Publish changes”</em>.
+        </p>
+        <p>
+          That only covers Web Tiles and their files. The Foundry can't touch your posts, likes,
+          follows or anything else.
+        </p>
+      </div>
       <p className="fineprint">
         No atproto account yet? One way to get one is <a href="https://bsky.app/" target="_blank" rel="noopener">Bluesky</a>.
         Your character sprite comes from <a href="https://rpg.actor/" target="_blank" rel="noopener">rpg.actor</a>.

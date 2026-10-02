@@ -14,7 +14,8 @@ success screen links to the tile on webtil.es. In `?debug`, a "Delete this
 test tile" button removes the tile just published (only that one). The tile-type picker appears automatically once there is more than
 one tile type.
 
-Add `?debug` to the address (e.g. `http://localhost:5173/?debug`) to also see
+On this computer only, add `?debug` to the address (`http://127.0.0.1:5173/?debug`;
+the live site ignores it) to also see
 the developer views: sprite details, a PNG picker and sample sprite (so a tile
 can be made without signing in), a preview through the **real tile loader**
 (`load.tiles.thunderbird.cafe`, with the tile's files held in memory, nothing
@@ -29,15 +30,17 @@ Needs Node 20 or newer.
 npm install
 npm run dev      # the Foundry at http://127.0.0.1:5173 (not "localhost": sign-in needs 127.0.0.1)
 npm test         # tests (no browser or network needed)
-npm run build    # static site in dist/, including client-metadata.json
+npm run build    # static site in dist/, including oauth.json (the sign-in file)
 ```
 
 Sign-in uses `@atproto/oauth-client-browser`. On this computer it runs in
 atproto's localhost client mode: no hosted files, sign-ins last about a day,
 and the consent screen won't show the app's name. At
-`foundry.thunderbird.cafe` it uses the `client-metadata.json` that
+`foundry.thunderbird.cafe` it uses the `oauth.json` that
 `npm run build` writes from `src/auth/client-config.js`, the one place the
-permission scope (`atproto repo:ing.dasl.masl blob:*/*`) is set.
+permission scope (`atproto repo:ing.dasl.masl blob:*/*`) is set. The app's
+identity is the address `https://foundry.thunderbird.cafe/oauth.json`, which
+sign-in screens show in full; changing it would sign everyone out.
 
 The package versions in `package.json` (Vite 7, React 19) could not be
 checked against the npm registry when this was written. If `npm install`
@@ -48,7 +51,7 @@ complains about a version, install the current ones with
 
 The site is published to GitHub Pages by `.github/workflows/deploy.yml` on
 every push to `main`: it installs exactly what `package-lock.json` lists,
-runs the tests, builds, checks that `client-metadata.json` was generated, and
+runs the tests, builds, checks that `oauth.json` was generated, and
 deploys `dist/`. The custom domain `foundry.thunderbird.cafe` is set in the
 repository's Settings > Pages, with a DNS CNAME record `foundry` pointing to
 `pyxorium.github.io`. Commit `package-lock.json` whenever dependencies change.

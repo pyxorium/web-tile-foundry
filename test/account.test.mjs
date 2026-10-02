@@ -10,6 +10,7 @@ import {
 import {
   resolveDidDocument, pdsFromDidDocument, handleFromDidDocument, fetchOwnSprite,
 } from "../src/core/atproto.js";
+import { debugAllowedOn } from "../src/ui/debug.js";
 
 const SAMPLE = readFileSync(new URL("./fixtures/sample-sprite.png", import.meta.url));
 const DID = "did:plc:joer5rzmwgec3dkr4srfmq45";
@@ -43,7 +44,7 @@ function fakeFetch(routes) {
 test("one scope, used by both production and development sign-in", () => {
   assert.equal(SCOPE, "atproto repo:ing.dasl.masl blob:*/*");
   const prod = productionClientMetadata();
-  assert.equal(prod.client_id, "https://foundry.thunderbird.cafe/client-metadata.json");
+  assert.equal(prod.client_id, "https://foundry.thunderbird.cafe/oauth.json");
   assert.deepEqual(prod.redirect_uris, ["https://foundry.thunderbird.cafe/"]);
   assert.equal(prod.scope, SCOPE);
   assert.equal(prod.client_name, "Web Tile Foundry");
@@ -103,4 +104,11 @@ test("an image that doesn't match its record is refused", async () => {
 test("server trouble gives a plain message", async () => {
   const f = fakeFetch([["getRecord", () => new Response("oops", { status: 500 })]]);
   await assert.rejects(fetchOwnSprite(DID, PDS, f), /Could not read your sprite/);
+});
+
+test("?debug only works on this computer, never on the live site", () => {
+  assert.equal(debugAllowedOn("127.0.0.1"), true);
+  assert.equal(debugAllowedOn("localhost"), true);
+  assert.equal(debugAllowedOn("foundry.thunderbird.cafe"), false);
+  assert.equal(debugAllowedOn("pyxorium.github.io"), false);
 });

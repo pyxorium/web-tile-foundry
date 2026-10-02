@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { productionClientMetadata } from "./src/auth/client-config.js";
+import { productionClientMetadata, CLIENT_METADATA_FILE } from "./src/auth/client-config.js";
 
-// Writes client-metadata.json into the built site, generated from the same
+// Writes the sign-in file (oauth.json) into the built site, generated from the same
 // settings the sign-in code uses (src/auth/client-config.js), so the hosted
 // file and the code can never disagree about the scope.
 function clientMetadataFile() {
@@ -11,7 +11,7 @@ function clientMetadataFile() {
     generateBundle() {
       this.emitFile({
         type: "asset",
-        fileName: "client-metadata.json",
+        fileName: CLIENT_METADATA_FILE,
         source: JSON.stringify(productionClientMetadata(), null, 2) + "\n",
       });
     },
