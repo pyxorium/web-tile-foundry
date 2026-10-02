@@ -67,7 +67,9 @@ src/auth/          sign-in: settings (the one scope) and the browser sign-in cli
 src/ui/            React screens (sign-in, form, previews, file list)
 test/              core tests (node --test) and the sample sprite
 public/            the sample sprite used by "Use the sample sprite", and
-                   og-image.jpg, the link-preview picture (tags in index.html)
+                   og-image.jpg, the link-preview picture, and the thunderbird.cafe
+                   "T" icons (favicon.ico, favicon-32x32.png, icon-192.png,
+                   apple-touch-icon.png); tags in index.html
 ```
 
 **Adding a tile type** means adding a folder next to `sprite-walker/` that
