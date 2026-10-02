@@ -91,6 +91,12 @@ export function PublishPanel({ result, account, who }) {
                   <span className="mono share-text">{link}</span>
                   <CopyButton text={link} label="Copy link" />
                 </div>
+                <p className="share-label share-label-second">Your tile's address</p>
+                <p className="field-help">For twinkl.social home pages and other sites that take an at:// address.</p>
+                <div className="share-row">
+                  <span className="mono share-text">{out.uri}</span>
+                  <CopyButton text={out.uri} label="Copy address" />
+                </div>
               </div>
               <details className="embed">
                 <summary>Embed on an Astro site</summary>
@@ -100,11 +106,6 @@ export function PublishPanel({ result, account, who }) {
                 </p>
                 <pre className="mono">{astroSnippet(out.uri)}</pre>
                 <CopyButton text={astroSnippet(out.uri)} label="Copy code" />
-                <p className="publish-address">
-                  <span className="field-help">Your tile's address</span>
-                  <span className="mono">{out.uri}</span>
-                  <CopyButton text={out.uri} />
-                </p>
               </details>
             </>
           )}

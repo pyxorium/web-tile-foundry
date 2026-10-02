@@ -252,3 +252,20 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .embed[open] { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .embed pre { width: 100%; margin: 0; padding: 12px; border-radius: 10px; background: var(--surface-2); overflow-x: auto; font-size: 13px; white-space: pre; }
 .embed .field-help { margin: 0; }
+.share-label-second { margin-top: 10px; }
+
+/* Handle typeahead (sign-in) */
+.typeahead { position: relative; flex: 1; min-width: 0; }
+.typeahead .text { width: 100%; }
+.typeahead-list {
+  position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px);
+  margin: 0; padding: 4px; list-style: none; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface); box-shadow: 0 10px 30px rgba(20, 18, 60, 0.18);
+}
+.typeahead-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.typeahead-item:hover, .typeahead-item.on { background: var(--surface-2); }
+.typeahead-avatar { width: 32px; height: 32px; border-radius: 50%; flex: none; object-fit: cover; }
+.typeahead-avatar-blank { display: inline-block; background: var(--line); }
+.typeahead-text { display: flex; flex-direction: column; min-width: 0; }
+.typeahead-handle { font-weight: 600; overflow-wrap: anywhere; }
+.typeahead-name { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { isLoopbackHost } from "../auth/client-config.js";
+import { HandleTypeahead } from "./HandleTypeahead.jsx";
 
 // What the account's approval screen will name the app: the live site's
 // address, or "localhost" for the copy running on this computer.
@@ -24,15 +25,12 @@ export function SignIn({ account, onSignIn }) {
       <form className="signin-form" onSubmit={submit}>
         <label className="field-label" htmlFor="handle">Your atproto handle</label>
         <div className="signin-row">
-          <input
+          <HandleTypeahead
             id="handle"
-            className="text"
             placeholder="yourname.bsky.social"
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck="false"
             value={handle}
-            onChange={(e) => setHandle(e.target.value)}
+            onChange={setHandle}
+            onPick={setHandle}
             disabled={starting || account.busy}
           />
           <button type="submit" className="btn" disabled={starting || account.busy || !handle.trim()}>

@@ -1,7 +1,7 @@
 {
   "name": "web-tile-foundry",
   "private": true,
-  "version": "0.8.1",
+  "version": "0.8.3",
   "description": "Make Web Tiles from your own atproto things and publish them to your own repo.",
   "type": "module",
   "scripts": {
