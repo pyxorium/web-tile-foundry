@@ -91,7 +91,7 @@ export default function App() {
         <div>
           <p className="kicker">thunderbird.cafe</p>
           <h1>Web Tile Foundry</h1>
-          <p className="lede">Make a Web Tile from your own atproto things, and keep it in your own repo.</p>
+          <p className="lede">Mint your own Web Tiles, and keep them in your own atproto repo.</p>
         </div>
         <p className="stage-note">
           <strong>Preview version</strong> · v{FOUNDRY_VERSION}
@@ -184,7 +184,8 @@ export default function App() {
 
       <footer className="foot">
         Sprites from <a href="https://rpg.actor/" target="_blank" rel="noopener">rpg.actor</a>. Tiles view on{" "}
-        <a href="https://webtil.es/browser/" target="_blank" rel="noopener">webtil.es</a>.
+        <a href="https://webtil.es/browser/" target="_blank" rel="noopener">webtil.es</a>. Foundry by{" "}
+        <a href="https://thunderbird.cafe/" target="_blank" rel="noopener">thunderbird.cafe</a>.
       </footer>
     </div>
   );

@@ -1,6 +1,6 @@
 # Web Tile Foundry
 
-Make a Web Tile from your own atproto things and publish it to your own repo.
+Mint your own Web Tiles, and keep them in your own atproto repo.
 Lives at `thunderbird-cafe\web-tile-foundry\`; served from
 https://foundry.thunderbird.cafe/ (repository: pyxorium/web-tile-foundry).
 
@@ -66,7 +66,8 @@ src/tile-types/    one folder per kind of tile; registered in index.js
 src/auth/          sign-in: settings (the one scope) and the browser sign-in client
 src/ui/            React screens (sign-in, form, previews, file list)
 test/              core tests (node --test) and the sample sprite
-public/            the sample sprite used by "Use the sample sprite"
+public/            the sample sprite used by "Use the sample sprite", and
+                   og-image.jpg, the link-preview picture (tags in index.html)
 ```
 
 **Adding a tile type** means adding a folder next to `sprite-walker/` that
