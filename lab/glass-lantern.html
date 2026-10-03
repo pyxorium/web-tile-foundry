@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Glass Lantern look lab</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0e0907; overflow: hidden; }
+      #lantern { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+      #lantern:active { cursor: grabbing; }
+      #stats {
+        position: fixed; left: 10px; top: 10px; z-index: 2; pointer-events: none;
+        font: 600 15px/1.35 system-ui, sans-serif; color: #f4e9d6;
+        background: rgba(14, 9, 7, 0.72); border-radius: 8px; padding: 8px 11px;
+      }
+      #stats b { font-size: 26px; display: block; }
+      #stats small { font-weight: 400; opacity: 0.8; }
+      #settings-box {
+        position: fixed; inset: auto 10px 10px 10px; z-index: 3; display: none;
+        background: #1c140f; color: #f4e9d6; border-radius: 10px; padding: 12px;
+        font: 14px system-ui, sans-serif; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+      }
+      #settings-box textarea { width: 100%; box-sizing: border-box; height: 38vh; font: 12px ui-monospace, monospace; }
+      #settings-box button { font: inherit; margin-top: 8px; padding: 6px 14px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="lantern"></canvas>
+    <div id="stats"><b>… fps</b><small>starting</small></div>
+    <div id="settings-box">
+      <div>These are the current settings. Select all and copy them into the chat to send them to Claude.</div>
+      <textarea id="settings-text" readonly></textarea>
+      <button id="settings-close" type="button">Close</button>
+    </div>
+    <script type="module" src="./glass-lantern-lab.js"></script>
+  </body>
+</html>
