@@ -41,6 +41,14 @@ function shapeChoice(id) {
   return { group: "classic", id };
 }
 
+// Building a tile and running the tile loader both need a "secure" address.
+// 127.0.0.1 on the computer counts as one; the home Wi-Fi address (http://192.168...)
+// used on a phone does not, so explain that instead of failing with a puzzling error.
+const INSECURE_NOTE =
+  "This page can't build a tile at this address. Phones reach it through the home Wi-Fi address, " +
+  "which browsers treat as not secure, and building and loading tiles need a secure address. " +
+  "Use the page on the computer, or check the lantern on the phone once it is on webtil.es or the blog.";
+
 function say(text, error = false) {
   status.textContent = text;
   status.className = error ? "error" : "";
@@ -69,6 +77,10 @@ let counter = 0;
 let artUrls = [];
 
 async function go() {
+  if (!window.isSecureContext) {
+    say(INSECURE_NOTE, true);
+    return;
+  }
   const lookId = lookSelect.value;
   const kit = lookId === "lab" ? (KITS.some((k) => k.id === lab.kit) ? lab.kit : "tiffany") : lookId;
   const inputs = {
@@ -129,3 +141,4 @@ function showArt(result) {
 
 widthSelect.addEventListener("change", () => (stage.style.width = widthSelect.value));
 document.getElementById("go").addEventListener("click", go);
+if (!window.isSecureContext) say(INSECURE_NOTE, true);
