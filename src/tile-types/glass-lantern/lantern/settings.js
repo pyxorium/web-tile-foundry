@@ -82,7 +82,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   lampWarmth: 2400, //    colour temperature, in kelvin
   lampBrightness: 2.5,
   lampSize: 0.55, //      size of the soft glow
-  showBulb: false, //     the old round bulb, for comparison
+  showGlow: true, //      the soft glowing spot in the centre ("Show the filament"); off hides only the spot, the lamp still lights everything
+  showBulb: false, //     the old round bulb, for comparison (look lab only)
 
   // Light
   keyLight: 1.2, //       light from outside, upper left

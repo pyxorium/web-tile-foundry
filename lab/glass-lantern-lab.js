@@ -190,6 +190,7 @@ const fLamp = gui.addFolder("Lamp");
 fLamp.add(look, "lampBrightness", 0, 6, 0.05).name("Brightness").onChange(applyLook);
 fLamp.add(look, "lampSize", 0.1, 1.2, 0.01).name("Glow size").onChange(applyLook);
 fLamp.add(look, "lampWarmth", 1500, 6500, 50).name("Warmth (K)").onChange(applyLook);
+fLamp.add(look, "showGlow").name("Show the filament (glow spot)").onChange(applyLook);
 fLamp.add(look, "showBulb").name("Show the round bulb").onChange(applyLook);
 
 const fBackup = gui.addFolder("Backup glass (slower phones)");

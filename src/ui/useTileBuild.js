@@ -4,7 +4,9 @@ import { buildTile } from "../core/build.js";
 // Rebuilds the tile shortly after the inputs stop changing, so the preview
 // always shows exactly what would be published. Returns
 // { result, error, building }.
-export function useTileBuild(type, inputs, ready, delayMs = 250) {
+// `final`: build exactly what would be published (card pictures included).
+// While editing, types may leave out costly parts (see build() in contract.js).
+export function useTileBuild(type, inputs, ready, delayMs = 250, final = true) {
   const [state, setState] = useState({ result: null, error: null, building: false });
   const run = useRef(0);
 
@@ -17,14 +19,14 @@ export function useTileBuild(type, inputs, ready, delayMs = 250) {
     setState((s) => ({ ...s, building: true }));
     const timer = setTimeout(async () => {
       try {
-        const result = await buildTile(type, inputs);
+        const result = await buildTile(type, inputs, { final });
         if (mine === run.current) setState({ result, error: null, building: false });
       } catch (error) {
         if (mine === run.current) setState({ result: null, error, building: false });
       }
     }, delayMs);
     return () => clearTimeout(timer);
-  }, [type, inputs, ready, delayMs]);
+  }, [type, inputs, ready, delayMs, final]);
 
   return state;
 }

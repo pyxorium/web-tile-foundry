@@ -36,11 +36,11 @@ export function cleanLook(look = {}) {
 }
 
 /** The config the page carries (see runtime/tile-main.js). */
-export function lanternConfig({ shape, colours, look, slowTurn = true }) {
+export function lanternConfig({ shape, colors, look, slowTurn = true }) {
   return {
     version: 1,
     shape: { vertices: shape.vertices, faces: shape.faces },
-    colours: colours || null,
+    colors: colors || null,
     look: cleanLook(look),
     slowTurn: Boolean(slowTurn),
   };
@@ -59,8 +59,8 @@ ${TILE_CSP_META}
 <!-- Made with the Web Tile Foundry (glass-lantern). Recipe: /foundry.json -->
 <style>
   html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: ${bg}; }
-  canvas.lantern { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; outline: none; }
-  canvas.lantern:active { cursor: grabbing; }
+  body { position: relative; }
+  canvas.lantern:active { cursor: grabbing !important; }
   canvas.lantern:focus-visible { box-shadow: inset 0 0 0 2px #f4e9d6; }
   .note { position: fixed; left: 16px; right: 16px; bottom: 16px; margin: 0; text-align: center;
     font: 14px system-ui, sans-serif; color: #f4e9d6; }

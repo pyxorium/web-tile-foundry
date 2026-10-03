@@ -15,13 +15,24 @@ export function LiveTile({ html, title, className = "" }) {
   );
 }
 
+// A frame's page can't fetch the tile's other files, so scripts the page loads
+// from the tile (like Glass Lantern's /lantern.js) are put inside it for the preview.
+function frameHtml(result) {
+  return result.html.replace(/<script src="(\/[^"]+\.js)"><\/script>/g, (whole, path) => {
+    const file = result.files.find((f) => f.path === path);
+    if (!file) return whole;
+    const code = new TextDecoder().decode(file.bytes).replace(/<\/script/gi, "<\\/script");
+    return `<script>${code}</script>`;
+  });
+}
+
 export function CardPreview({ result, urls, live, onToggleLive }) {
   const icon = result.icons[0] && urls[result.icons[0].src];
   const banner = result.screenshots[0] && urls[result.screenshots[0].src];
   return (
     <div className="card-frame">
       {live ? (
-        <LiveTile html={result.html} title={result.name} className="card-live" />
+        <LiveTile html={frameHtml(result)} title={result.name} className="card-live" />
       ) : (
         <button type="button" className="tile-card" onClick={onToggleLive} aria-label="Open the live tile">
           {banner && <img className="tile-card-banner" src={banner} alt="" />}

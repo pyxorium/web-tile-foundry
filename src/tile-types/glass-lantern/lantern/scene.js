@@ -1,7 +1,7 @@
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Group, Mesh, SphereGeometry, MeshBasicMaterial,
   PointLight, DirectionalLight, HemisphereLight, PMREMGenerator, Color, ACESFilmicToneMapping, SRGBColorSpace,
-  Matrix3, Vector2,
+  Matrix3, Vector2, Raycaster, FrontSide,
 } from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { buildPanes, buildCame } from "./meshes.js";
@@ -93,7 +93,13 @@ export function createLantern(canvas, initial = {}, { fill = null } = {}) {
   const clearSurface = new Mesh(undefined, clear.surface);
   clearTint.renderOrder = 3;
   clearSurface.renderOrder = 4;
-  group.add(farPanes, panes, clearTint, clearSurface, came);
+  // An invisible copy of the panes, front faces only, for telling which facet
+  // was tapped (Hands-on painting in the Foundry).
+  const pickMesh = new Mesh(undefined, new MeshBasicMaterial({ side: FrontSide }));
+  pickMesh.visible = false;
+  group.add(farPanes, panes, clearTint, clearSurface, came, pickMesh);
+  const raycaster = new Raycaster();
+  const pointerNdc = new Vector2();
   let glassMethod = "real";
 
   let settings = { ...DEFAULT_SETTINGS, ...initial };
@@ -114,6 +120,7 @@ export function createLantern(canvas, initial = {}, { fill = null } = {}) {
     farPanes.geometry = panes.geometry;
     clearTint.geometry = panes.geometry;
     clearSurface.geometry = panes.geometry;
+    pickMesh.geometry = panes.geometry;
     came.geometry = buildCame(shape, effective);
   }
 
@@ -146,7 +153,8 @@ export function createLantern(canvas, initial = {}, { fill = null } = {}) {
     panes.visible = glassMethod !== "clear";
     clearTint.visible = clearSurface.visible = glassMethod === "clear";
     farPanes.visible = seeThrough && s.farSide;
-    lampLight.visible = lampGlow.visible = seeThrough;
+    lampLight.visible = seeThrough;
+    lampGlow.visible = seeThrough && s.showGlow !== false; // hiding the spot never dims the lamp itself
     lampBulb.visible = seeThrough && s.showBulb;
     lampLight.color.copy(lamp);
     lampLight.intensity = 2 * s.lampBrightness;
@@ -309,6 +317,17 @@ export function createLantern(canvas, initial = {}, { fill = null } = {}) {
     setHighlight(face, amount) {
       glassUniforms.uHighlightFace.value = face;
       glassUniforms.uHighlight.value = amount;
+    },
+    /** The facet (stage 2 face order) under a point in CSS pixels from the canvas's top left, or -1. */
+    faceAt(x, y) {
+      if (!shape) return -1;
+      pointerNdc.set((x / cssWidth()) * 2 - 1, -(y / cssHeight()) * 2 + 1);
+      camera.updateMatrixWorld();
+      group.updateMatrixWorld();
+      raycaster.setFromCamera(pointerNdc, camera);
+      const hit = raycaster.intersectObject(pickMesh, false)[0];
+      if (!hit || !hit.face) return -1;
+      return Math.round(pickMesh.geometry.getAttribute("aFace").getX(hit.face.a));
     },
     /** Where the lantern is on screen: centre and radius in CSS pixels (for zooming only over it). */
     screenCircle() {

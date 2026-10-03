@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./tile-types/index.js";
 import { listTileTypes, getTileType } from "./core/registry.js";
 import { checkInputs } from "./core/contract.js";
+import { buildTile } from "./core/build.js";
 import { FOUNDRY_VERSION } from "./core/version.js";
 import { InputForm } from "./ui/InputForm.jsx";
 import { LiveTile, CardPreview } from "./ui/Previews.jsx";
+import { TypePreview } from "./ui/TypePreview.jsx";
 import { FileList } from "./ui/FileList.jsx";
 import { RealLoaderPreview } from "./ui/RealLoaderPreview.jsx";
 import { SignIn, AccountBar } from "./ui/SignIn.jsx";
@@ -52,10 +54,23 @@ export default function App() {
     setValues(getTileType(id).defaults({ handle: account.handle }));
     setNameEdited(false);
   }
-  function setValue(key, v) {
-    if (key === "name") setNameEdited(true);
-    setValues((prev) => ({ ...prev, [key]: v }));
-  }
+  // The latest values, for changes that arrive from outside React's render
+  // (the live preview painting a facet, for example).
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+  const setValue = useCallback(
+    (key, v) => {
+      if (key === "name") setNameEdited(true);
+      const current = valuesRef.current;
+      // Some types change other inputs along with this one, and may ask first.
+      const change = type && type.applyChange ? type.applyChange(key, v, current) : null;
+      if (change && change.confirm && !window.confirm(change.confirm)) return;
+      const next = change ? change.values : { ...current, [key]: v };
+      valuesRef.current = next;
+      setValues(next);
+    },
+    [type]
+  );
 
   // Once the account's sprite arrives, use it.
   useEffect(() => {
@@ -78,7 +93,11 @@ export default function App() {
 
   const problems = useMemo(() => (type ? checkInputs(type, values) : []), [type, values]);
   const ready = !!type && problems.length === 0;
-  const { result, error, building } = useTileBuild(type, values, ready);
+  // While making the tile, types may skip costly card pictures; the debug views
+  // show the exact files, so they get the complete tile.
+  const { result, error, building } = useTileBuild(type, values, ready, type && type.buildDelayMs ? type.buildDelayMs : 250, DEBUG);
+  // The complete tile, for publishing (built again only if parts were skipped).
+  const finalResult = useCallback(async () => (result && result.final ? result : buildTile(type, valuesRef.current, { final: true })), [result, type]);
   const urls = useFileUrls(result);
 
   const canMake = signedIn || DEBUG;
@@ -131,7 +150,17 @@ export default function App() {
           <div className="make">
             <InputForm type={type} values={values} onChange={setValue} problems={problems} context={{ ownSprite }} />
             <div className="make-preview">
-              {result ? (
+              {type.preview ? (
+                <>
+                  <TypePreview type={type} values={values} setValue={setValue} />
+                  <p className="caption">{type.preview.caption ? type.preview.caption(values) : "Live preview."}</p>
+                  {error ? (
+                    <p className="field-error" role="alert">{error.message}</p>
+                  ) : (
+                    <p className="preview-status">Publish when your tile is ready.</p>
+                  )}
+                </>
+              ) : result ? (
                 <>
                   <LiveTile html={result.html} title={result.name} />
                   <p className="caption">Live preview. Try the gear in the corner.</p>
@@ -158,7 +187,7 @@ export default function App() {
 
       <Step n={++n} title="Publish" muted={!result}>
         {result ? (
-          <PublishPanel result={result} account={account} who={who} />
+          <PublishPanel result={result} getFinal={finalResult} account={account} who={who} />
         ) : (
           <p className="step-help">Available once your tile is ready.</p>
         )}

@@ -33,11 +33,11 @@ function checkCardImages(list, kind, byPath) {
  *   { typeId, typeVersion, name, description, icons, screenshots,
  *     files: [{ path, bytes, contentType, cid }], html, totalBytes }
  */
-export async function buildTile(type, inputs) {
+export async function buildTile(type, inputs, { final = true } = {}) {
   const problems = checkInputs(type, inputs);
   if (problems.length) throw new TileBuildError("Some inputs need attention.", problems);
 
-  const out = await type.build(inputs);
+  const out = await type.build(inputs, { final });
 
   const name = typeof out.name === "string" ? out.name.trim() : "";
   if (!name) throw new TileBuildError("The tile needs a name.");
@@ -67,5 +67,5 @@ export async function buildTile(type, inputs) {
   }
   if (totalBytes > MAX_TILE_BYTES) throw new TileBuildError("The tile is larger than the Foundry allows (5 MB).");
 
-  return { typeId: type.id, typeVersion: type.version, name, description, icons, screenshots, files, html, totalBytes };
+  return { typeId: type.id, typeVersion: type.version, name, description, icons, screenshots, files, html, totalBytes, final };
 }

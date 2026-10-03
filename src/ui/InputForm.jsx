@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { spriteFromBytes } from "../core/sprite-source.js";
 import { formatSize } from "../core/fileset.js";
 import { DEBUG } from "./debug.js";
+import { isShown } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
 // (see INPUT_KINDS in src/core/contract.js).
@@ -123,13 +124,15 @@ function SpriteInput({ input, value, onChange, context = {} }) {
 function SwatchChoice({ input, value, onChange, type, values }) {
   const [urls, setUrls] = useState({});
   const sprite = values.sprite;
-  const spriteKey = sprite ? sprite.cid : "none";
+  // What the pictures depend on: the type says (optionPreviewKey), or else the sprite.
+  const spriteKey = type.optionPreviewKey ? type.optionPreviewKey(input.key, values) : sprite ? sprite.cid : "none";
 
   useEffect(() => {
     let cancelled = false;
     const made = {};
     (async () => {
       for (const o of input.options) {
+        if (o.image) continue; // a picture made ahead of time: nothing to draw
         try {
           const bytes = await type.optionPreview(input.key, o.value, values);
           if (cancelled || !bytes) continue;
@@ -144,7 +147,7 @@ function SwatchChoice({ input, value, onChange, type, values }) {
       cancelled = true;
       Object.values(made).forEach((u) => URL.revokeObjectURL(u));
     };
-    // Only the sprite changes what a swatch looks like.
+    // Only spriteKey changes what a swatch looks like.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, input, spriteKey]);
 
@@ -152,11 +155,11 @@ function SwatchChoice({ input, value, onChange, type, values }) {
     <fieldset className="field">
       <legend className="field-label">{input.label}</legend>
       {input.help && <p className="field-help">{input.help}</p>}
-      <div className="swatches">
+      <div className={`swatches ${input.smooth ? "swatches-smooth" : ""}`}>
         {input.options.map((o) => (
           <label key={o.value} className={`swatch ${value === o.value ? "on" : ""}`}>
             <input type="radio" name={input.key} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} />
-            {urls[o.value] ? <img src={urls[o.value]} alt="" /> : <span className="swatch-blank" />}
+            {o.image || urls[o.value] ? <img src={o.image || urls[o.value]} alt="" /> : <span className="swatch-blank" />}
             <span className="swatch-label">{o.label}</span>
           </label>
         ))}
@@ -176,6 +179,7 @@ function ChoiceInput(props) {
           <label key={o.value} className={value === o.value ? "on" : ""}>
             <input type="radio" name={input.key} value={o.value} checked={value === o.value} onChange={() => onChange(o.value)} />
             {o.label}
+            {o.color && <span className="color-square" style={{ background: o.color }} aria-hidden="true" />}
           </label>
         ))}
       </div>
@@ -204,7 +208,122 @@ function TextInput({ input, value, onChange }) {
   );
 }
 
-const KIND_COMPONENTS = { sprite: SpriteInput, choice: ChoiceInput, text: TextInput };
+// Several colors, ticked on and off.
+function PaletteInput({ input, value, onChange }) {
+  const picked = Array.isArray(value) ? value.map((c) => c.toLowerCase()) : [];
+  function flip(color) {
+    const c = color.toLowerCase();
+    const next = picked.includes(c) ? picked.filter((x) => x !== c) : [...picked, c];
+    // Keep them in the order offered, so the spread is predictable.
+    onChange(input.colors.map((o) => o.value.toLowerCase()).filter((x) => next.includes(x)));
+  }
+  return (
+    <fieldset className="field">
+      <legend className="field-label">{input.label}</legend>
+      {input.help && <p className="field-help">{input.help}</p>}
+      <div className="color-dots">
+        {input.colors.map((o) => {
+          const on = picked.includes(o.value.toLowerCase());
+          return (
+            <label key={o.value} className={`color-choice ${on ? "on" : ""}`} title={o.label} style={{ "--c": o.value }}>
+              <input type="checkbox" checked={on} onChange={() => flip(o.value)} aria-label={o.label} />
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+// One color: the brush for painting in the preview.
+function BrushInput({ input, value, onChange }) {
+  const current = (value || "").toLowerCase();
+  return (
+    <fieldset className="field">
+      <legend className="field-label">{input.label}</legend>
+      {input.help && <p className="field-help">{input.help}</p>}
+      <div className="color-dots">
+        {input.colors.map((o) => {
+          const on = current === o.value.toLowerCase();
+          return (
+            <label key={o.value} className={`color-choice brush ${on ? "on" : ""}`} title={o.label} style={{ "--c": o.value }}>
+              <input type="radio" name={input.key} checked={on} onChange={() => onChange(o.value.toLowerCase())} aria-label={o.label} />
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function RangeInput({ input, value, onChange }) {
+  const id = `input-${input.key}`;
+  return (
+    <div className="field">
+      <label className="field-label" htmlFor={id}>
+        {input.label} <span className="range-value">{value}</span>
+      </label>
+      <div className="range-row">
+        <span className="range-end">{input.min}</span>
+        <input id={id} type="range" min={input.min} max={input.max} step={input.step || 1} value={value ?? input.min} onChange={(e) => onChange(Number(e.target.value))} />
+        <span className="range-end">{input.max}</span>
+      </div>
+      {input.help && <p className="field-help">{input.help}</p>}
+    </div>
+  );
+}
+
+function SeedInput({ input, onChange }) {
+  function pick() {
+    const a = new Uint32Array(1);
+    crypto.getRandomValues(a);
+    onChange(a[0] % 1000000000);
+  }
+  return (
+    <div className="field">
+      {input.label && <span className="field-label">{input.label}</span>}
+      <button type="button" className="btn btn-quiet btn-small" onClick={pick}>{input.button || "New"}</button>
+      {input.help && <p className="field-help">{input.help}</p>}
+    </div>
+  );
+}
+
+function ToggleInput({ input, value, onChange }) {
+  return (
+    <div className="field">
+      <label className="toggle">
+        <input type="checkbox" role="switch" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />
+        <span className="toggle-track" aria-hidden="true" />
+        <span>{input.label}</span>
+      </label>
+      {input.help && <p className="field-help">{input.help}</p>}
+    </div>
+  );
+}
+
+// A button that does something to other values (the type's applyChange does the work).
+function ActionInput({ input, onChange, values }) {
+  const disabled = typeof input.disabledIf === "function" && Boolean(input.disabledIf(values));
+  return (
+    <div className="field field-action">
+      <button type="button" className="btn btn-quiet btn-small" disabled={disabled} onClick={() => onChange(true)}>
+        {input.button}
+      </button>
+    </div>
+  );
+}
+
+const KIND_COMPONENTS = {
+  action: ActionInput,
+  sprite: SpriteInput,
+  choice: ChoiceInput,
+  text: TextInput,
+  palette: PaletteInput,
+  brush: BrushInput,
+  range: RangeInput,
+  seed: SeedInput,
+  toggle: ToggleInput,
+};
 
 export function InputForm({ type, values, onChange, problems, context }) {
   function field(input) {
@@ -220,7 +339,7 @@ export function InputForm({ type, values, onChange, problems, context }) {
 
   // Inputs that share a group are shown together under the group's title.
   const blocks = [];
-  for (const input of type.inputs) {
+  for (const input of type.inputs.filter((i) => isShown(i, values))) {
     const last = blocks[blocks.length - 1];
     if (input.group && last && last.group === input.group) last.inputs.push(input);
     else blocks.push({ group: input.group || null, inputs: [input] });
@@ -231,6 +350,14 @@ export function InputForm({ type, values, onChange, problems, context }) {
       {blocks.map((block) => {
         if (!block.group) return block.inputs.map(field);
         const group = (type.groups || []).find((g) => g.id === block.group);
+        if (group.collapsed) {
+          return (
+            <details key={block.group} className="input-group input-group-more">
+              <summary className="input-group-title">{group.title}</summary>
+              {block.inputs.map(field)}
+            </details>
+          );
+        }
         return (
           <section key={block.group} className="input-group" aria-label={group.title}>
             <p className="input-group-title">{group.title}</p>

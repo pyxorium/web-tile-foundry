@@ -28,7 +28,10 @@ const WHEEL_ZOOM = 0.0015;
 const FADE_SECONDS = 0.18;
 const RESET_SECONDS = 0.6;
 
-export function createInteraction({ canvas, lantern, slowTurn = true, slowTurnSpeed = 0.25, onRoll } = {}) {
+// onTap({ x, y }): optional; called on a tap with the point in CSS pixels from
+// the canvas's top left. Return true to take the tap (no roll), as the
+// Foundry's Hands-on painting does.
+export function createInteraction({ canvas, lantern, slowTurn = true, slowTurnSpeed = 0.25, onRoll, onTap } = {}) {
   const reducedMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   const group = lantern.group;
   const home = group.quaternion.clone(); // the starting view, for reset
@@ -43,6 +46,8 @@ export function createInteraction({ canvas, lantern, slowTurn = true, slowTurnSp
   const up = new Vector3(0, 1, 0);
   const right = new Vector3(1, 0, 0);
   const tmpQ = new Quaternion();
+
+  let tapHandler = onTap || null;
 
   // ---------- pointers (the pinch fix) ----------
   const pointers = new Map();
@@ -113,7 +118,9 @@ export function createInteraction({ canvas, lantern, slowTurn = true, slowTurnSp
     // Last finger up: a tap rolls; a quick release while moving glides.
     const now = performance.now();
     if (gesture && e.type === "pointerup" && isTap({ moved: gesture.moved, ms: now - gesture.t, fingers: gesture.fingers })) {
-      roll();
+      const rect = canvas.getBoundingClientRect();
+      const taken = tapHandler && tapHandler({ x: gesture.x - rect.left, y: gesture.y - rect.top }) === true;
+      if (!taken) roll();
     } else if (last && now - last.t < FLICK_IDLE_MS) {
       const clamp = (v) => Math.max(-GLIDE_MAX, Math.min(GLIDE_MAX, v));
       state.spin.set(clamp(dragVel.x), clamp(dragVel.y), 0);
@@ -245,6 +252,10 @@ export function createInteraction({ canvas, lantern, slowTurn = true, slowTurnSp
     },
     get rolling() {
       return Boolean(state.roll);
+    },
+    /** Changes (or removes, with null) the tap handler; see onTap above. */
+    setTapHandler(fn) {
+      tapHandler = fn || null;
     },
     setSlowTurn(on, speed) {
       state.slowTurn = Boolean(on) && !reducedMotion;

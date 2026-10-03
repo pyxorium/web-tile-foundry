@@ -2,10 +2,13 @@
 // "Slow turn" (on or off) and "Reset view". Novice-simple wording. Plain DOM,
 // styled inline so a tile needs no extra stylesheet.
 
-export function createGearMenu({ parent = document.body, corner = "top-right", slowTurn = true, onSlowTurn, onReset } = {}) {
+// position: "fixed" (the corner of the window, as in a tile or the lab) or
+// "absolute" (the corner of `parent`, which must be positioned, as in the
+// Foundry's preview).
+export function createGearMenu({ parent = document.body, corner = "top-right", position = "fixed", slowTurn = true, onSlowTurn, onReset } = {}) {
   const [v, h] = corner.split("-");
   const wrap = document.createElement("div");
-  Object.assign(wrap.style, { position: "fixed", [v]: "12px", [h]: "12px", zIndex: "5", font: "15px system-ui, sans-serif" });
+  Object.assign(wrap.style, { position, [v]: "12px", [h]: "12px", zIndex: "5", font: "15px system-ui, sans-serif" });
 
   const button = document.createElement("button");
   button.type = "button";
@@ -53,9 +56,10 @@ export function createGearMenu({ parent = document.body, corner = "top-right", s
   }
   button.addEventListener("click", () => setOpen(panel.style.display === "none"));
   // A tap anywhere else closes it.
-  document.addEventListener("pointerdown", (e) => {
+  const closeOutside = (e) => {
     if (!wrap.contains(e.target)) setOpen(false);
-  });
+  };
+  document.addEventListener("pointerdown", closeOutside);
 
   return {
     element: wrap,
@@ -63,5 +67,9 @@ export function createGearMenu({ parent = document.body, corner = "top-right", s
       check.checked = Boolean(on);
     },
     close: () => setOpen(false),
+    dispose() {
+      document.removeEventListener("pointerdown", closeOutside);
+      wrap.remove();
+    },
   };
 }

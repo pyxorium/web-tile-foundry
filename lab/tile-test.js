@@ -35,11 +35,6 @@ lookSelect.innerHTML = looks.map((o) => `<option value="${o.value}">${o.label}</
 shapeSelect.innerHTML = SHAPES.map((s) => `<option value="${s}">${s}</option>`).join("");
 shapeSelect.value = (lab.shape && lab.shape.shape) || "d12";
 
-function shapeChoice(id) {
-  if (id === "gem") return { group: "gem", id: "gem", seed: (lab.shape && lab.shape.seed) || 20261003, facets: (lab.shape && lab.shape.facets) || 14 };
-  if (id === "chestahedron") return { group: "special", id: "chestahedron" };
-  return { group: "classic", id };
-}
 
 // Building a tile and running the tile loader both need a "secure" address.
 // 127.0.0.1 on the computer counts as one; the home Wi-Fi address (http://192.168...)
@@ -83,14 +78,18 @@ async function go() {
   }
   const lookId = lookSelect.value;
   const kit = lookId === "lab" ? (KITS.some((k) => k.id === lab.kit) ? lab.kit : "tiffany") : lookId;
-  const inputs = {
-    ...glassLantern.defaults(),
+  // The panel's values (as the Foundry would make them), for this style and shape.
+  let inputs = glassLantern.defaults();
+  inputs = glassLantern.applyChange("kit", kit, inputs).values;
+  inputs = {
+    ...inputs,
     name: `Glass Lantern test (${lookId}, ${shapeSelect.value})`,
-    shape: shapeChoice(shapeSelect.value),
-    kit,
-    look: lookId === "lab" ? lab.look : null,
-    slowTurn: lab.motion ? lab.motion.autoRotate !== false : true,
+    shape: shapeSelect.value,
+    gemSeed: (lab.shape && lab.shape.seed) || inputs.gemSeed,
+    gemFacets: (lab.shape && lab.shape.facets) || inputs.gemFacets,
   };
+  // The look lab's exact look, for checking it as a tile (development only).
+  if (lookId === "lab") inputs.lookOverride = lab.look;
   try {
     say("Building the tile (drawing the card pictures takes a moment)…");
     const started = performance.now();

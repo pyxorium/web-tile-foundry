@@ -6,6 +6,9 @@ import { DEBUG } from "./debug.js";
 
 // The Publish step: a plain confirmation, live progress, then the result.
 
+// Shown first when the card pictures still have to be drawn (see getFinal).
+const PREPARE_STEP = { id: "prepare", label: "Drawing your card pictures" };
+
 const STEPS = [
   { id: "upload", label: "Uploading your tile's files" },
   { id: "create", label: "Adding the tile to your account" },
@@ -35,7 +38,8 @@ function CopyButton({ text, label = "Copy" }) {
   );
 }
 
-export function PublishPanel({ result, account, who }) {
+// getFinal(): the complete tile to publish (card pictures included); may take a moment.
+export function PublishPanel({ result, getFinal, account, who }) {
   const [state, setState] = useState({ phase: "idle" });
   const signedIn = account.status === "signedIn" && account.did && account.pds;
 
@@ -43,17 +47,23 @@ export function PublishPanel({ result, account, who }) {
     const progress = {};
     setState({ phase: "running", progress });
     try {
+      if (getFinal && !result.final) {
+        progress.prepare = { state: "active" };
+        setState({ phase: "running", progress: { ...progress } });
+      }
+      const tile = getFinal ? await getFinal() : result;
+      if (progress.prepare) progress.prepare = { state: "done" };
       const out = await publishTile({
         xrpc,
         fetchBlob: (cid) => fetchPublicBlob(account.did, account.pds, cid),
         did: account.did,
-        result,
+        result: tile,
         onStep: (id, s, detail) => {
           progress[id] = { state: s, detail };
           setState({ phase: "running", progress: { ...progress } });
         },
       });
-      setState({ phase: "done", out, name: result.name });
+      setState({ phase: "done", out, name: tile.name });
     } catch (err) {
       console.error("[publish]", err);
       setState({ phase: "error", message: err.message, step: err.step, progress: { ...progress } });
@@ -139,7 +149,7 @@ export function PublishPanel({ result, account, who }) {
         {!signedIn && <p className="publish-note">Sign in to publish.</p>}
         {(running || state.phase === "error") && (
           <ol className="publish-steps">
-            {STEPS.map((s) => {
+            {(progress.prepare ? [PREPARE_STEP, ...STEPS] : STEPS).map((s) => {
               const p = progress[s.id];
               const status = p ? p.state : "waiting";
               const count = s.id === "upload" && p && p.detail && p.detail.total ? ` (${p.detail.done} of ${p.detail.total})` : "";
