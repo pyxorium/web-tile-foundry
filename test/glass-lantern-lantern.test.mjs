@@ -205,3 +205,67 @@ test("kits: all three are tuned; Tiffany carries the user's opal and ripple", ()
   assert.equal(kitLook("victorian").opal, 0);
   assert.equal(kitLook("steampunk").opal, 0.09);
 });
+
+// ---------- backgrounds and tabletop ----------
+import { BACKGROUNDS } from "../src/tile-types/glass-lantern/lantern/background.js";
+import { lightPools } from "../src/tile-types/glass-lantern/lantern/pools.js";
+
+test("backgrounds: plain glow, parlour, damask, workshop; each kit picks one and a tabletop setting", () => {
+  assert.deepEqual(BACKGROUNDS.map((b) => b.id), ["plain", "parlour", "damask", "workshop"]);
+  assert.equal(new Set(BACKGROUNDS.map((b) => b.style)).size, 4);
+  assert.equal(DEFAULT_SETTINGS.background, "plain");
+  const picks = Object.fromEntries(KITS.map((k) => [k.id, [kitLook(k.id).background, kitLook(k.id).tabletop]]));
+  assert.deepEqual(picks, { tiffany: ["parlour", true], victorian: ["damask", false], steampunk: ["workshop", false] });
+  for (const k of KITS) assert.match(kitLook(k.id).bgAccent, /^#[0-9a-f]{6}$/);
+});
+
+const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+const d6Pools = (rotation) => {
+  const shape = getShape({ group: "classic", id: "d6" });
+  const colours = shape.faces.map((_, i) => [i / 10, 0, 0]);
+  return { shape, pools: lightPools({ normals: shape.normals, centres: shape.centres, areas: shape.areas, colours, rotation, tableY: -1.2 }) };
+};
+
+test("light pools: a d6 sitting square puts its bottom pane's colour straight down", () => {
+  const { shape, pools } = d6Pools(IDENTITY);
+  assert.equal(pools.length, 1, "only the bottom face points down");
+  const bottom = shape.normals.findIndex((n) => n[1] < -0.99);
+  assert.ok(Math.abs(pools[0].x) < 1e-9 && Math.abs(pools[0].z) < 1e-9);
+  assert.deepEqual(pools[0].colour, [bottom / 10, 0, 0]);
+  assert.ok(pools[0].radius > 0 && pools[0].strength > 0);
+});
+
+test("light pools follow the lantern as it turns, strongest first", () => {
+  const c = Math.cos(0.6), s = Math.sin(0.6);
+  const tiltX = [1, 0, 0, 0, c, s, 0, -s, c]; // rotation about x, column-major
+  const { pools } = d6Pools(tiltX);
+  assert.equal(pools.length, 2, "tilted, two faces point down");
+  assert.ok(pools[0].strength >= pools[1].strength);
+  assert.ok(pools.every((p) => Math.abs(p.x) < 1e-9), "tilting about x moves pools along z only");
+  assert.ok(pools.some((p) => Math.abs(p.z) > 0.1));
+});
+
+test("kits: Tiffany carries the user's parlour and tabletop tuning", () => {
+  const look = kitLook("tiffany");
+  assert.equal(look.background, "parlour");
+  assert.equal(look.bgSoftness, 1);
+  assert.equal(look.bgContrast, 0);
+  assert.equal(look.poolStrength, 0.6);
+  assert.equal(look.envIntensity, 0.8);
+});
+
+test("kits: Victorian carries the user's damask tuning", () => {
+  const look = kitLook("victorian");
+  assert.equal(look.background, "damask");
+  assert.equal(look.bgScale, 4);
+  assert.equal(look.bgSoftness, 0.36);
+  assert.equal(look.bgHalo, 0.14);
+});
+
+test("kits: Steampunk carries the user's workshop tuning", () => {
+  const look = kitLook("steampunk");
+  assert.equal(look.background, "workshop");
+  assert.equal(look.bgScale, 2.04);
+  assert.equal(look.bgContrast, 1.21);
+  assert.equal(look.bgSoftness, 0.15);
+});

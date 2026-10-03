@@ -1,12 +1,15 @@
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Group, Mesh, SphereGeometry, MeshBasicMaterial,
   PointLight, DirectionalLight, HemisphereLight, PMREMGenerator, Color, ACESFilmicToneMapping, SRGBColorSpace,
+  Matrix3, Vector2,
 } from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { buildPanes, buildCame } from "./meshes.js";
 import { makeGlassUniforms, makeGlassMaterial, makeRealGlassMaterial, makeMetalMaterial } from "./materials.js";
 import { makeLampGlow } from "./lamp.js";
-import { makeBackground } from "./background.js";
+import { makeBackground, BACKGROUNDS } from "./background.js";
+import { makeTable, MAX_POOLS } from "./table.js";
+import { lightPools } from "./pools.js";
 import { DEFAULT_SETTINGS, METALS, kelvinToHex, alternateColours, pixelRatioFor } from "./settings.js";
 
 // One lantern on a canvas. Used by the look lab now, and the basis of the
@@ -23,6 +26,7 @@ import { DEFAULT_SETTINGS, METALS, kelvinToHex, alternateColours, pixelRatioFor 
 //
 // Geometry is rebuilt only when a setting that changes its shape changes.
 
+const TABLE_Y = -1.22; //  just below the lantern (radius 1, plus the came)
 const GEOMETRY_KEYS = ["cameWidth", "cameFlatten", "rivets", "bezelWidth", "bezelDepth"];
 
 export function createLantern(canvas, initial = {}) {
@@ -34,8 +38,12 @@ export function createLantern(canvas, initial = {}) {
   const camera = new PerspectiveCamera(32, 1, 0.1, 50);
   camera.position.set(0, 0, 5);
 
-  const background = makeBackground();
+  const background = makeBackground(renderer);
   scene.add(background.mesh);
+
+  const table = makeTable(background.texture);
+  table.mesh.position.y = TABLE_Y;
+  scene.add(table.mesh);
 
   const room = new PMREMGenerator(renderer);
   const envTexture = room.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -76,12 +84,14 @@ export function createLantern(canvas, initial = {}) {
   let pixels = { ratio: 1, capped: false };
   let shape = null;
   let colours = null;
+  let faceLinear = []; // each face's colour, linear RGB, for the table's light pools
 
   function rebuild() {
     if (!shape) return;
     panes.geometry.dispose();
     came.geometry.dispose();
     const faceColours = colours || alternateColours(shape.faces.length, effective.palette);
+    faceLinear = faceColours.map((c) => new Color(c).toArray());
     panes.geometry = buildPanes(shape, faceColours, effective);
     farPanes.geometry = panes.geometry;
     came.geometry = buildCame(shape, effective);
@@ -124,11 +134,24 @@ export function createLantern(canvas, initial = {}) {
     scene.environmentIntensity = s.envIntensity;
 
     const b = background.uniforms;
-    b.uTop.value.set(s.bgTop);
-    b.uBottom.value.set(s.bgBottom);
+    b.uStyle.value = (BACKGROUNDS.find((x) => x.id === s.background) || BACKGROUNDS[0]).style;
+    b.uMain.value.set(s.bgTop);
+    b.uDark.value.set(s.bgBottom);
+    b.uAccent.value.set(s.bgAccent);
+    b.uLamp.value.copy(lamp);
     b.uHalo.value = s.bgHalo;
     b.uVignette.value = s.bgVignette;
-    b.uHaloColor.value.copy(lamp);
+    b.uScale.value = s.bgScale;
+    b.uContrast.value = s.bgContrast;
+    b.uBrightness.value = s.bgBrightness;
+    background.setSoftness(s.bgSoftness);
+    background.invalidate();
+
+    table.mesh.visible = s.tabletop;
+    table.material.color.set(s.tableColor);
+    table.uniforms.uPoolStrength.value = s.poolStrength;
+    tableLamp.copy(lamp);
+    placeCamera();
 
     applyPixelRatio();
   }
@@ -139,6 +162,32 @@ export function createLantern(canvas, initial = {}) {
     if (renderer.getPixelRatio() !== pixels.ratio) renderer.setPixelRatio(pixels.ratio);
   }
 
+  // With a tabletop the camera looks down a little, so the table shows.
+  let viewDistance = 5;
+  function placeCamera() {
+    const tilt = effective.tabletop ? 0.24 : 0;
+    camera.position.set(0, Math.sin(tilt) * viewDistance, Math.cos(tilt) * viewDistance);
+    camera.lookAt(0, effective.tabletop ? -0.15 : 0, 0);
+  }
+
+  // Light pools on the table, worked out each frame from the lantern's rotation.
+  const tableLamp = new Color();
+  const turn = new Matrix3();
+  function updatePools() {
+    if (!table.mesh.visible || !shape) return;
+    turn.setFromMatrix4(group.matrixWorld);
+    const pools = lightPools({ normals: shape.normals, centres: shape.centres, areas: shape.areas, colours: faceLinear, rotation: turn.elements, tableY: TABLE_Y, max: MAX_POOLS });
+    const u = table.uniforms;
+    u.uPoolCount.value = pools.length;
+    pools.forEach((p, i) => {
+      u.uPoolPos.value[i].set(p.x, p.z, p.radius);
+      const k = Math.min(1.5, p.strength * 1.6) * effective.lampBrightness * 0.5;
+      u.uPoolCol.value[i].setRGB(p.colour[0] * tableLamp.r * k, p.colour[1] * tableLamp.g * k, p.colour[2] * tableLamp.b * k);
+    });
+  }
+
+  const bufferSize = new Vector2();
+
   function resize() {
     const w = canvas.clientWidth || 1;
     const h = canvas.clientHeight || 1;
@@ -146,9 +195,10 @@ export function createLantern(canvas, initial = {}) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     // Keep the whole lantern in view on tall, narrow screens.
-    camera.position.z = Math.max(5, (4 * h) / w);
+    viewDistance = Math.max(5, (4 * h) / w);
+    placeCamera();
     camera.updateProjectionMatrix();
-    background.uniforms.uAspect.value.set(Math.max(1, w / h), Math.max(1, h / w));
+    background.invalidate();
   }
 
   function refresh() {
@@ -194,12 +244,17 @@ export function createLantern(canvas, initial = {}) {
     },
     resize,
     render() {
+      renderer.getDrawingBufferSize(bufferSize);
+      background.paint(bufferSize.x, bufferSize.y);
+      group.updateMatrixWorld();
+      updatePools();
       renderer.render(scene, camera);
     },
     dispose() {
       panes.geometry.dispose();
       came.geometry.dispose();
       envTexture.dispose();
+      background.dispose();
       renderer.dispose();
     },
   };

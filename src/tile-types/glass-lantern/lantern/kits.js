@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "./settings.js";
 // background in one go; creators can then adjust.
 //
 // All three were tuned by the user on the phone in the look lab (Oct 3 2026).
+// Backgrounds and tabletops: all three tuned by the user too (Oct 3 2026).
 // The shared base is the user's first tuning: clear glass with no bending,
 // thin, flat, satin came. Each kit sets its own colours, metal, lamp and
 // texture. Once tiles using a kit are published, a change to that kit's
@@ -49,11 +50,20 @@ export const KITS = Object.freeze([
       lampBrightness: 2.5,
       lampSize: 0.55,
       keyLight: 1.2,
-      envIntensity: 1,
+      envIntensity: 0.8,
+      background: "parlour",
       bgTop: "#3a2618", // warm dark wood
       bgBottom: "#0e0907",
-      bgHalo: 0.55,
-      bgVignette: 0.6,
+      bgAccent: "#8c6239", // bronze-toned rail
+      bgHalo: 0.47,
+      bgVignette: 0.43,
+      bgScale: 0.99,
+      bgContrast: 0, //   grain flattened: the panelling stays quiet behind the glass
+      bgBrightness: 1,
+      bgSoftness: 1, //   fully soft, out of focus
+      tabletop: true, //  a Tiffany lamp on a table
+      tableColor: "#24170e",
+      poolStrength: 0.6,
     }),
   }),
   Object.freeze({
@@ -80,10 +90,18 @@ export const KITS = Object.freeze([
       lampSize: 0.55,
       keyLight: 1.2,
       envIntensity: 1.5, // stronger reflections on the dark metal
+      background: "damask",
       bgTop: "#2a1426", //  plum velvet
       bgBottom: "#0a0509",
-      bgHalo: 0.45,
-      bgVignette: 0.65,
+      bgAccent: "#c9a043", // gilt
+      bgHalo: 0.14,
+      bgVignette: 0.14,
+      bgScale: 4, //      a small, fine damask repeat
+      bgContrast: 0.36,
+      bgBrightness: 0.89,
+      bgSoftness: 0.36,
+      tabletop: false,
+      tableColor: "#1a0f16",
     }),
   }),
   Object.freeze({
@@ -114,10 +132,18 @@ export const KITS = Object.freeze([
       lampSize: 0.36,
       keyLight: 1.3,
       envIntensity: 0.65,
-      bgTop: "#2b2622", //   sooty workshop
+      background: "workshop",
+      bgTop: "#2b2622", //   sooty brick
       bgBottom: "#0b0a09",
-      bgHalo: 0.4,
-      bgVignette: 0.7,
+      bgAccent: "#b58a3c", // brass pipes
+      bgHalo: 0.36,
+      bgVignette: 0.52,
+      bgScale: 2.04, //   smaller bricks
+      bgContrast: 1.21,
+      bgBrightness: 0.92,
+      bgSoftness: 0.15, // fairly sharp: the gears and pipes stay legible
+      tabletop: false,
+      tableColor: "#1c1916",
     }),
   }),
 ]);

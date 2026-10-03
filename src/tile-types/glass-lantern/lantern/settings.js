@@ -71,11 +71,22 @@ export const DEFAULT_SETTINGS = Object.freeze({
   keyLight: 1.2, //       light from outside, upper left
   envIntensity: 1.0,
 
-  // Background (placeholder until the kit backgrounds exist)
-  bgTop: "#3a2618",
-  bgBottom: "#0e0907",
+  // Background (see background.js: plain, parlour, damask, workshop)
+  background: "plain",
+  bgTop: "#3a2618", //    main colour (wood, velvet, brick)
+  bgBottom: "#0e0907", // dark colour (shadows, gaps, mortar)
+  bgAccent: "#b58a3c", // accent (rail, gilt, pipes)
   bgHalo: 0.55, //        warm glow behind the lantern
   bgVignette: 0.6,
+  bgScale: 1, //          pattern size
+  bgContrast: 1,
+  bgBrightness: 1,
+  bgSoftness: 0.5, //     0 = sharp, 1 = very soft (painted smaller)
+
+  // Tabletop under the lantern, lit by pools of coloured light
+  tabletop: false,
+  tableColor: "#24170e",
+  poolStrength: 1.2,
 
   // Expensive parts, switchable for the phone check
   reflections: true, //   generated studio environment for metal and glass
