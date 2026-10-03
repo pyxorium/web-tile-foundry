@@ -1,5 +1,8 @@
 import { TILE_CSP } from "./policy.js";
 
+/** The tile server the real-loader previews use (runtime, service worker, sandbox). */
+export const LOAD_DOMAIN = "load.tiles.thunderbird.cafe";
+
 // Turns a built tile into the shape @dasl/tile-loader's MemoryTileLoader takes,
 // so the tile can run through the real loading pipeline (tile server runtime,
 // service worker, sandbox) before anything is published. Same shape as the

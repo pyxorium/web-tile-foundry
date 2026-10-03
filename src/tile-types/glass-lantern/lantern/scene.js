@@ -31,7 +31,15 @@ export const ZOOM_MIN = 0.6; // viewer zoom limits (1 = the normal framing)
 export const ZOOM_MAX = 2.2;
 const GEOMETRY_KEYS = ["cameWidth", "cameFlatten", "rivets", "bezelWidth", "bezelDepth"];
 
-export function createLantern(canvas, initial = {}) {
+/**
+ * Options (besides the look settings in `initial`):
+ *   fill   how much of the box's shorter side the lantern fills (0..1). Left
+ *          out, the lab's framing is kept. The tile uses about 0.84: big, with
+ *          a little room round it.
+ */
+const LANTERN_RADIUS = 1.08; // the shape (radius 1) plus its came
+
+export function createLantern(canvas, initial = {}, { fill = null } = {}) {
   const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.outputColorSpace = SRGBColorSpace;
@@ -175,9 +183,15 @@ export function createLantern(canvas, initial = {}) {
     applyPixelRatio();
   }
 
+  // The drawing size in CSS pixels: the canvas's size on the page, or a fixed
+  // size given to resize(w, h) (for pictures drawn off screen).
+  let fixedSize = null;
+  const cssWidth = () => (fixedSize ? fixedSize.w : canvas.clientWidth || 1);
+  const cssHeight = () => (fixedSize ? fixedSize.h : canvas.clientHeight || 1);
+
   function applyPixelRatio() {
-    const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-    pixels = pixelRatioFor({ width: canvas.clientWidth || 1, height: canvas.clientHeight || 1, devicePixelRatio: dpr, pixelRatio: effective.pixelRatio, maxPixels: effective.maxPixels });
+    const dpr = typeof window === "undefined" || fixedSize ? 1 : window.devicePixelRatio || 1;
+    pixels = pixelRatioFor({ width: cssWidth(), height: cssHeight(), devicePixelRatio: dpr, pixelRatio: effective.pixelRatio, maxPixels: effective.maxPixels });
     if (renderer.getPixelRatio() !== pixels.ratio) renderer.setPixelRatio(pixels.ratio);
   }
 
@@ -188,7 +202,8 @@ export function createLantern(canvas, initial = {}) {
     const tilt = effective.tabletop ? 0.24 : 0;
     const d = viewDistance / zoom;
     camera.position.set(0, Math.sin(tilt) * d, Math.cos(tilt) * d);
-    camera.lookAt(0, effective.tabletop ? -0.15 : 0, 0);
+    // The lab looks a little down at the table; the tile keeps the lantern centred.
+    camera.lookAt(0, effective.tabletop && !fill ? -0.15 : 0, 0);
   }
 
   // Light pools on the table, worked out each frame from the lantern's rotation.
@@ -209,14 +224,21 @@ export function createLantern(canvas, initial = {}) {
 
   const bufferSize = new Vector2();
 
-  function resize() {
-    const w = canvas.clientWidth || 1;
-    const h = canvas.clientHeight || 1;
+  function resize(width, height) {
+    if (width && height) fixedSize = { w: width, h: height };
+    const w = cssWidth();
+    const h = cssHeight();
     applyPixelRatio();
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    // Keep the whole lantern in view on tall, narrow screens.
-    viewDistance = Math.max(5, (4 * h) / w);
+    if (fill) {
+      // The lantern's width fills `fill` of the shorter side, centred.
+      const halfTan = Math.tan((camera.fov * Math.PI) / 360) * Math.min(1, w / h);
+      viewDistance = LANTERN_RADIUS / (fill * halfTan);
+    } else {
+      // The lab's framing. Keep the whole lantern in view on tall, narrow screens.
+      viewDistance = Math.max(5, (4 * h) / w);
+    }
     placeCamera();
     camera.updateProjectionMatrix();
     background.invalidate();
@@ -290,10 +312,10 @@ export function createLantern(canvas, initial = {}) {
     },
     /** Where the lantern is on screen: centre and radius in CSS pixels (for zooming only over it). */
     screenCircle() {
-      const h = canvas.clientHeight || 1;
-      const w = canvas.clientWidth || 1;
+      const h = cssHeight();
+      const w = cssWidth();
       const dist = camera.position.length();
-      const r = (1.08 / dist / Math.tan((camera.fov * Math.PI) / 360)) * (h / 2);
+      const r = (LANTERN_RADIUS / dist / Math.tan((camera.fov * Math.PI) / 360)) * (h / 2);
       const centre = group.position.clone().project(camera);
       return { x: ((centre.x + 1) / 2) * w, y: ((1 - centre.y) / 2) * h, r };
     },

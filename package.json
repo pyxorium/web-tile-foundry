@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "lab": "vite --host --open /lab/glass-lantern.html",
+    "tiletest": "vite --host --open /lab/tile-test.html",
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test \"test/**/*.test.mjs\""

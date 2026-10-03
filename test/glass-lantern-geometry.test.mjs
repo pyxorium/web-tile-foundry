@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { SHAPE_GROUPS, GEM_FACETS, getShape, shapeForTile } from "../src/tile-types/glass-lantern/geometry/index.js";
+import { SHAPE_GROUPS, GEM_FACETS, getShape, shapeForTile, deriveShape } from "../src/tile-types/glass-lantern/geometry/index.js";
 import { checkShape, length, sub, dot, fingerprintOf } from "../src/tile-types/glass-lantern/geometry/polyhedron.js";
 import { CHESTAHEDRON_FOLD } from "../src/tile-types/glass-lantern/geometry/chestahedron.js";
 import { seededRandom } from "../src/tile-types/glass-lantern/geometry/gem.js";
@@ -253,4 +253,22 @@ test("the shape groups list what the plan agreed: six dice, the chestahedron, ge
   assert.deepEqual(SHAPE_GROUPS.map((g) => g.id), ["classic", "special", "gem"]);
   assert.deepEqual(SHAPE_GROUPS[0].shapes.map((s) => s.id), ["d4", "d6", "d8", "d10", "d12", "d20"]);
   assert.deepEqual(GEM_FACETS, { min: 10, max: 24, default: 14 });
+});
+
+test("a tile rebuilds the exact same shape from just its corners and faces", () => {
+  const choices = [
+    ...["d4", "d6", "d8", "d10", "d12", "d20"].map((id) => ({ group: "classic", id })),
+    { group: "special", id: "chestahedron" },
+    { group: "gem", id: "gem", seed: 42, facets: 14 },
+    { group: "gem", id: "gem", seed: 7, facets: 24 },
+  ];
+  for (const choice of choices) {
+    const shape = getShape(choice);
+    // What the tile stores goes through JSON, then comes back.
+    const stored = JSON.parse(JSON.stringify(shapeForTile(shape)));
+    const rebuilt = deriveShape(stored);
+    for (const key of ["vertices", "faces", "normals", "centres", "areas", "edges", "fingerprint"]) {
+      assert.deepEqual(rebuilt[key], shape[key], `${shape.id} ${key}`);
+    }
+  }
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { toMemoryTile } from "../core/loader-tile.js";
+import { toMemoryTile, LOAD_DOMAIN } from "../core/loader-tile.js";
 
 // Runs the tile through the REAL tile loader: the page's TileMothership talks
 // to the tile server at LOAD_DOMAIN, which provides the runtime, service worker
@@ -7,7 +7,7 @@ import { toMemoryTile } from "../core/loader-tile.js";
 // memory, so nothing is published. Follows the die demos' die-demo.js and
 // dev-entry.js, and the blog's WebTile.astro.
 
-export const LOAD_DOMAIN = "load.tiles.thunderbird.cafe";
+export { LOAD_DOMAIN };
 const HEIGHT = 360;
 
 // One shared mothership for the whole page: two would each react to the

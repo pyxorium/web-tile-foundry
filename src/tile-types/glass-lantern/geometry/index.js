@@ -16,6 +16,7 @@ export const SHAPE_GROUPS = Object.freeze([
 ]);
 
 export { GEM_FACETS, randomSeed };
+export { deriveShape } from "./polyhedron.js";
 
 export function getShape(choice) {
   const { group, id } = choice || {};

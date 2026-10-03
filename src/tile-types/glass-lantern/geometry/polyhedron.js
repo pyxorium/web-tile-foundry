@@ -165,6 +165,17 @@ export function finishShape({ id, group, points, faces }, extra = {}) {
   const centreOf = (f) => polygonCentre(f.map((i) => vertices[i]));
   faces.sort((a, b) => byHeightThenAngle(centreOf(a), centreOf(b)));
 
+  return deriveShape({ id, group, ...extra, vertices, faces });
+}
+
+/**
+ * Rebuilds a full shape from just its vertices and faces, keeping their order
+ * exactly as given. A tile only stores vertices and faces; this gives it back
+ * the normals, centres, areas and edges. finishShape uses it too, so the two
+ * always agree.
+ */
+export function deriveShape(shape) {
+  const { vertices, faces } = shape;
   const normals = [];
   const centres = [];
   const areas = [];
@@ -186,7 +197,7 @@ export function finishShape({ id, group, points, faces }, extra = {}) {
   }
   const edges = [...edgeSet].map((s) => s.split(",").map(Number)).sort((p, q) => p[0] - q[0] || p[1] - q[1]);
 
-  return { id, group, ...extra, vertices, faces, normals, centres, areas, edges, fingerprint: fingerprintOf(vertices, faces) };
+  return { ...shape, vertices, faces, normals, centres, areas, edges, fingerprint: fingerprintOf(vertices, faces) };
 }
 
 /**

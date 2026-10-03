@@ -11,6 +11,7 @@ export const CONTENT_TYPES = Object.freeze({
   ".png": "image/png",
   ".json": "application/json",
   ".glb": "model/gltf-binary",
+  ".js": "text/javascript",
 });
 
 const encoder = new TextEncoder();
