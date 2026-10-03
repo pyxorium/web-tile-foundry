@@ -133,12 +133,14 @@ test("quality: a hopeless device steps down quickly and ends at backup glass", (
   assert.equal(g.state, "done");
   assert.equal(overridesFor(g.count).realGlass, false);
   // Two very slow frames are enough to act: no waiting out the full window.
-  assert.ok(t > 0 && changes.length === 5);
+  assert.ok(t > 0 && changes.length === QUALITY_STEPS.length);
 });
 
 test("quality: overrides merge in order; safe settings are the lightest look", () => {
   assert.deepEqual(overridesFor(0), {});
-  assert.deepEqual(overridesFor(2), { glassResolution: "half", dispersion: 0 });
+  assert.deepEqual(overridesFor(2), { glassMethod: "clear", glassResolution: "half" });
+  assert.equal(QUALITY_STEPS[0].id, "clear-glass", "clear glass is the first fallback");
+  assert.equal(DEFAULT_SETTINGS.glassMethod, "real", "real glass by default");
   assert.equal(SAFE_SETTINGS.realGlass, false);
   assert.equal(SAFE_SETTINGS.pixelRatio, "1");
 });
@@ -268,4 +270,127 @@ test("kits: Steampunk carries the user's workshop tuning", () => {
   assert.equal(look.bgScale, 2.04);
   assert.equal(look.bgContrast, 1.21);
   assert.equal(look.bgSoftness, 0.15);
+});
+
+// ---------- clear glass ----------
+import { resolveGlassMethod, GLASS_METHODS } from "../src/tile-types/glass-lantern/lantern/settings.js";
+import { stepIsUseful } from "../src/tile-types/glass-lantern/lantern/quality.js";
+
+test("glass method: auto picks clear glass when nothing bends, real glass when it does", () => {
+  assert.deepEqual(GLASS_METHODS, ["auto", "real", "clear", "backup"]);
+  const base = { ...DEFAULT_SETTINGS, glassMethod: "auto" };
+  assert.equal(resolveGlassMethod({ ...base, ior: 1, thickness: 0 }), "clear");
+  assert.equal(resolveGlassMethod({ ...base, ior: 1.29, thickness: 0.11 }), "real");
+  assert.equal(resolveGlassMethod({ ...kitLook("tiffany"), glassMethod: "auto", realGlass: true }), "clear");
+  assert.equal(resolveGlassMethod({ ...kitLook("victorian"), glassMethod: "auto", realGlass: true }), "clear");
+  assert.equal(resolveGlassMethod({ ...kitLook("steampunk"), glassMethod: "auto", realGlass: true }), "real");
+  assert.equal(resolveGlassMethod({ ...base, glassMethod: "real", ior: 1, thickness: 0 }), "real", "chosen by hand");
+  assert.equal(resolveGlassMethod({ ...base, realGlass: false }), "backup", "auto quality's last step and safe mode still win");
+});
+
+test("quality: steps that change nothing are skipped (clear glass needs no half resolution)", () => {
+  const clearKit = { ...kitLook("tiffany"), ...DEFAULT_SETTINGS, ...kitLook("tiffany"), glassMethod: "auto", realGlass: true };
+  assert.equal(stepIsUseful(QUALITY_STEPS[0], clearKit), false, "already clear");
+  assert.equal(stepIsUseful(QUALITY_STEPS[1], clearKit), false, "half resolution does nothing for clear glass");
+  const g = createQualityGovernor({ isUseful: (step, before) => stepIsUseful(step, { ...clearKit, ...before }) });
+  const { changes } = run(g, 1000 / 30, 2.5);
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].step.id, "no-far-side", "the first step that matters for a clear-glass kit");
+  const bending = { ...DEFAULT_SETTINGS, ...kitLook("steampunk"), glassMethod: "auto", realGlass: true };
+  assert.equal(stepIsUseful(QUALITY_STEPS[0], bending), true);
+  assert.equal(stepIsUseful(QUALITY_STEPS[1], bending), true, "a bending kit can fall back to clear glass");
+});
+
+test("quality: a slow device on real glass falls back to clear glass first, then skips half resolution", () => {
+  const realKit = { ...DEFAULT_SETTINGS, ...kitLook("tiffany"), glassMethod: "real", realGlass: true };
+  const g = createQualityGovernor({ isUseful: (step, before) => stepIsUseful(step, { ...realKit, ...before }) });
+  const first = run(g, 1000 / 30, 2.5);
+  assert.equal(first.changes[0].step.id, "clear-glass");
+  const second = run(g, 1000 / 30, 2.5, first.t);
+  assert.equal(second.changes[0].step.id, "no-far-side", "half resolution and rainbow edges change nothing on clear glass");
+});
+
+// ---------- stage 4: rolling ----------
+import { Quaternion, Vector3 } from "three";
+import { pickFace, faceTowards, tumbleAt, isTap, glowAt, easeOutCubic } from "../src/tile-types/glass-lantern/lantern/roll.js";
+
+test("roll: every face of every shape can be brought round to face the viewer", () => {
+  const views = [[0, 0, 1], [0, Math.sin(0.24), Math.cos(0.24)]]; // straight on, and tilted down for the tabletop
+  for (const shape of everyShape()) {
+    for (const view of views) {
+      shape.normals.forEach((n, i) => {
+        for (const twist of [0, 0.7, -1.2]) {
+          const q = faceTowards(n, view, twist);
+          const turned = new Vector3(...n).applyQuaternion(q);
+          assert.ok(turned.dot(new Vector3(...view).normalize()) > 0.99999, `${shape.id} face ${i}`);
+        }
+      });
+    }
+  }
+});
+
+test("roll: the tumble starts exactly where it was and ends exactly on the chosen face", () => {
+  const from = new Quaternion().setFromAxisAngle(new Vector3(1, 2, 3).normalize(), 1.1);
+  const to = new Quaternion().setFromAxisAngle(new Vector3(-2, 1, 0).normalize(), 2.3);
+  const axis = new Vector3(0.3, -0.5, 0.8).normalize();
+  const same = (a, b) => Math.abs(a.dot(b)) > 0.999999; // q and -q are the same turn
+  assert.ok(same(tumbleAt(from, to, axis, 2, 0), from));
+  assert.ok(same(tumbleAt(from, to, axis, 2, 1), to));
+  const mid = tumbleAt(from, to, axis, 2, 0.5);
+  assert.ok(Math.abs(mid.length() - 1) < 1e-9, "stays a pure rotation");
+  assert.equal(easeOutCubic(0), 0);
+  assert.equal(easeOutCubic(1), 1);
+});
+
+test("roll: faces are picked fairly, always in range", () => {
+  let seed = 12345;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const counts = new Array(7).fill(0); // the chestahedron's seven faces
+  for (let i = 0; i < 70000; i++) counts[pickFace(7, rand)]++;
+  for (const c of counts) assert.ok(Math.abs(c - 10000) < 500, `uneven: ${counts.join(", ")}`);
+  assert.equal(pickFace(20, () => 0.999999999), 19);
+  assert.equal(pickFace(20, () => 0), 0);
+});
+
+test("taps are told apart from drags; the winning pane's glow rises then fades", () => {
+  assert.equal(isTap({ moved: 3, ms: 150, fingers: 1 }), true);
+  assert.equal(isTap({ moved: 40, ms: 150, fingers: 1 }), false, "moved: a drag");
+  assert.equal(isTap({ moved: 2, ms: 900, fingers: 1 }), false, "held: not a tap");
+  assert.equal(isTap({ moved: 2, ms: 150, fingers: 2 }), false, "a pinch is never a roll");
+  assert.equal(glowAt(0), 0);
+  assert.equal(glowAt(0.18), 1);
+  assert.ok(glowAt(0.8) > 0 && glowAt(0.8) < 1);
+  assert.equal(glowAt(3), 0);
+});
+
+// ---------- the roll's feel ----------
+import { makeRollCurve, ROLL_DEFAULTS } from "../src/tile-types/glass-lantern/lantern/roll.js";
+
+test("roll feel: defaults are the agreed heavier roll, and live in the settings too", () => {
+  assert.deepEqual(ROLL_DEFAULTS, { rollDuration: 3.55, rollSpins: 2, rollWindUp: 0.61, rollEase: 0.85, rollSettle: 4 });
+  for (const [k, v] of Object.entries(ROLL_DEFAULTS)) assert.equal(DEFAULT_SETTINGS[k], v, k);
+});
+
+test("roll feel: starts at rest, winds up, lands, settles about 4 degrees past and rests exactly", () => {
+  const c = makeRollCurve();
+  assert.equal(c.duration, 3.55);
+  assert.equal(c.progress(0), 0);
+  assert.equal(c.progress(3.55), 1);
+  const speed = (t) => (c.progress(t + 0.001) - c.progress(t - 0.001)) / 0.002;
+  assert.ok(speed(0.01) < speed(0.61) * 0.1, "it gathers speed instead of jumping to full speed");
+  let half = 0;
+  for (let t = 0; t < 4; t += 0.005) if (c.progress(t) >= 0.5) { half = t; break; }
+  assert.ok(half > 1.0 && half < 1.6, `half the turning by ${half}s (the first roll: 0.31s)`);
+  let over = 0;
+  for (let t = 2; t < 3.55; t += 0.001) over = Math.max(over, c.progress(t) - 1);
+  assert.ok(Math.abs(over * 2 * 360 - 4) < 0.05, `settles ${over * 720} degrees past`);
+});
+
+test("roll feel: no settle means no overshoot; even slowdown spreads the motion out", () => {
+  const flat = makeRollCurve({ rollSettle: 0 });
+  for (let t = 0; t <= flat.duration; t += 0.01) assert.ok(flat.progress(t) <= 1 + 1e-12);
+  const even = makeRollCurve({ rollEase: 1, rollSettle: 0 });
+  const early = makeRollCurve({ rollEase: 3, rollSettle: 0 });
+  assert.ok(early.progress(0.8) > even.progress(0.8), "a higher slowdown value front-loads the motion");
+  assert.equal(makeRollCurve({ rollSpins: 2.4 }).spins, 2, "spins are whole turns");
 });

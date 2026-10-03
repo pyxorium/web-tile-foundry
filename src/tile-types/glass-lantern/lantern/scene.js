@@ -5,12 +5,12 @@ import {
 } from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { buildPanes, buildCame } from "./meshes.js";
-import { makeGlassUniforms, makeGlassMaterial, makeRealGlassMaterial, makeMetalMaterial } from "./materials.js";
+import { makeGlassUniforms, makeGlassMaterial, makeRealGlassMaterial, makeClearGlass, makeMetalMaterial } from "./materials.js";
 import { makeLampGlow } from "./lamp.js";
 import { makeBackground, BACKGROUNDS } from "./background.js";
 import { makeTable, MAX_POOLS } from "./table.js";
 import { lightPools } from "./pools.js";
-import { DEFAULT_SETTINGS, METALS, kelvinToHex, alternateColours, pixelRatioFor } from "./settings.js";
+import { DEFAULT_SETTINGS, METALS, kelvinToHex, alternateColours, pixelRatioFor, resolveGlassMethod } from "./settings.js";
 
 // One lantern on a canvas. Used by the look lab now, and the basis of the
 // tile's runtime later (stage 5) and the Foundry's preview (stage 6).
@@ -27,6 +27,8 @@ import { DEFAULT_SETTINGS, METALS, kelvinToHex, alternateColours, pixelRatioFor 
 // Geometry is rebuilt only when a setting that changes its shape changes.
 
 const TABLE_Y = -1.22; //  just below the lantern (radius 1, plus the came)
+export const ZOOM_MIN = 0.6; // viewer zoom limits (1 = the normal framing)
+export const ZOOM_MAX = 2.2;
 const GEOMETRY_KEYS = ["cameWidth", "cameFlatten", "rivets", "bezelWidth", "bezelDepth"];
 
 export function createLantern(canvas, initial = {}) {
@@ -76,7 +78,15 @@ export function createLantern(canvas, initial = {}) {
   const farPanes = new Mesh(undefined, farGlass.material);
   farPanes.renderOrder = 0;
   const came = new Mesh(undefined, metal);
-  group.add(farPanes, panes, came);
+  // Clear glass: two see-through layers on the same pane geometry, drawn after
+  // everything solid (tint first, then the surface).
+  const clear = makeClearGlass(glassUniforms);
+  const clearTint = new Mesh(undefined, clear.tint);
+  const clearSurface = new Mesh(undefined, clear.surface);
+  clearTint.renderOrder = 3;
+  clearSurface.renderOrder = 4;
+  group.add(farPanes, panes, clearTint, clearSurface, came);
+  let glassMethod = "real";
 
   let settings = { ...DEFAULT_SETTINGS, ...initial };
   let overrides = {};
@@ -94,6 +104,8 @@ export function createLantern(canvas, initial = {}) {
     faceLinear = faceColours.map((c) => new Color(c).toArray());
     panes.geometry = buildPanes(shape, faceColours, effective);
     farPanes.geometry = panes.geometry;
+    clearTint.geometry = panes.geometry;
+    clearSurface.geometry = panes.geometry;
     came.geometry = buildCame(shape, effective);
   }
 
@@ -109,18 +121,25 @@ export function createLantern(canvas, initial = {}) {
     u.uOpal.value = s.opalOn ? s.opal : 0;
     u.uOpalScale.value = s.opalScale;
     u.uOpalGlow.value = s.opalGlow * s.lampBrightness * 0.4;
+    u.uOpalAmbient.value = 0.35 * s.envIntensity; // stands in for the surrounding light real glass adds
     glass.material.roughness = s.glassRoughness;
     farGlass.material.roughness = s.glassRoughness;
     realGlass.roughness = s.frost;
     realGlass.thickness = s.thickness;
     realGlass.ior = s.ior;
     realGlass.dispersion = s.dispersion;
+    clear.surface.roughness = s.frost;
+    clear.surface.ior = s.ior;
     renderer.transmissionResolutionScale = s.glassResolution === "half" ? 0.5 : 1;
 
-    panes.material = s.realGlass ? realGlass : glass.material;
-    farPanes.visible = s.realGlass && s.farSide;
-    lampLight.visible = lampGlow.visible = s.realGlass;
-    lampBulb.visible = s.realGlass && s.showBulb;
+    glassMethod = resolveGlassMethod(s);
+    const seeThrough = glassMethod !== "backup"; // real and clear glass both show what is behind
+    panes.material = glassMethod === "real" ? realGlass : glass.material;
+    panes.visible = glassMethod !== "clear";
+    clearTint.visible = clearSurface.visible = glassMethod === "clear";
+    farPanes.visible = seeThrough && s.farSide;
+    lampLight.visible = lampGlow.visible = seeThrough;
+    lampBulb.visible = seeThrough && s.showBulb;
     lampLight.color.copy(lamp);
     lampLight.intensity = 2 * s.lampBrightness;
     lampGlow.material.color.copy(lamp).multiplyScalar(s.lampBrightness);
@@ -164,9 +183,11 @@ export function createLantern(canvas, initial = {}) {
 
   // With a tabletop the camera looks down a little, so the table shows.
   let viewDistance = 5;
+  let zoom = 1; // viewer's zoom: above 1 is closer
   function placeCamera() {
     const tilt = effective.tabletop ? 0.24 : 0;
-    camera.position.set(0, Math.sin(tilt) * viewDistance, Math.cos(tilt) * viewDistance);
+    const d = viewDistance / zoom;
+    camera.position.set(0, Math.sin(tilt) * d, Math.cos(tilt) * d);
     camera.lookAt(0, effective.tabletop ? -0.15 : 0, 0);
   }
 
@@ -221,6 +242,10 @@ export function createLantern(canvas, initial = {}) {
     get effective() {
       return { ...effective };
     },
+    /** The glass method in use: "real", "clear" or "backup". */
+    get glassMethod() {
+      return glassMethod;
+    },
     /** { ratio, capped }: the pixel ratio in use, and whether the pixel budget lowered it. */
     get pixels() {
       return { ...pixels };
@@ -243,6 +268,35 @@ export function createLantern(canvas, initial = {}) {
       refresh();
     },
     resize,
+    /** The current shape (stage 2 geometry), for rolling. */
+    get shape() {
+      return shape;
+    },
+    /** Unit vector from the lantern towards the camera (world space). */
+    viewDirection() {
+      return camera.position.clone().normalize();
+    },
+    get zoom() {
+      return zoom;
+    },
+    setZoom(z) {
+      zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+      placeCamera();
+    },
+    /** Lights pane `face` (stage 2 face order) with glow 0..1; face -1 for none. */
+    setHighlight(face, amount) {
+      glassUniforms.uHighlightFace.value = face;
+      glassUniforms.uHighlight.value = amount;
+    },
+    /** Where the lantern is on screen: centre and radius in CSS pixels (for zooming only over it). */
+    screenCircle() {
+      const h = canvas.clientHeight || 1;
+      const w = canvas.clientWidth || 1;
+      const dist = camera.position.length();
+      const r = (1.08 / dist / Math.tan((camera.fov * Math.PI) / 360)) * (h / 2);
+      const centre = group.position.clone().project(camera);
+      return { x: ((centre.x + 1) / 2) * w, y: ((1 - centre.y) / 2) * h, r };
+    },
     render() {
       renderer.getDrawingBufferSize(bufferSize);
       background.paint(bufferSize.x, bufferSize.y);

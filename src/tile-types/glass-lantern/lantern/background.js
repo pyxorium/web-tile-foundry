@@ -8,7 +8,7 @@ import {
 //   plain     Plain glow: a soft gradient with a warm halo (what the lab first showed)
 //   parlour   Parlour: dark wood panelling, a carved rail, panelled wainscot (Tiffany)
 //   damask    Velvet damask: plum wallpaper with a damask flourish (Victorian)
-//   workshop  Workshop: sooty brick, gear and pipe silhouettes, a cool side light (Steampunk)
+//   workshop  Workshop: sooty brick, brass pipes, a cool side light (Steampunk)
 //
 // The background never moves, so it is PAINTED ONCE into a picture (a render
 // target) whenever its settings or the canvas size change, and each frame only
@@ -126,19 +126,6 @@ vec3 damask(vec2 uv, vec2 p) {
   return mix(base, motif, m * clamp(0.6 * uContrast, 0.0, 1.0)) + fabric * uMain;
 }
 
-// A gear: distance from its outline (< 0 inside).
-float gear(vec2 v, float r, float teeth, float turn) {
-  float a = atan(v.y, v.x) + turn;
-  float len = length(v);
-  float outline = r + r * 0.13 * smoothstep(-0.25, 0.25, cos(a * teeth));
-  float d = len - outline;
-  d = max(d, -(len - r * 0.22));                                   // axle hole
-  float spokeGap = abs(sin(a * 2.5)) - 0.55;                       // five openings between spokes
-  float ringCut = max(len - r * 0.72, r * 0.36 - len);
-  d = max(d, -max(ringCut, -spokeGap * r));
-  return d;
-}
-
 vec3 workshop(vec2 uv, vec2 p) {
   // Brick wall.
   vec2 q = p * 6.0 * uScale;
@@ -168,14 +155,7 @@ vec3 workshop(vec2 uv, vec2 p) {
     }
   }
 
-  // Gear silhouettes, dark against the wall with a faint brass rim.
-  vec2 g1 = vec2(-halfW + 0.12, 0.3);
-  vec2 g2 = vec2(halfW - 0.22, -0.08);
-  vec2 g3 = g2 + vec2(-0.17, 0.27);
-  float d = min(gear(p - g1, 0.3, 14.0, 0.0), min(gear(p - g2, 0.22, 11.0, 0.3), gear(p - g3, 0.11, 7.0, 0.1)));
-  float inside = 1.0 - smoothstep(-0.002, 0.004, d);
-  col = mix(col, uDark * 0.4 + uAccent * 0.06, inside);
-  col += uAccent * 0.3 * (1.0 - smoothstep(0.0, 0.01, abs(d))) * smoothstep(-0.2, 0.4, p.x + p.y);
+  // (The gear silhouettes were removed at the user's request, Oct 3.)
 
   // A cooler light from the right (the "cooler rim" in the plan).
   col += vec3(0.25, 0.35, 0.5) * 0.06 * smoothstep(0.3, 1.0, uv.x);

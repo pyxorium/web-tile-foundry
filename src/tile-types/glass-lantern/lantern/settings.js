@@ -19,6 +19,23 @@ export const PIXEL_RATIOS = Object.freeze(["1", "1.5", "2", "device"]);
 export const GLASS_RESOLUTIONS = Object.freeze(["full", "half"]);
 
 /**
+ * How the panes are drawn:
+ *   real    three.js transmission: redraws the scene behind the glass and bends it (costly)
+ *   clear   tints what is behind directly, no redraw: same look when nothing bends (cheap)
+ *   backup  fakes the lamp shining through; cheapest, for slow devices
+ *   auto    clear when bending is off (ior 1, thickness 0), real otherwise
+ */
+export const GLASS_METHODS = Object.freeze(["auto", "real", "clear", "backup"]);
+
+/** Which method is actually used for these settings. */
+export function resolveGlassMethod(s) {
+  if (s.realGlass === false || s.glassMethod === "backup") return "backup";
+  if (s.glassMethod === "real" || s.glassMethod === "clear") return s.glassMethod;
+  const bends = s.ior > 1.001 || s.thickness > 0.001;
+  return bends ? "real" : "clear";
+}
+
+/**
  * The pixel ratio to draw at: the chosen sharpness, but never more pixels than
  * the budget (an ultrawide window can be 5 million pixels at ratio 1).
  */
@@ -83,6 +100,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
   bgBrightness: 1,
   bgSoftness: 0.5, //     0 = sharp, 1 = very soft (painted smaller)
 
+  // The roll (see roll.js, ROLL_DEFAULTS: the same values, tuned by the user Oct 3)
+  rollDuration: 3.55, //  seconds, settle included
+  rollSpins: 2, //        whole extra turns
+  rollWindUp: 0.61, //    seconds gathering speed
+  rollEase: 0.85, //      slowdown shape: 1 = even, higher = more of it early
+  rollSettle: 4, //       degrees past the landing before rocking back
+
   // Tabletop under the lantern, lit by pools of coloured light
   tabletop: false,
   tableColor: "#24170e",
@@ -92,7 +116,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   reflections: true, //   generated studio environment for metal and glass
   rippleOn: true,
   opalOn: true,
-  realGlass: true, //     three.js refraction (transmission); off = backup glass
+  glassMethod: "real", //  see GLASS_METHODS. Real by default: the user preferred it to clear glass (Oct 3);
+  //                       clear glass is auto quality's first fallback instead
+  realGlass: true, //     false forces backup glass (auto quality's last step, safe mode)
   glassResolution: "full", // "half" draws what's seen through the glass at half size (much cheaper)
   pixelRatio: "2",
   maxPixels: 1600000, //  pixel budget (a big phone at sharpness 2 is about 1.5 million): bigger canvases draw at lower resolution and scale up

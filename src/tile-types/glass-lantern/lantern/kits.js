@@ -12,7 +12,7 @@ import { DEFAULT_SETTINGS } from "./settings.js";
 // recipe stores the full settings).
 
 /** Settings that belong to the device, not the look: a kit never changes them. */
-export const DEVICE_KEYS = Object.freeze(["realGlass", "glassResolution", "pixelRatio", "maxPixels", "reflections", "rippleOn", "opalOn"]);
+export const DEVICE_KEYS = Object.freeze(["glassMethod", "realGlass", "glassResolution", "pixelRatio", "maxPixels", "reflections", "rippleOn", "opalOn"]);
 
 /** The user's tuning (Oct 3), shared by every kit. */
 export const KIT_BASE = Object.freeze({

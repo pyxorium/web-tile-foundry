@@ -1,9 +1,10 @@
 import GUI from "lil-gui";
-import { Quaternion, Vector3 } from "three";
 import { getShape, GEM_FACETS, randomSeed } from "../src/tile-types/glass-lantern/geometry/index.js";
 import { createLantern } from "../src/tile-types/glass-lantern/lantern/scene.js";
+import { createInteraction } from "../src/tile-types/glass-lantern/lantern/interaction.js";
+import { createGearMenu } from "../src/tile-types/glass-lantern/lantern/gear.js";
 import { DEFAULT_SETTINGS, METALS, PIXEL_RATIOS, GLASS_RESOLUTIONS } from "../src/tile-types/glass-lantern/lantern/settings.js";
-import { createQualityGovernor, overridesFor, SAFE_SETTINGS } from "../src/tile-types/glass-lantern/lantern/quality.js";
+import { createQualityGovernor, overridesFor, SAFE_SETTINGS, stepIsUseful } from "../src/tile-types/glass-lantern/lantern/quality.js";
 import { KITS, kitLook, DEVICE_KEYS } from "../src/tile-types/glass-lantern/lantern/kits.js";
 import { BACKGROUNDS } from "../src/tile-types/glass-lantern/lantern/background.js";
 
@@ -33,6 +34,9 @@ function save(state) {
 const saved = loadSaved();
 const look = { ...DEFAULT_SETTINGS, ...(saved.look || {}) };
 look.palette = [...(look.palette || DEFAULT_SETTINGS.palette)];
+// The old "Real glass" on/off switch became the Glass method choice.
+if (look.realGlass === false && !(saved.look || {}).glassMethod) look.glassMethod = "backup";
+look.realGlass = true;
 const shapeChoice = { shape: "d12", seed: 20261003, facets: GEM_FACETS.default, ...(saved.shape || {}) };
 const motion = { autoRotate: true, speed: 0.25, autoQuality: true, liveSync: true, ...(saved.motion || {}) };
 const kitChoice = { kit: saved.kit || "custom" };
@@ -44,6 +48,7 @@ const safeMode = params.has("safe");
 const crashed = params.get("safe") === "crashed";
 
 let gui = null;
+let interaction = null; // set once the controls exist (see "viewer interaction" below)
 const canvas = document.getElementById("lantern");
 const lantern = createLantern(canvas, look);
 if (safeMode) lantern.setOverrides(SAFE_SETTINGS);
@@ -63,7 +68,9 @@ function startQuality() {
     return;
   }
   lantern.setOverrides({});
-  governor = createQualityGovernor();
+  // Steps that would change nothing (for example "half resolution" when the
+  // glass is already clear) are skipped instead of measured.
+  governor = createQualityGovernor({ isUseful: (step, before) => stepIsUseful(step, { ...lantern.settings, ...before }) });
 }
 
 function choiceFor(c) {
@@ -73,6 +80,7 @@ function choiceFor(c) {
 }
 function applyShape() {
   lantern.setShape(getShape(choiceFor(shapeChoice)));
+  if (interaction) interaction.shapeChanged();
   persist();
 }
 function applyLook() {
@@ -171,7 +179,7 @@ fGlass.add(look, "opalScale", 0.5, 10, 0.1).name("Opal swirl size").onChange(app
 fGlass.add(look, "opalGlow", 0, 2, 0.01).name("Opal glow").onChange(applyLook);
 
 const fReal = gui.addFolder("Real glass");
-fReal.add(look, "realGlass").name("Real glass (off = backup)").onChange(applyLook);
+fReal.add(look, "glassMethod", Object.fromEntries([["Auto (clear when nothing bends)", "auto"], ["Real (bends light)", "real"], ["Clear (cheaper)", "clear"], ["Backup (cheapest)", "backup"]])).name("Glass method").onChange(applyLook);
 fReal.add(look, "thickness", 0, 0.6, 0.01).name("Thickness").onChange(applyLook);
 fReal.add(look, "ior", 1, 2.4, 0.01).name("Bending").onChange(applyLook);
 fReal.add(look, "frost", 0, 0.6, 0.01).name("Frost").onChange(applyLook);
@@ -216,6 +224,14 @@ fBg.add(look, "bgSoftness", 0, 1, 0.01).name("Softness (sharp ↔ soft)").onChan
 fBg.add(look, "bgHalo", 0, 2, 0.01).name("Lamp light on the wall").onChange(applyLook);
 fBg.add(look, "bgVignette", 0, 1, 0.01).name("Dark edges").onChange(applyLook);
 
+const fRoll = gui.addFolder("Roll (tap the lantern to try)");
+fRoll.add(look, "rollDuration", 0.6, 5, 0.05).name("Duration (s)").onChange(applyLook);
+fRoll.add(look, "rollSpins", 0, 5, 1).name("Spins").onChange(applyLook);
+fRoll.add(look, "rollWindUp", 0, 1, 0.01).name("Wind-up (s)").onChange(applyLook);
+fRoll.add(look, "rollEase", 0.5, 4, 0.05).name("Slowdown (even ↔ early)").onChange(applyLook);
+fRoll.add(look, "rollSettle", 0, 15, 0.5).name("Settle (degrees)").onChange(applyLook);
+fRoll.add({ roll: () => interaction && interaction.roll() }, "roll").name("Roll now");
+
 const fTable = gui.addFolder("Tabletop");
 fTable.add(look, "tabletop").name("Tabletop").onChange(applyLook);
 fTable.addColor(look, "tableColor").name("Table colour").onChange(applyLook);
@@ -225,7 +241,7 @@ const fPerf = gui.addFolder("Phone check (expensive parts)");
 fPerf.add(look, "reflections").name("Reflections").onChange(applyLook);
 fPerf.add(look, "rippleOn").name("Ripple").onChange(applyLook);
 fPerf.add(look, "opalOn").name("Opalescent").onChange(applyLook);
-fPerf.add(look, "realGlass").name("Real glass").onChange(applyLook);
+fPerf.add(look, "glassMethod", Object.fromEntries([["Auto (clear when nothing bends)", "auto"], ["Real (bends light)", "real"], ["Clear (cheaper)", "clear"], ["Backup (cheapest)", "backup"]])).name("Glass method").onChange(applyLook);
 fPerf.add(look, "farSide").name("Glass on the far side").onChange(applyLook);
 fPerf.add(look, "dispersion", 0, 1, 0.01).name("Rainbow edges (0 = off)").onChange(applyLook);
 fPerf.add(look, "pixelRatio", PIXEL_RATIOS).name("Sharpness (pixel ratio)").onChange(applyLook);
@@ -237,8 +253,9 @@ gui.add(motion, "liveSync").name("Live sync with other devices").onChange(() => 
 });
 fPerf.add({ recheck: () => { motion.autoQuality = true; gui.controllersRecursive().forEach((c) => c.updateDisplay()); persist(); startQuality(); } }, "recheck").name("Check quality again");
 if (safeMode) fPerf.add({ leave: () => location.replace(location.pathname) }, "leave").name("Leave safe mode");
-fPerf.add(motion, "autoRotate").name("Slow turn").onChange(persist);
-fPerf.add(motion, "speed", 0, 1.5, 0.01).name("Turn speed").onChange(persist);
+fPerf.add(motion, "autoRotate").name("Slow turn").onChange(() => { interaction.setSlowTurn(motion.autoRotate, motion.speed); gear.setSlowTurn(motion.autoRotate); persist(); });
+fPerf.add(motion, "speed", 0, 1.5, 0.01).name("Turn speed").onChange(() => { interaction.setSlowTurn(motion.autoRotate, motion.speed); persist(); });
+fPerf.add({ roll: () => interaction.roll() }, "roll").name("Roll (same as a tap)");
 
 const box = document.getElementById("settings-box");
 const text = document.getElementById("settings-text");
@@ -263,30 +280,23 @@ if (window.innerWidth < 700) {
   [fPanes, fBackup, fLight].forEach((f) => f.close());
 }
 
-// ---------- drag to turn (temporary; the real interaction is stage 4) ----------
-let dragging = null;
-const turn = new Quaternion();
-const axisX = new Vector3(1, 0, 0);
-const axisY = new Vector3(0, 1, 0);
-canvas.addEventListener("pointerdown", (e) => {
-  dragging = { id: e.pointerId, x: e.clientX, y: e.clientY };
-  canvas.setPointerCapture(e.pointerId);
+// ---------- viewer interaction (stage 4: the same code the tile will use) ----------
+interaction = createInteraction({ canvas, lantern, slowTurn: motion.autoRotate, slowTurnSpeed: motion.speed });
+// The gear menu sits bottom right in the lab (the lab's own panel is top right);
+// in the tile it will be top right.
+const gear = createGearMenu({
+  corner: "bottom-right",
+  slowTurn: motion.autoRotate && !interaction.reducedMotion,
+  onSlowTurn: (on) => {
+    motion.autoRotate = on;
+    interaction.setSlowTurn(on, motion.speed);
+    gui.controllersRecursive().forEach((c) => c.updateDisplay());
+    persist();
+  },
+  onReset: () => interaction.reset(),
 });
-canvas.addEventListener("pointermove", (e) => {
-  if (!dragging || e.pointerId !== dragging.id) return;
-  const k = 4 / Math.max(240, Math.min(canvas.clientWidth, canvas.clientHeight));
-  const dx = (e.clientX - dragging.x) * k;
-  const dy = (e.clientY - dragging.y) * k;
-  dragging.x = e.clientX;
-  dragging.y = e.clientY;
-  lantern.group.quaternion.premultiply(turn.setFromAxisAngle(axisY, dx));
-  lantern.group.quaternion.premultiply(turn.setFromAxisAngle(axisX, dy));
-});
-const endDrag = (e) => {
-  if (dragging && e.pointerId === dragging.id) dragging = null;
-};
-canvas.addEventListener("pointerup", endDrag);
-canvas.addEventListener("pointercancel", endDrag);
+// For checking the lab from the browser console (development only).
+window.lab = { lantern, interaction };
 
 // ---------- frame loop and frame-rate counter ----------
 const stats = document.getElementById("stats");
@@ -308,7 +318,7 @@ function report(now) {
 }
 
 function qualityText() {
-  const lines = [];
+  const lines = [`Glass: ${lantern.glassMethod}${look.glassMethod === "auto" ? " (auto)" : ""}`];
   if (safeMode) lines.push(crashed ? "Safe mode: the graphics crashed, so this is the lightest look" : "Safe mode (lightest look)");
   else if (!motion.autoQuality) lines.push("Auto quality off");
   else if (governor && governor.state !== "done") lines.push("Auto quality: checking…");
@@ -322,7 +332,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   worst = Math.max(worst, now - last);
   last = now;
-  if (motion.autoRotate && !dragging) lantern.group.rotateOnWorldAxis(axisY, dt * motion.speed);
+  interaction.update(dt);
   lantern.render();
   if (governor) {
     const change = governor.frame(performance.now());
