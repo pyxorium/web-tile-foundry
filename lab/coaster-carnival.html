@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Coaster Carnival ride lab</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #10131c; overflow: hidden; }
+      #ride { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+      #readout {
+        position: fixed; left: 10px; top: 10px; z-index: 2; pointer-events: none; max-width: min(360px, 70vw);
+        font: 600 14px/1.4 system-ui, sans-serif; color: #f4efe6;
+        background: rgba(12, 14, 22, 0.72); border-radius: 8px; padding: 8px 11px;
+      }
+      #readout b { font-size: 22px; display: block; }
+      #readout small { display: block; font-weight: 400; opacity: 0.85; }
+      #prompt {
+        position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 2; pointer-events: none;
+        font: 700 20px system-ui, sans-serif; color: #fff; background: rgba(12, 14, 22, 0.6);
+        border-radius: 999px; padding: 10px 22px;
+      }
+      #settings-box {
+        position: fixed; inset: auto 10px 10px 10px; z-index: 3; display: none;
+        background: #1b1f2c; color: #f4efe6; border-radius: 10px; padding: 12px;
+        font: 14px system-ui, sans-serif; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+      }
+      #settings-box textarea { width: 100%; box-sizing: border-box; height: 38vh; font: 12px ui-monospace, monospace; }
+      #settings-box button { font: inherit; margin-top: 8px; padding: 6px 14px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="ride"></canvas>
+    <div id="readout"><b>Coaster Carnival</b><small>starting</small></div>
+    <div id="prompt">Tap to ride</div>
+    <div id="settings-box">
+      <div>These are the current settings. Select all and copy them into the chat to send them to Claude.</div>
+      <textarea id="settings-text" readonly></textarea>
+      <button id="settings-close" type="button">Close</button>
+    </div>
+    <input id="sprite-file" type="file" accept="image/png" hidden />
+    <script type="module" src="./coaster-carnival-lab.js"></script>
+  </body>
+</html>
