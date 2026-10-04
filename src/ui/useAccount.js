@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { restoreSession, signIn as startSignIn, signOut as endSignIn } from "../auth/auth.js";
+import { restoreSession, signIn as startSignIn, signOut as endSignIn, isStorageError } from "../auth/auth.js";
 import { resolveDidDocument, pdsFromDidDocument, handleFromDidDocument, fetchOwnSprite } from "../core/atproto.js";
 import { DEBUG } from "./debug.js";
 
 // The signed-in account, if any:
-//   { status: "starting" | "signedOut" | "signedIn", did, handle, pds, error, busy }
+//   { status: "starting" | "signedOut" | "signedIn", did, handle, pds, error, errorKind, busy }
+// errorKind "storage": the browser wouldn't let the page store data (see auth.js).
+
+export const STORAGE_HELP =
+  "Sign-in couldn't start because this browser isn't allowing the page to store data. " +
+  "Please open this page in your regular browser app (not inside another app, and not in a private tab), then try again.";
+
 export function useAccount() {
   const [account, setAccount] = useState({ status: "starting" });
 
@@ -52,13 +58,17 @@ export function useAccount() {
 
   const signIn = useCallback(async (handle) => {
     if (!handle.trim()) return;
-    setAccount((a) => ({ ...a, busy: true, error: null }));
+    setAccount((a) => ({ ...a, busy: true, error: null, errorKind: null }));
     try {
       await startSignIn(handle);
       // On success the browser has already left for the sign-in page.
     } catch (err) {
       console.error("[sign-in]", err);
-      setAccount((a) => ({ ...a, busy: false, error: `Couldn't start sign-in for that handle: ${err.message}` }));
+      if (isStorageError(err)) {
+        setAccount((a) => ({ ...a, busy: false, error: STORAGE_HELP, errorKind: "storage" }));
+      } else {
+        setAccount((a) => ({ ...a, busy: false, error: `Couldn't start sign-in for that handle: ${err.message}`, errorKind: null }));
+      }
     }
   }, []);
 

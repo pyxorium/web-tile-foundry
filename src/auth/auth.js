@@ -36,8 +36,10 @@ export function ensureLoopbackAddress() {
 }
 
 async function makeClient() {
-  // A test hook for the Foundry's own browser tests, which have no sign-in server.
-  if (globalThis.__FOUNDRY_TEST_AUTH__) return globalThis.__FOUNDRY_TEST_AUTH__;
+  // A test hook for the Foundry's own tests, which have no sign-in server.
+  // It may be a client, or a function that makes a fresh one each time.
+  const testAuth = globalThis.__FOUNDRY_TEST_AUTH__;
+  if (testAuth) return typeof testAuth === "function" ? testAuth() : testAuth;
 
   const { BrowserOAuthClient } = await import("@atproto/oauth-client-browser");
   if (!onThisComputer()) {
@@ -128,11 +130,55 @@ export async function xrpc(nsid, { method = "GET", params, body, contentType } =
   return data;
 }
 
-/** Sends the browser to the account's server to sign in. Does not return on success. */
-export async function signIn(handle, state = "") {
+// The sign-in library (@atproto/oauth-client-browser) keeps its records in the
+// browser's storage, IndexedDB, through its own small database wrapper. It
+// opens that storage once, when the client is made. If the browser later closes
+// the connection, every use after that fails with "Database closed". Some
+// browsers (some in-app browsers, some private modes) don't offer IndexedDB at all.
+
+const NO_STORAGE_MESSAGE = "IndexedDB is not available in this browser";
+
+/** Whether sign-in failed because of the browser's storage (not the account or its server). */
+export function isStorageError(err) {
+  const message = (err && err.message) || "";
+  return message.includes("Database closed") || message.includes(NO_STORAGE_MESSAGE);
+}
+
+/** Throws away the sign-in client (and its storage connection); the next use makes a new one. */
+async function resetClient() {
+  const old = clientPromise;
+  clientPromise = null;
+  if (!old) return;
+  try {
+    const client = await old;
+    if (client && typeof client.dispose === "function") await client.dispose();
+  } catch {
+    /* it was already broken: nothing to tidy */
+  }
+}
+
+async function startSignIn(handle, state) {
   const client = await getClient();
+  await client.signIn(handle, state ? { state } : undefined);
+}
+
+/**
+ * Sends the browser to the account's server to sign in. Does not return on success.
+ * If it fails with "Database closed", it makes a fresh client (with a fresh
+ * storage connection) and tries exactly once more. Errors are passed on as
+ * they are, so the page can log them in full.
+ */
+export async function signIn(handle, state = "") {
   const clean = handle.trim().replace(/^@/, "");
-  await client.signIn(clean, state ? { state } : undefined);
+  if (typeof indexedDB === "undefined" || indexedDB === null) throw new Error(NO_STORAGE_MESSAGE);
+  try {
+    await startSignIn(clean, state);
+  } catch (err) {
+    if (!isStorageError(err)) throw err;
+    console.warn("[sign-in] Storage connection closed; trying once more with a fresh one.", err);
+    await resetClient();
+    await startSignIn(clean, state); // no further retries: a second failure goes to the page as it is
+  }
 }
 
 /** Signs out: the session is revoked on the account's server and forgotten here. */
