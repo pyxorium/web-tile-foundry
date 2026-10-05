@@ -378,6 +378,19 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     follow(want, new THREE.Vector3(0, 1, 0), lookAt, dt, ABOVE.fov);
   }
 
+  /** Close on the cart in the station, from ahead and a little to the side, so the rider faces the camera (the card's icon). */
+  function riderShot(pose) {
+    const t = new THREE.Vector3(...pose.t);
+    const up = new THREE.Vector3(...pose.up);
+    const side = new THREE.Vector3(...pose.side);
+    const at = new THREE.Vector3(...pose.p).addScaledVector(up, 1.35);
+    camera.fov = 34;
+    camera.position.copy(at).addScaledVector(t, 6.4).addScaledVector(side, -1.8).addScaledVector(up, 0.8);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(at);
+    camera.updateProjectionMatrix();
+  }
+
   function droneShot(pose, dt) {
     // Off to the outside of the circuit and above, looking at the cart.
     const p = new THREE.Vector3(...pose.p);
@@ -680,6 +693,28 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     },
 
     resize,
+
+    /**
+     * Draws one still picture of the coaster waiting in the station, at
+     * width x height, right now (for the card pictures; see art.js). Copy it
+     * off the canvas straight away, in the same moment. `shot` is "wide" (the
+     * whole coaster, as the waiting view shows it) or "rider" (close on the
+     * cart and its rider, for the small icon).
+     */
+    renderStill(width, height, shot = "wide") {
+      if (!track) return;
+      renderer.setPixelRatio(1);
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      const pose = poseAt(track, 0);
+      cart.place(pose, 1);
+      tunnelEffects(pose, false, 0);
+      if (shot === "rider") riderShot(pose);
+      else wideShot();
+      cart.faceCamera(camera);
+      renderer.render(scene, camera);
+    },
 
     dispose() {
       disposed = true;

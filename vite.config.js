@@ -1,7 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { productionClientMetadata, CLIENT_METADATA_FILE } from "./src/auth/client-config.js";
-import { bundleRuntime } from "./src/tile-types/glass-lantern/runtime/bundle.js";
+import { bundleRuntime as bundleLantern } from "./src/tile-types/glass-lantern/runtime/bundle.js";
+import { bundleRuntime as bundleCoaster } from "./src/tile-types/coaster-carnival/runtime/bundle.js";
 
 // Writes the sign-in file (oauth.json) into the built site, generated from the same
 // settings the sign-in code uses (src/auth/client-config.js), so the hosted
@@ -42,23 +43,24 @@ function labSync() {
   };
 }
 
-// Glass Lantern's tile program (/lantern.js): the lantern code plus three.js,
-// bundled into one file by esbuild (which comes with Vite). The Foundry gets
-// it as text from "virtual:glass-lantern-runtime" and puts it in every lantern
-// tile. Rebuilt whenever one of its source files changes.
-function glassLanternRuntime() {
-  const ID = "virtual:glass-lantern-runtime";
+// A tile type's program (Glass Lantern's /lantern.js, Coaster Carnival's
+// /coaster.js): its code plus three.js, bundled into one file by esbuild
+// (which comes with Vite). The Foundry gets it as text from
+// "virtual:<type>-runtime" and puts it in every tile of that type. Rebuilt
+// whenever one of its source files changes.
+function tileRuntime(type, bundle) {
+  const ID = `virtual:${type}-runtime`;
   const RESOLVED = "\0" + ID;
   let inputs = new Set();
   return {
-    name: "glass-lantern-runtime",
+    name: `${type}-runtime`,
     resolveId(id) {
       if (id === ID) return RESOLVED;
     },
     async load(id) {
       if (id !== RESOLVED) return;
       const esbuild = await import("esbuild");
-      const { code, inputs: files } = await bundleRuntime(esbuild);
+      const { code, inputs: files } = await bundle(esbuild);
       inputs = new Set(files.map((f) => f.replace(/\\/g, "/")));
       for (const f of files) this.addWatchFile(f);
       return `export default ${JSON.stringify(code)};`;
@@ -72,7 +74,7 @@ function glassLanternRuntime() {
 }
 
 export default defineConfig({
-  plugins: [react(), clientMetadataFile(), labSync(), glassLanternRuntime()],
+  plugins: [react(), clientMetadataFile(), labSync(), tileRuntime("glass-lantern", bundleLantern), tileRuntime("coaster-carnival", bundleCoaster)],
   server: {
     // Sign-in on this computer (atproto's localhost client mode) needs the page
     // at 127.0.0.1, not "localhost".

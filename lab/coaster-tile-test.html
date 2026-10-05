@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Coaster Carnival tile test</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #f4efe6; color: #2a211b; font: 15px/1.45 system-ui, sans-serif; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      p { margin: 6px 0; }
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+      select, button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid #b9ab98; background: #fff; }
+      button.main { background: #2a211b; color: #f4efe6; border-color: #2a211b; }
+      #status { min-height: 1.4em; }
+      #status.error { color: #a11c30; font-weight: 600; }
+      #stage { margin: 14px auto; background: #ddd3c4; border-radius: 10px; overflow: hidden; max-width: 100%; }
+      #stage iframe { display: block; border: 0; width: 100%; }
+      #facts { font: 13px ui-monospace, monospace; white-space: pre-wrap; background: #fff; border-radius: 8px; padding: 10px; }
+      .art { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+      .art figure { margin: 0; }
+      .art img { display: block; border-radius: 6px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); max-width: 100%; }
+      .art figcaption { font-size: 12px; opacity: 0.7; }
+    </style>
+  </head>
+  <body>
+    <h1>Coaster Carnival tile test</h1>
+    <p>Builds a real Coaster Carnival tile, with the track and look you last had in the ride lab, and runs it through the real tile loader, 400 high, as on a blog or webtil.es. Nothing is published.</p>
+    <div class="row">
+      <label>Starting theme <select id="theme"></select></label>
+      <label>Box width <select id="width">
+        <option value="100%">Wide (like a blog post)</option>
+        <option value="400px">Square, 400</option>
+        <option value="360px">Phone, 360</option>
+      </select></label>
+      <button id="go" class="main" type="button">Build and load</button>
+    </div>
+    <p id="status"></p>
+    <div id="stage"></div>
+    <h2>Card pictures</h2>
+    <div class="art" id="art"></div>
+    <h2>Files</h2>
+    <div id="facts">Not built yet.</div>
+    <script type="module" src="./coaster-tile-test.js"></script>
+  </body>
+</html>
