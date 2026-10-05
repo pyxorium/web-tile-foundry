@@ -9,7 +9,7 @@ import { makeFile } from "../src/core/fileset.js";
 import { TILE_CSP } from "../src/core/policy.js";
 import { buildTile } from "../src/core/build.js";
 import {
-  buildManifest, publishTile, deleteTile, parseMimeMismatch, webtilesUrl, XrpcError, PublishError, TILE_COLLECTION,
+  buildManifest, publishTile, deleteTile, parseMimeMismatch, tileViewUrl, XrpcError, PublishError, TILE_COLLECTION,
 } from "../src/core/publish.js";
 
 const SAMPLE = readFileSync(new URL("./fixtures/sample-sprite.png", import.meta.url));
@@ -120,7 +120,11 @@ test("publishing uploads, creates one new record, and verifies it all", async ()
   assert.equal(out.record.createdAt, "2026-10-02T12:00:00.000Z");
   assert.equal(pds.calls.filter((c) => c === "com.atproto.repo.createRecord").length, 1);
   assert.deepEqual(steps.filter((s) => s.endsWith(":done")), ["upload:done", "create:done", "verify:done"]);
-  assert.equal(webtilesUrl(out.uri), `https://webtil.es/browser/#url=${out.uri}`);
+  const rkey = out.uri.split("/").pop();
+  const did = out.uri.split("/")[2];
+  assert.equal(tileViewUrl(out.uri), `https://appmosphe.re/@${did}/${rkey}`);
+  assert.equal(tileViewUrl(out.uri, "someone.bsky.social"), `https://appmosphe.re/@someone.bsky.social/${rkey}`);
+  assert.equal(tileViewUrl("at://did:web:tiles.example.com/ing.dasl.masl/3abc"), "https://appmosphe.re/@did:web:tiles.example.com/3abc");
 });
 
 test("a file stored earlier under another type: adopt the server's type and retry once", async () => {

@@ -11,7 +11,7 @@ is read from your account automatically; pick a background, and a title and
 optional description for the link preview card, with a live preview); and
 **Publish**: a plain confirmation, then the files are uploaded, one new
 Web Tile record is created, and everything is read back and checked. The
-success screen links to the tile on webtil.es, offers a copyable share link
+success screen links to the tile on appmosphe.re, offers a copyable share link
 (for a Bluesky post) and the tile's copyable at:// address (for twinkl.social
 home pages and other sites), and, tucked away, a copyable snippet for Astro sites
 that have a WebTile component (like thunderbird.cafe). In `?debug`, a "Delete this

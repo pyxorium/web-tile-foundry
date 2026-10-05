@@ -178,7 +178,15 @@ export async function deleteTile({ xrpc, did, rkey }) {
   });
 }
 
-/** The webtil.es browser link for a tile's at:// address. */
-export function webtilesUrl(uri) {
-  return `https://webtil.es/browser/#url=${uri}`;
+/**
+ * The appmosphe.re page for one tile, from its at:// address:
+ * https://appmosphe.re/@<handle or DID>/<record key>. Uses the handle when
+ * it's known (a friendlier link); the DID form works too, even after a
+ * handle changes.
+ */
+export function tileViewUrl(uri, handle) {
+  const m = /^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/.exec(uri);
+  if (!m) throw new Error(`Not a tile address: ${uri}`);
+  const [, did, rkey] = m;
+  return `https://appmosphe.re/@${handle || did}/${rkey}`;
 }

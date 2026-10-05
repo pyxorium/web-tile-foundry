@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { publishTile, deleteTile, webtilesUrl } from "../core/publish.js";
+import { publishTile, deleteTile, tileViewUrl } from "../core/publish.js";
 import { fetchPublicBlob } from "../core/atproto.js";
 import { xrpc } from "../auth/auth.js";
 import { DEBUG } from "./debug.js";
@@ -82,16 +82,16 @@ export function PublishPanel({ result, getFinal, account, who }) {
 
   if (state.phase === "done") {
     const { out } = state;
-    const link = webtilesUrl(out.uri);
+    const link = tileViewUrl(out.uri, account.handle);
     return (
       <div className="publish publish-done" role="status">
         <div className="publish-done-text">
           <p className="publish-title">{state.deleted ? "Test tile deleted." : "Your tile is published!"}</p>
           {!state.deleted && (
             <>
-              <p>“{state.name}” is now in {who}. Open it on webtil.es to see it the way others will.</p>
+              <p>“{state.name}” is now in {who}. Open it on appmosphe.re to see it the way others will.</p>
               <div className="button-row">
-                <a className="btn" href={link} target="_blank" rel="noopener">View on webtil.es</a>
+                <a className="btn" href={link} target="_blank" rel="noopener">View on appmosphe.re</a>
                 <button type="button" className="btn btn-quiet" onClick={() => setState({ phase: "idle" })}>Make another tile</button>
               </div>
               <div className="share">
@@ -166,7 +166,7 @@ export function PublishPanel({ result, getFinal, account, who }) {
         {state.phase === "error" && (
           <p className="field-error" role="alert">
             {state.message}
-            {state.step === "verify" ? " The tile may still be in your account; check webtil.es before trying again." : ""}
+            {state.step === "verify" ? " The tile may still be in your account; check appmosphe.re before trying again." : ""}
           </p>
         )}
       </div>

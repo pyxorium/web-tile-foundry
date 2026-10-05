@@ -225,7 +225,7 @@ export default function App() {
 
       <footer className="foot">
         Sprites from <a href="https://rpg.actor/" target="_blank" rel="noopener">rpg.actor</a>. Tiles view on{" "}
-        <a href="https://webtil.es/browser/" target="_blank" rel="noopener">webtil.es</a>. Foundry by{" "}
+        <a href="https://appmosphe.re/tiles" target="_blank" rel="noopener">appmosphe.re</a>. Foundry by{" "}
         <a href="https://thunderbird.cafe/" target="_blank" rel="noopener">thunderbird.cafe</a>.
       </footer>
     </div>
