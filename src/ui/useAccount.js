@@ -4,8 +4,10 @@ import { resolveDidDocument, pdsFromDidDocument, handleFromDidDocument, fetchOwn
 import { DEBUG } from "./debug.js";
 
 // The signed-in account, if any:
-//   { status: "starting" | "signedOut" | "signedIn", did, handle, pds, error, errorKind, busy }
+//   { status: "starting" | "signedOut" | "signedIn", did, handle, pds, error, errorKind, lookupError, busy }
 // errorKind "storage": the browser wouldn't let the page store data (see auth.js).
+// lookupError: signed in, but the account's handle and data server couldn't be
+// looked up (for example, a blocker stopped the request to plc.directory).
 
 export const STORAGE_HELP =
   "Sign-in couldn't start because this browser isn't allowing the page to store data. " +
@@ -13,6 +15,7 @@ export const STORAGE_HELP =
 
 export function useAccount() {
   const [account, setAccount] = useState({ status: "starting" });
+  const [lookupAttempt, setLookupAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,19 +45,45 @@ export function useAccount() {
         return;
       }
       setAccount({ status: "signedIn", did: session.did, handle: null, pds: null });
-      try {
-        const doc = await resolveDidDocument(session.did);
-        if (!cancelled) {
-          setAccount({ status: "signedIn", did: session.did, handle: handleFromDidDocument(doc), pds: pdsFromDidDocument(doc) });
-        }
-      } catch (err) {
-        if (!cancelled) setAccount((a) => ({ ...a, error: err.message }));
-      }
+      setLookupAttempt((n) => n + 1);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // After sign-in, look up the account's handle and data server (PDS).
+  // Runs again when lookupAttempt changes (the "Try again" button).
+  const signedInDid = account.status === "signedIn" ? account.did : null;
+  useEffect(() => {
+    if (!signedInDid || lookupAttempt === 0) return undefined;
+    let cancelled = false;
+    setAccount((a) => ({ ...a, lookupError: null }));
+    resolveDidDocument(signedInDid)
+      .then((doc) => {
+        if (!cancelled) {
+          setAccount((a) => ({ ...a, handle: handleFromDidDocument(doc), pds: pdsFromDidDocument(doc), lookupError: null }));
+        }
+      })
+      .catch((err) => {
+        console.error("[account]", err);
+        if (!cancelled) {
+          setAccount((a) => ({
+            ...a,
+            lookupError:
+              `Couldn't look up your account's details (${err.message}), so your sprite can't be fetched yet. ` +
+              "An ad or privacy blocker, or a work or school network, may be blocking the lookup. " +
+              "\"Try again\" asks for your account details again and, if that works, loads your sprite. " +
+              "If it keeps failing, turn off your blocker for this page (or use a different browser), then press Try again.",
+          }));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [signedInDid, lookupAttempt]);
+
+  const retryLookup = useCallback(() => setLookupAttempt((n) => n + 1), []);
 
   const signIn = useCallback(async (handle) => {
     if (!handle.trim()) return;
@@ -81,19 +110,25 @@ export function useAccount() {
     setAccount({ status: "signedOut" });
   }, [account.did]);
 
-  return { account, signIn, signOut };
+  return { account, signIn, signOut, retryLookup };
 }
 
 // The signed-in account's own rpg.actor sprite:
-//   { state: "idle" | "loading" | "ready" | "none" | "error", sprite, message, retry }
-export function useOwnSprite(account) {
+//   { state: "idle" | "loading" | "ready" | "none" | "error", sprite, message, lookup, retry }
+export function useOwnSprite(account, retryLookup) {
   const [state, setState] = useState({ state: "idle" });
   const [attempt, setAttempt] = useState(0);
   const { did, pds } = account;
 
   useEffect(() => {
-    if (account.status !== "signedIn" || !did || !pds) {
+    if (account.status !== "signedIn" || !did) {
       setState({ state: "idle" });
+      return undefined;
+    }
+    // Signed in, but the account's data server isn't known yet: still being
+    // looked up, or the lookup failed (shown with its own "Try again").
+    if (!pds) {
+      setState(account.lookupError ? { state: "error", message: account.lookupError, lookup: true } : { state: "loading" });
       return undefined;
     }
     let cancelled = false;
@@ -109,7 +144,8 @@ export function useOwnSprite(account) {
     return () => {
       cancelled = true;
     };
-  }, [account.status, did, pds, attempt]);
+  }, [account.status, did, pds, account.lookupError, attempt]);
 
-  return { ...state, retry: () => setAttempt((n) => n + 1) };
+  // When the account lookup is what failed, "Try again" redoes the lookup.
+  return { ...state, retry: state.lookup && retryLookup ? retryLookup : () => setAttempt((n) => n + 1) };
 }

@@ -37,8 +37,8 @@ function Step({ n, title, children, muted }) {
 }
 
 export default function App() {
-  const { account, signIn, signOut } = useAccount();
-  const ownSprite = useOwnSprite(account);
+  const { account, signIn, signOut, retryLookup } = useAccount();
+  const ownSprite = useOwnSprite(account, retryLookup);
   const signedIn = account.status === "signedIn";
 
   const types = listTileTypes();
@@ -51,7 +51,11 @@ export default function App() {
 
   function pickType(id) {
     setTypeId(id);
-    setValues(getTileType(id).defaults({ handle: account.handle }));
+    // Start from the type's defaults, but keep the sprite already read from
+    // the account: it arrives once, so it would not come back on its own.
+    const start = getTileType(id).defaults({ handle: account.handle });
+    if (ownSprite.state === "ready" && "sprite" in start) start.sprite = ownSprite.sprite;
+    setValues(start);
     setNameEdited(false);
   }
   // The latest values, for changes that arrive from outside React's render

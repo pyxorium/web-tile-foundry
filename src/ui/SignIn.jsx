@@ -111,7 +111,7 @@ export function AccountBar({ account, onSignOut }) {
   return (
     <div className="account-bar">
       <span>
-        Signed in as <strong>{account.handle ? `@${account.handle}` : "…"}</strong>
+        Signed in as <strong>{account.handle ? `@${account.handle}` : account.lookupError ? account.did : "…"}</strong>
       </span>
       <button type="button" className="linklike" onClick={onSignOut}>Sign out</button>
     </div>
