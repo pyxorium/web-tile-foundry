@@ -35,7 +35,13 @@ export const DEFAULT_TONE = Object.freeze({ pitch: 0.65, brightness: 0.65, rise:
 export const DEFAULT_VOLUME = 0.7;
 
 const CLACK_EVERY = 0.36; // seconds between chain clicks on the lift
-const JOINT_EVERY = 3; // meters between track joints (one soft click each)
+// How each track style sounds: steel runs smooth, with a soft click at each
+// joint; wood clatters, with closer, lower, louder knocks, a heavier rumble,
+// and a rattle of loose little knocks at speed.
+export const TRACK_SOUNDS = Object.freeze({
+  steel: Object.freeze({ jointEvery: 3, jointPitch: 1, jointLevel: 1, rumble: 1, rattle: 0 }),
+  wood: Object.freeze({ jointEvery: 1.4, jointPitch: 0.5, jointLevel: 1.6, rumble: 1.5, rattle: 1 }),
+});
 const PLAYBACK = 1.3; // the ride plays at 1.3x real time, so joints pass that much faster
 
 export function createRideSound() {
@@ -46,6 +52,7 @@ export function createRideSound() {
   let tone = { ...DEFAULT_TONE };
   let muted = false;
   let volume = DEFAULT_VOLUME;
+  let trackSound = TRACK_SOUNDS.steel;
   let lastKind = null;
   let nextClack = 0;
   let jointTravel = 0;
@@ -197,11 +204,30 @@ export function createRideSound() {
     setTimeout(() => running && burst({ freq: 1500 * p, q: 5, gain: 0.25 * e, length: 0.04 }), 70);
   }
 
+  /** A short tone that rings out: for the station bell. */
+  function ring(freq, gain, length) {
+    const t = ctx.currentTime;
+    for (const [ratio, share] of [[1, 1], [2.76, 0.35], [5.4, 0.12]]) {
+      const o = ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.value = freq * ratio;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(gain * share, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + length / ratio);
+      o.connect(g).connect(nodes.master);
+      o.start(t);
+      o.stop(t + length + 0.05);
+    }
+  }
+
   function joint(speed) {
-    // A soft double tick (front and back wheels), brighter at speed.
-    const g = Math.min(0.22, 0.05 + speed * 0.006) * mix.clicks;
-    burst({ freq: 900 + speed * 25, q: 3, gain: g, length: 0.018 });
-    setTimeout(() => running && burst({ freq: 800 + speed * 22, q: 3, gain: g * 0.8, length: 0.018 }), Math.max(25, 1600 / Math.max(speed, 1)));
+    // A soft double tick (front and back wheels), brighter at speed; on wood, a lower, louder knock.
+    const { jointPitch: p, jointLevel: l } = trackSound;
+    const g = Math.min(0.22, 0.05 + speed * 0.006) * mix.clicks * l;
+    const length = 0.018 / Math.sqrt(p);
+    burst({ freq: (900 + speed * 25) * p, q: 3, gain: g, length });
+    setTimeout(() => running && burst({ freq: (800 + speed * 22) * p, q: 3, gain: g * 0.8, length }), Math.max(25, 1600 / Math.max(speed, 1)));
   }
 
   return {
@@ -235,7 +261,7 @@ export function createRideSound() {
       nodes.wobbleDepth.gain.setTargetAtTime(0.15 + level * 0.25, t, 0.3); // share of the roar's own volume
 
       // Rumble: deep, grows with speed.
-      nodes.rumbleGain.gain.setTargetAtTime((inStation ? 0.02 : 0.05 + level * 0.25) * mix.rumble, t, 0.2);
+      nodes.rumbleGain.gain.setTargetAtTime((inStation ? 0.02 : 0.05 + level * 0.25) * mix.rumble * trackSound.rumble, t, 0.2);
       nodes.rumbleFilter.frequency.setTargetAtTime(80 + v * 3, t, 0.3);
 
       // Wind: only at speed, and kept light.
@@ -245,9 +271,13 @@ export function createRideSound() {
       // Track joints click past as the cart moves (not on the lift, where the chain clacks instead).
       if (!inStation && kind !== "lift") {
         jointTravel += v * PLAYBACK * dt;
-        if (jointTravel >= JOINT_EVERY) {
-          jointTravel %= JOINT_EVERY;
+        if (jointTravel >= trackSound.jointEvery) {
+          jointTravel %= trackSound.jointEvery;
           joint(v);
+        }
+        // Wood rattles: loose little knocks, more of them the faster it goes.
+        if (trackSound.rattle && Math.random() < trackSound.rattle * level * level * dt * 14) {
+          burst({ freq: 300 + Math.random() * 500, q: 4, gain: 0.08 * mix.clicks * (0.5 + Math.random()), length: 0.02 });
         }
       }
       if (kind === "lift" && t >= nextClack) {
@@ -265,6 +295,27 @@ export function createRideSound() {
       }
     },
 
+    /**
+     * One-off station sounds (only after start()):
+     *   "bar"      the lap bar locking down
+     *   "release"  the lap bar letting go (the same sound, lighter and rising)
+     *   "bell"     the dispatch bell, just before the cart rolls out
+     */
+    cue(name) {
+      if (!ctx) return;
+      const e = mix.effects;
+      if (name === "bar") {
+        burst({ type: "lowpass", freq: 260, q: 2, gain: 0.5 * e, attack: 0.004, length: 0.16, dark: true });
+        burst({ freq: 1400, q: 4, gain: 0.18 * e, length: 0.03 });
+      } else if (name === "release") {
+        burst({ type: "lowpass", freq: 220, q: 2, gain: 0.3 * e, attack: 0.02, length: 0.12, sweepTo: 520, dark: true });
+        burst({ freq: 1800, q: 4, gain: 0.12 * e, length: 0.025 });
+      } else if (name === "bell") {
+        ring(1180, 0.16 * e, 1.1);
+        setTimeout(() => ctx && ring(1180, 0.12 * e, 0.9), 180);
+      }
+    },
+
     /** Fades everything out (end of the ride, or back to the station). */
     stop() {
       running = false;
@@ -272,6 +323,11 @@ export function createRideSound() {
       const t = ctx.currentTime;
       for (const g of [nodes.roarGain, nodes.rumbleGain, nodes.windGain, nodes.wobbleDepth]) g.gain.setTargetAtTime(0, t, 0.3);
       nodes.droneGain.gain.setTargetAtTime(0, t, 0.6);
+    },
+
+    /** The track style's sound: "steel" or "wood". */
+    setStyle(id) {
+      trackSound = TRACK_SOUNDS[id] || TRACK_SOUNDS.steel;
     },
 
     setTheme(id) {

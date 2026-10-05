@@ -5,7 +5,7 @@ import { layoutPieces, LayoutFail } from "./layout.js";
 import { balanceTurns, closeCircuit, sampleTrack, footprint, walkAll, walkPiece } from "./plan.js";
 import { resample, shapeAt, speeds, upVectors, feltForces } from "./ride.js";
 import { checkSmooth, checkClearance, checkBetween, checkBox, checkClosed, checkSpeed, checkForces, boundsOf } from "./checks.js";
-import { detourOnTurn, splitTurnForSwitch } from "./switch.js";
+import { thrillRoutes, splitTurnForSwitch, profileHeight } from "./switch.js";
 import { roundMm, round3, PLATEAU_RAMP } from "./vec.js";
 
 // Coaster Carnival's track generator: slider values and a seed in, a whole
@@ -32,22 +32,22 @@ import { roundMm, round3, PLATEAU_RAMP } from "./vec.js";
 // asked. The result says what was left out, so the panel can tell the creator.
 //
 // With trackSwitch, the middle turn is laid out extra wide, and the finished
-// ride gets a second route (switch.js): the water route, swinging out around
-// that turn (or, failing that, another turn: low ones first, then nearest the
-// middle). The main ride is the woods route, taken when no choice is made. The water route is checked as a whole
-// ride of its own, must stay clear of the main line, and may run up to
-// FIXED.switchExtraTime past the time cap. If no turn of a ride has room for
-// it, the next layouts are tried; if none does, the first ride is kept
-// without a switch and the result says the switch was left out.
+// ride gets a second route (switch.js): the thrill route, swinging out around
+// that turn with a dip or a hill (or, failing that, around another turn: low
+// ones first, then nearest the middle). The main ride is the chill route,
+// taken when no choice is made. The thrill route is checked as a whole ride of
+// its own, must stay clear of the main line, and must be 4 to 7 played seconds
+// longer (FIXED.switchExtra), so it may run up to 7 seconds past the time cap.
+// If no turn of a ride has room for one, the next layouts are tried; if none
+// does, the first ride is kept without a switch and the result says so.
 
 const MAX_ATTEMPTS = 30;
 const LAYOUT_CHOICES = 6; // layouts drawn per attempt; the most compact one is kept
 const GIVE_UP_AFTER = 3; // attempts in a row that failed for a reason more tries won't fix
 const TWO_PI = 2 * Math.PI;
-const SWITCH_SALT = 0x5317c4; // the switch's own random sequence, apart from the layout's
-const SWITCH_DESIGNS = 2; // water routes tried per turn
+const SWITCH_DESIGNS = 6; // thrill routes built and checked per turn, best first
 const SHARED = 25; // m at either end where the two routes share the track
-const LOW_TURN = 6; // m: turns this low are tried first (the water route stays near the ground)
+const LOW_TURN = 6; // m: turns this low are tried first
 
 export { GENERATOR_VERSION, RANGES, FIXED, randomSeed };
 
@@ -92,18 +92,19 @@ function attempt(counts, s, rand, wantSwitch = false) {
 }
 
 /** Even spacing, speed, banking and forces for one whole route, and its checks. */
-function rideOf(dense, pieces, s) {
+function rideOf(dense, pieces, s, box = FIXED.box, thrillDrag = 0) {
   const track = resample(dense, FIXED.sampleStep);
   const kinds = track.piece.map((i) => pieces[i].kind);
   const elements = track.piece.map((i) => Boolean(pieces[i].element));
   const { tangents, bends } = shapeAt(track);
-  const ride = speeds(track, kinds);
+  const drag = thrillDrag ? kinds.map((k) => (k === "thrill" ? thrillDrag : 1)) : null;
+  const ride = speeds(track, kinds, drag);
   const mayLean = track.piece.map((i) => pieces[i].element?.type === "loop");
   const ups = upVectors(track, tangents, bends, ride.v, mayLean);
   const felt = feltForces(tangents, bends, ups, ride.v);
 
   const problems = [
-    ...checkBox(track.points),
+    ...checkBox(track.points, box),
     ...checkSmooth(track, tangents, ups),
     ...checkSpeed(ride.v, kinds),
     ...checkForces(felt, ups, kinds, elements, s),
@@ -113,11 +114,11 @@ function rideOf(dense, pieces, s) {
 }
 
 /**
- * Tries to give a finished ride its water route. Turns are tried low ones
- * first, then nearest the middle of the ride. Returns
- * { turn, water, allPieces, design } or null.
+ * Tries to give a finished ride its thrill route. Turns are tried the one
+ * laid out for the switch first, then low ones, then nearest the middle of the
+ * ride. Returns { turn, thrill, allPieces, design, extra } or null.
  */
-function addSwitch(r, s, rand, timeCap) {
+function addSwitch(r, s, timeCap) {
   const { pieces, track, ride } = r;
   const first = pieces.findIndex((p) => p.kind === "crest");
   const last = pieces.findIndex((p) => p.kind === "brakes");
@@ -131,29 +132,54 @@ function addSwitch(r, s, rand, timeCap) {
   });
   candidates.sort((a, b) => b.wide - a.wide || b.low - a.low || a.away - b.away || a.i - b.i);
   const { starts } = walkAll(pieces);
+  const [fewest, most] = FIXED.switchExtra;
+  const mainTime = ride.duration / FIXED.playbackSpeed;
   for (const c of candidates) {
-    for (let k = 0; k < SWITCH_DESIGNS; k++) {
-      const design = detourOnTurn(pieces[c.i], ride.v[c.at], s, rand);
-      if (!design) break; // no room to swing out on this turn
-      const dense = waterDense(r.raw, pieces, c.i, design.pieces, starts);
+    const designs = thrillRoutes(pieces[c.i], ride.v[c.at], s);
+    // The estimates of extra time are rough; each built route shows how far
+    // off they run (`scale`), and the next try aims accordingly. Of the
+    // designs expected to land 4 to 7 seconds longer, the deepest dip (or
+    // tallest hill) goes first, then the closest to 7.
+    let scale = 1;
+    const tried = new Set();
+    for (let k = 0; k < SWITCH_DESIGNS && tried.size < designs.length; k++) {
+      const expect = (d) => d.extra * scale;
+      const inRange = (d) => expect(d) >= fewest + 0.3 && expect(d) <= most - 0.2;
+      let design = null;
+      for (const d of designs) {
+        if (tried.has(d)) continue;
+        if (!design) design = d;
+        else if (inRange(d) !== inRange(design)) design = inRange(d) ? d : design;
+        else if (inRange(d) ? d.depth > design.depth || (d.depth === design.depth && expect(d) > expect(design)) : Math.abs(expect(d) - most) < Math.abs(expect(design) - most)) design = d;
+      }
+      tried.add(design);
+      const dense = thrillDense(r.raw, pieces, c.i, design, starts);
       if (!dense) continue;
+      const moved = r.move(dense);
+      if (checkBox(moved.points, FIXED.switchBox).length) continue; // a quick look before the full ride
       const allPieces = [...pieces, ...design.pieces];
-      const water = rideOf(r.move(dense), allPieces, s);
-      if (!water.problems.length) water.problems.push(...betweenRoutes(r, water, c.i));
-      if (water.problems.length) continue;
-      if (water.ride.duration / FIXED.playbackSpeed > timeCap + FIXED.switchExtraTime) continue;
-      return { turn: c.i, water, allPieces, design };
+      // Drive tires on the thrill route make up for its extra length: friction
+      // over it adds up to what it would be over the chill turn.
+      const thrill = rideOf(moved, allPieces, s, FIXED.switchBox, pieces[c.i].length / design.length);
+      const extra = thrill.ride.duration / FIXED.playbackSpeed - mainTime;
+      scale = extra / design.extra;
+      if (extra < fewest - 1e-9 || extra > most + 1e-9) continue; // not 4 to 7 seconds longer
+      if (!thrill.problems.length) thrill.problems.push(...betweenRoutes(r, thrill, c.i));
+      if (thrill.problems.length) continue;
+      if (mainTime + extra > timeCap + most) continue;
+      return { turn: c.i, thrill, allPieces, design, extra };
     }
   }
   return null;
 }
 
 /**
- * The water route as dense samples (before turning and centering): the main
+ * The thrill route as dense samples (before turning and centering): the main
  * line up to the chosen turn, the detour, then the main line again from where
  * the turn ended. Null if the detour doesn't land exactly there.
  */
-function waterDense(raw, pieces, turnIndex, detour, starts) {
+function thrillDense(raw, pieces, turnIndex, design, starts) {
+  const detour = design.pieces;
   const points = [];
   const ups = [];
   const piece = [];
@@ -165,13 +191,15 @@ function waterDense(raw, pieces, turnIndex, detour, starts) {
   let k = 0;
   while (raw.piece[k] < turnIndex) keep(k++);
   let { x, z, a } = starts[turnIndex];
+  let along = 0; // meters along the detour, on the ground
   detour.forEach((p, j) => {
     const w = walkPiece(p, a);
     for (let i = 0; i < w.n; i++) {
-      points.push([x + w.xs[i], p.h0, z + w.zs[i]]);
+      points.push([x + w.xs[i], profileHeight(design.profile, along + (p.length * i) / w.n), z + w.zs[i]]);
       ups.push(null);
       piece.push(pieces.length + j);
     }
+    along += p.length;
     x += w.xs[w.n];
     z += w.zs[w.n];
     a = w.endHeading;
@@ -187,30 +215,30 @@ function waterDense(raw, pieces, turnIndex, detour, starts) {
 
 /**
  * The two routes must stay clear of each other where they run side by side
- * (the water route against the turn it replaces), except at either end,
+ * (the thrill route against the turn it replaces), except at either end,
  * where they share the track.
  */
-function betweenRoutes(main, water, turnIndex) {
-  const woods = [];
-  main.track.piece.forEach((p, i) => p === turnIndex && woods.push(i));
+function betweenRoutes(main, thrill, turnIndex) {
+  const chill = [];
+  main.track.piece.forEach((p, i) => p === turnIndex && chill.push(i));
   const detour = [];
-  water.kinds.forEach((kind, i) => kind === "water" && detour.push(i));
+  thrill.kinds.forEach((kind, i) => kind === "thrill" && detour.push(i));
   const ends = (count, k, spacing) => ({ start: k * spacing < SHARED, end: (count - 1 - k) * spacing < SHARED });
   const pairs = [];
-  woods.forEach((i, a) => {
-    const ea = ends(woods.length, a, main.track.spacing);
+  chill.forEach((i, a) => {
+    const ea = ends(chill.length, a, main.track.spacing);
     detour.forEach((j, b) => {
-      const eb = ends(detour.length, b, water.track.spacing);
+      const eb = ends(detour.length, b, thrill.track.spacing);
       if (!((ea.start && eb.start) || (ea.end && eb.end))) pairs.push([i, j]);
     });
   });
-  return checkBetween(main, water, pairs);
+  return checkBetween(main, thrill, pairs);
 }
 
 /**
  * Turns the layout so its long side runs along x, centers it, and puts the
  * station at the front (+z). Returns the result and `move`, which turns and
- * moves other samples (the water route) the same way.
+ * moves other samples (the thrill route) the same way.
  */
 function orient(dense) {
   const pts = dense.points;
@@ -305,7 +333,6 @@ export function generateTrack(input, options = {}) {
 
   for (;;) {
     const rand = seededRandom(checked.seed);
-    const switchRand = seededRandom((checked.seed ^ SWITCH_SALT) >>> 0);
     let found = null;
     let lastFail = null;
     let hopeless = 0;
@@ -319,17 +346,17 @@ export function generateTrack(input, options = {}) {
     }
     const fits = (r) => r.ride.duration / FIXED.playbackSpeed <= timeCap;
     if (found && fits(found) && checked.trackSwitch) {
-      // Give it a water route; if it has no room for one, look a little
+      // Give it a thrill route; if it has no room for one, look a little
       // further for a ride that does, else keep this one without a switch.
-      let withSwitch = { ...found, trackSwitch: addSwitch(found, s, switchRand, timeCap) };
+      let withSwitch = { ...found, trackSwitch: addSwitch(found, s, timeCap) };
       for (; !withSwitch.trackSwitch && i < MAX_ATTEMPTS; i++) {
         const r = attempt(counts, s, rand, true);
         if (r.fail || !fits(r)) continue;
-        const sw = addSwitch(r, s, switchRand, timeCap);
+        const sw = addSwitch(r, s, timeCap);
         if (sw) withSwitch = { ...r, trackSwitch: sw };
       }
       if (withSwitch.trackSwitch) return finish(checked, counts, withSwitch, notes);
-      return finish(checked, counts, found, [...notes, "switch left out: no turn had room for the water route"]);
+      return finish(checked, counts, found, [...notes, "switch left out: no turn had room for the thrill route"]);
     }
     if (found && fits(found)) return finish(checked, counts, found, notes);
     const reason = found ? "ride too long" : lastFail;
@@ -354,11 +381,11 @@ function routeData(track, pieces, ups, ride) {
     if (last && last.index === pi) last.to = i;
     else runs.push({ index: pi, kind: pieces[pi].kind, from: i, to: i });
   });
-  // The water route's pieces read as one stretch.
+  // The thrill route's pieces read as one stretch.
   const merged = [];
   for (const run of runs) {
     const last = merged[merged.length - 1];
-    if (last && last.kind === "water" && run.kind === "water") last.to = run.to;
+    if (last && last.kind === "thrill" && run.kind === "thrill") last.to = run.to;
     else merged.push({ ...run });
   }
   return {
@@ -387,22 +414,26 @@ function finish(input, counts, r, notes) {
   const sw = r.trackSwitch;
   let trackSwitch = null;
   if (sw) {
-    const water = routeData(sw.water.track, sw.allPieces, sw.water.ups, sw.water.ride);
+    const thrill = routeData(sw.thrill.track, sw.allPieces, sw.thrill.ups, sw.thrill.ride);
     const turn = main.pieces.find((p) => track.piece[p.from] === sw.turn);
-    const detour = water.pieces.find((p) => p.kind === "water");
+    const detour = thrill.pieces.find((p) => p.kind === "thrill");
     trackSwitch = {
-      // Where the routes part: played seconds and sample (the same on both
-      // routes up to there). Offer the choice a few seconds before.
+      // Where the routes part, in played seconds (both routes are the same
+      // up to there).
       at: turn.start,
-      // The woods route is the main ride's turn; the water route is a whole
+      // How much longer the thrill route is (played seconds), and its dip or hill.
+      extra: Math.round(sw.extra * 1000) / 1000,
+      feature: sw.design.feature,
+      depth: sw.design.depth,
+      // The chill route is the main ride's turn; the thrill route is a whole
       // ride of its own (identical to the main one before `at`).
-      woods: { from: turn.from, to: turn.to, end: turn.end },
-      water: { ...water, from: detour.from, to: detour.to, end: detour.end },
+      chill: { from: turn.from, to: turn.to, end: turn.end },
+      thrill: { ...thrill, from: detour.from, to: detour.to, end: detour.end },
     };
   }
-  const allFelt = sw ? [...felt, ...sw.water.felt] : felt;
-  const allSpeed = sw ? [...ride.v, ...sw.water.ride.v] : ride.v;
-  const allPoints = trackSwitch ? [...points, ...trackSwitch.water.points] : points;
+  const allFelt = sw ? [...felt, ...sw.thrill.felt] : felt;
+  const allSpeed = sw ? [...ride.v, ...sw.thrill.ride.v] : ride.v;
+  const allPoints = trackSwitch ? [...points, ...trackSwitch.thrill.points] : points;
   return {
     version: input.version,
     input,
@@ -414,12 +445,12 @@ function finish(input, counts, r, notes) {
       trackSwitch: input.trackSwitch && !trackSwitch,
     },
     notes,
-    // The main ride (with a switch, the woods route: taken when no choice is made).
+    // The main ride (with a switch, the chill route: taken when no choice is made).
     // Times are in played seconds (real physics shown at playbackSpeed);
     // speed is the real speed in m/s (for sound, for example).
     playbackSpeed: play,
     ...main,
-    // null, or where the switch is and the whole water route.
+    // null, or where the switch is and the whole thrill route.
     trackSwitch,
     peakGs: Math.round(Math.max(...allFelt.map((f) => f.up)) * 100) / 100,
     topSpeed: Math.round(Math.max(...allSpeed) * 10) / 10,

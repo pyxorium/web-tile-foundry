@@ -1,6 +1,7 @@
-// Coaster Carnival's three themes: colors, sky, light and scenery (sound
-// settings join them later). Starting values, to tune in the ride lab. A
-// theme never changes the track's layout.
+// Coaster Carnival's three themes: the world around the coaster (sky, light,
+// scenery; sound settings are in sound.js). The viewer can switch themes. A
+// theme never changes the track's layout, and never its colors: those are the
+// creator's color schemes (colors.js), the same in every theme.
 //
 // Scenery (see scenery.js):
 //   skyTop / horizon    the sky fades from skyTop overhead to horizon at the edge
@@ -10,6 +11,8 @@
 //                       smallest and largest size, as a share of normal
 //   landmark            "ferris" (a Ferris wheel) or "haunted" (a house on a hill)
 //   extras              clouds, stars, moon, bulbs (along the track), mist
+//   routes              the words on the track switch's signs for each route
+//   signColors          the sign's board and lettering
 
 export const THEMES = Object.freeze({
   day: Object.freeze({
@@ -21,12 +24,6 @@ export const THEMES = Object.freeze({
     ground: "#7dbb5c",
     hills: "#8fb7a3",
     hillShape: "rolling",
-    rails: "#eef0f2",
-    spine: "#e23d2e",
-    ties: "#9aa3ab",
-    supports: "#f4f4f2",
-    cart: "#f6c531",
-    cartTrim: "#2a5db0",
     station: "#ffffff",
     stationRoof: "#e23d2e",
     sunColor: "#fff4e0",
@@ -46,6 +43,8 @@ export const THEMES = Object.freeze({
     propColors: Object.freeze({ leaves: "#3f8f45", trunk: "#7a5232", tentA: "#e23d2e", tentB: "#ffffff", tentC: "#2a5db0", sign: "#f6c531", wood: "#9a6a44", door: "#3a2a20", lamp: "#3a3f48", balloon: Object.freeze(["#e23d2e", "#f6c531", "#2a5db0", "#8e44ad", "#27ae60"]) }),
     landmark: "ferris",
     landmarkColor: "#ffffff",
+    routes: Object.freeze({ chill: "Chill", thrill: "Thrill" }),
+    signColors: Object.freeze({ board: "#2a5db0", text: "#ffffff" }),
     extras: Object.freeze({ clouds: true, stars: false, moon: false, bulbs: false, mist: false }),
     moon: "#ffffff",
     lampGlow: 0,
@@ -59,12 +58,6 @@ export const THEMES = Object.freeze({
     ground: "#1a2340",
     hills: "#161433",
     hillShape: "skyline",
-    rails: "#c9ccdd",
-    spine: "#ff4fb8",
-    ties: "#3b4160",
-    supports: "#2c3352",
-    cart: "#35e0ff",
-    cartTrim: "#ff4fb8",
     station: "#2a2f4a",
     stationRoof: "#ffd23f",
     sunColor: "#9aa8ff",
@@ -83,6 +76,8 @@ export const THEMES = Object.freeze({
     propColors: Object.freeze({ leaves: "#1f3a33", trunk: "#2b2420", tentA: "#ff4fb8", tentB: "#f4ecff", tentC: "#35e0ff", sign: "#ffd23f", wood: "#4a3a52", door: "#ffb35c", lamp: "#2c3352", balloon: Object.freeze([]) }),
     landmark: "ferris",
     landmarkColor: "#ffd23f",
+    routes: Object.freeze({ chill: "Chill", thrill: "Thrill" }),
+    signColors: Object.freeze({ board: "#1b1d3a", text: "#ffd23f" }),
     extras: Object.freeze({ clouds: false, stars: true, moon: true, bulbs: true, mist: false }),
     moon: "#f3eecb",
     lampGlow: 1,
@@ -96,12 +91,6 @@ export const THEMES = Object.freeze({
     ground: "#2c2820",
     hills: "#1c1220",
     hillShape: "treeline",
-    rails: "#a39e94",
-    spine: "#6b3fa0",
-    ties: "#3a2b20",
-    supports: "#4a3626",
-    cart: "#c4502a",
-    cartTrim: "#1c1c1c",
     station: "#3a2e28",
     stationRoof: "#6b3fa0",
     sunColor: "#d8c4ff",
@@ -118,6 +107,8 @@ export const THEMES = Object.freeze({
     propColors: Object.freeze({ leaves: "#000000", trunk: "#2e2219", tentA: "#000000", tentB: "#000000", lamp: "#000000", grave: "#8a8a8f", pumpkin: "#ff7a1a", balloon: Object.freeze([]) }),
     landmark: "haunted",
     landmarkColor: "#1c1520",
+    routes: Object.freeze({ chill: "Chill", thrill: "Thrill" }),
+    signColors: Object.freeze({ board: "#3a2b20", text: "#e8d9b0" }),
     extras: Object.freeze({ clouds: false, stars: true, moon: true, bulbs: false, mist: true }),
     moon: "#f4f1e0",
     lampGlow: 0,

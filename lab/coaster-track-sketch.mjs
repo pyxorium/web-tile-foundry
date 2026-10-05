@@ -34,8 +34,8 @@ const COLORS = {
   valley: "#999999",
   filler: "#bbbbbb",
   return: "#999999",
-  woods: "#1f6b3a",
-  water: "#2a8fd8",
+  chill: "#1f6b3a",
+  thrill: "#2a8fd8",
 };
 const KEY = [
   ["station", COLORS["station-out"]],
@@ -47,7 +47,7 @@ const KEY = [
   ["turn", COLORS.turn],
   ["straight", COLORS.filler],
   ["brakes", COLORS.brakes],
-  ...(withSwitch ? [["woods route", COLORS.woods], ["water route", COLORS.water]] : []),
+  ...(withSwitch ? [["chill route", COLORS.chill], ["thrill route", COLORS.thrill]] : []),
 ];
 
 const W = 1130;
@@ -63,11 +63,13 @@ RIDES.forEach((input, r) => {
   const kindAt = new Array(t.points.length);
   for (const p of t.pieces) for (let i = p.from; i <= p.to; i++) kindAt[i] = p.kind;
   const sw = t.trackSwitch;
-  if (sw) for (let i = sw.woods.from; i <= sw.woods.to; i++) kindAt[i] = "woods";
+  if (sw) for (let i = sw.chill.from; i <= sw.chill.to; i++) kindAt[i] = "chill";
 
   // From above: x across, z down the page (station at the front = bottom).
   const scaleTop = Math.min(TOP.w / t.bounds.size[0], TOP.h / t.bounds.size[2]);
-  const top = (p) => [TOP.x + TOP.w / 2 + p[0] * scaleTop, y0 + 20 + TOP.h / 2 + p[2] * scaleTop];
+  const cx = (t.bounds.min[0] + t.bounds.max[0]) / 2;
+  const cz = (t.bounds.min[2] + t.bounds.max[2]) / 2;
+  const top = (p) => [TOP.x + TOP.w / 2 + (p[0] - cx) * scaleTop, y0 + 20 + TOP.h / 2 + (p[2] - cz) * scaleTop];
   // From the side: distance along the track across, height up.
   const scaleX = SIDE.w / t.length;
   const scaleY = SIDE.h / 50;
@@ -88,18 +90,18 @@ RIDES.forEach((input, r) => {
   const asked = `${input.drops} drop${input.drops > 1 ? "s" : ""}, ${input.loops} loop${input.loops === 1 ? "" : "s"}, ${input.corkscrews} corkscrew${input.corkscrews === 1 ? "" : "s"}, intensity ${input.intensity}, seed ${input.seed}`;
   const left = Object.entries(t.leftOut).filter(([, n]) => n).map(([k, n]) => (n === true ? "the switch" : `${n} ${k}`)).join(", ");
   svg += `<text x="20" y="${y0}" font-size="15" font-weight="600">${esc(asked)}</text>`;
-  const times = sw ? `woods route ${t.duration.toFixed(1)} s, water route ${sw.water.duration.toFixed(1)} s, switch at ${sw.at.toFixed(1)} s` : `${t.duration.toFixed(1)} s`;
+  const times = sw ? `chill ${t.duration.toFixed(1)} s, thrill ${sw.thrill.duration.toFixed(1)} s (${sw.feature} ${Math.abs(sw.depth)} m), switch at ${sw.at.toFixed(1)} s` : `${t.duration.toFixed(1)} s`;
   svg += `<text x="20" y="${y0 + 17}" font-size="12" fill="#555">${esc(`${times}, ${Math.round(t.length)} m of track, top speed ${t.topSpeed} m/s, strongest push ${t.peakGs} g, ${Math.round(t.bounds.size[0])} × ${Math.round(t.bounds.size[2])} m, up to ${Math.round(t.bounds.max[1])} m tall${left ? `; left out: ${left}` : ""}`)}</text>`;
   svg += `<rect x="${TOP.x}" y="${y0 + 20}" width="${TOP.w}" height="${TOP.h}" fill="#f6f4ef" rx="6"/>`;
   svg += segments(top);
   if (sw) {
-    const w = sw.water.points;
-    for (let i = sw.water.from - 1; i <= sw.water.to; i++) {
+    const w = sw.thrill.points;
+    for (let i = sw.thrill.from - 1; i <= sw.thrill.to; i++) {
       const [ax, ay] = top(w[i]);
       const [bx, by] = top(w[i + 1]);
-      svg += `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${COLORS.water}" stroke-width="2.5" stroke-linecap="round"/>`;
+      svg += `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${COLORS.thrill}" stroke-width="2.5" stroke-linecap="round"/>`;
     }
-    const [jx, jy] = top(t.points[sw.woods.from]);
+    const [jx, jy] = top(t.points[sw.chill.from]);
     svg += `<circle cx="${jx}" cy="${jy}" r="4" fill="none" stroke="#222" stroke-width="1.5"/><text x="${jx + 7}" y="${jy - 6}" font-size="11">switch</text>`;
   }
   const [sx, sy] = top(t.points[0]);

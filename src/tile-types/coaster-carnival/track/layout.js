@@ -36,13 +36,13 @@ const MIN_HILL = 5; // m, a hill lower than this above the valley isn't worth ha
 const LIFT_ANGLE = (45 * Math.PI) / 180;
 const BANK_AIM = (65 * Math.PI) / 180;
 // The turn the track switch sits on (see switch.js) is made this much wider
-// than the speed needs, so the water route has room to swing out around it
+// than the speed needs, so the thrill route has room to swing out around it
 // with turns of its own that are still gentle enough.
 const SWITCH_WIDEN = 2;
 const SWITCH_MAX_RADIUS = 60; // m
 
 /** Length a height change needs so slope, push into the seat and float all stay in bounds. */
-function easeLength(dh, vLow, vHigh, s) {
+export function easeLength(dh, vLow, vHigh, s) {
   const h = Math.abs(dh);
   if (h < 1e-9) return 0;
   const bySlope = (PEAK_SLOPE * h) / Math.tan(s.maxDropAngle);
@@ -96,7 +96,7 @@ export function layoutPieces(counts, s, rand, wantSwitch = false) {
   // The switch goes on the turn nearest the middle of the ride: the one with
   // closest to half the drops, loops and corkscrews before it. Hilltop turns
   // win ties: the cart is slower there, so the turns are smaller and the
-  // water route costs less time and room.
+  // thrill route costs less time and room.
   let switchSlot = null;
   if (wantSwitch) {
     const half = (drops + loops + corkscrews) / 2;

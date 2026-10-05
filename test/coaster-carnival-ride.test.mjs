@@ -56,7 +56,7 @@ test("three themes, each with every color the scene uses", () => {
 // ---------- scenery placement (stage 3, second check-in) ----------
 
 import { placeProps, landmarkSpot } from "../src/tile-types/coaster-carnival/ride/placement.js";
-import { SOUND_THEMES } from "../src/tile-types/coaster-carnival/ride/sound.js";
+import { SOUND_THEMES, TRACK_SOUNDS } from "../src/tile-types/coaster-carnival/ride/sound.js";
 
 test("props stay clear of the track and the station, and the same layout gives the same scenery", () => {
   for (const id of THEME_IDS) {
@@ -89,4 +89,66 @@ test("landmarks stand outside the ride, behind it as seen from the waiting view"
 
 test("every theme has sound settings", () => {
   for (const id of THEME_IDS) assert.ok(SOUND_THEMES[id], id);
+});
+
+test("both track styles have their own sound: wood knocks closer, lower and louder than steel", () => {
+  const { steel, wood } = TRACK_SOUNDS;
+  assert.deepEqual(Object.keys(wood).sort(), Object.keys(steel).sort());
+  assert.ok(wood.jointEvery < steel.jointEvery);
+  assert.ok(wood.jointPitch < steel.jointPitch);
+  assert.ok(wood.jointLevel > steel.jointLevel && wood.rumble > steel.rumble);
+  assert.equal(steel.rattle, 0);
+});
+
+// ---------- the track switch in the ride (stage 3b) ----------
+
+test("with a track switch, scenery stays clear of the thrill route too, and the cart can ride it", () => {
+  const withSwitch = generateTrack({ ...track.input, trackSwitch: true });
+  const thrill = withSwitch.trackSwitch.thrill;
+  const detour = thrill.points.slice(thrill.from, thrill.to + 1);
+  const spots = placeProps(withSwitch, THEMES.day.props);
+  for (const item of THEMES.day.props) {
+    const gap = item.gap ?? 8;
+    for (const s of spots[item.kind]) {
+      const nearest = Math.min(...detour.map((p) => Math.hypot(p[0] - s.x, p[2] - s.z)));
+      assert.ok(nearest >= gap - 1e-9, `${item.kind} ${nearest.toFixed(1)} m from the thrill route`);
+    }
+  }
+  // The thrill route is a whole ride for poseAt: at the switch both routes are
+  // in the same place; a moment later they have parted.
+  const at = withSwitch.trackSwitch.at;
+  const a = poseAt(withSwitch, at);
+  const b = poseAt(thrill, at);
+  assert.ok(Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1], a.p[2] - b.p[2]) < 1.5, "together at the switch");
+  const midThrill = (thrill.time[thrill.from] + thrill.time[thrill.to]) / 2;
+  const c = poseAt(withSwitch, midThrill);
+  const d = poseAt(thrill, midThrill);
+  assert.ok(Math.hypot(c.p[0] - d.p[0], c.p[2] - d.p[2]) > 3, "apart on the detour");
+  assert.equal(pieceAt(thrill, d.index).kind, "thrill");
+  assert.equal(poseAt(thrill, thrill.duration + 1).done, true);
+});
+
+// ---------- color schemes ----------
+
+import { STEEL_SCHEMES, WOOD_FINISHES, CART_COLORS, DEFAULT_COLORS, steelScheme, woodFinish, cartColor } from "../src/tile-types/coaster-carnival/ride/colors.js";
+
+test("ready-made color schemes: steel, wood and cart, each complete, with a default", () => {
+  const hex = /^#[0-9a-f]{6}$/;
+  for (const [list, keys] of [
+    [STEEL_SCHEMES, ["rails", "spine", "ties", "supports"]],
+    [WOOD_FINISHES, ["rails", "stacks", "ties", "supports"]],
+    [CART_COLORS, ["body", "trim"]],
+  ]) {
+    assert.ok(list.length >= 4);
+    assert.equal(new Set(list.map((c) => c.id)).size, list.length, "ids differ");
+    for (const c of list) {
+      assert.ok(c.label);
+      for (const k of keys) assert.match(c[k], hex, `${c.id}.${k}`);
+    }
+  }
+  assert.equal(steelScheme(DEFAULT_COLORS.steel), STEEL_SCHEMES[0]);
+  assert.equal(woodFinish("nope"), WOOD_FINISHES[0], "unknown ids fall back to the default");
+  assert.equal(cartColor(DEFAULT_COLORS.cart), CART_COLORS[0]);
+  // Themes no longer carry track or cart colors: those are the creator's.
+  for (const id of THEME_IDS) for (const k of ["rails", "spine", "ties", "supports", "cart", "cartTrim"]) assert.equal(THEMES[id][k], undefined, `${id}.${k}`);
 });

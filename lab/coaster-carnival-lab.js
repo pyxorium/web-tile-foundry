@@ -3,6 +3,7 @@ import { generateTrack, RANGES, randomSeed } from "../src/tile-types/coaster-car
 import { createCoasterScene, BEHIND } from "../src/tile-types/coaster-carnival/ride/scene.js";
 import { THEMES, DEFAULT_THEME } from "../src/tile-types/coaster-carnival/ride/themes.js";
 import { createRideSound, DEFAULT_MIX, DEFAULT_TONE, DEFAULT_VOLUME } from "../src/tile-types/coaster-carnival/ride/sound.js";
+import { STEEL_SCHEMES, WOOD_FINISHES, CART_COLORS, DEFAULT_COLORS } from "../src/tile-types/coaster-carnival/ride/colors.js";
 
 // Coaster Carnival ride lab (development only; never part of the site).
 //   npm run lab   then open  /lab/coaster-carnival.html  (on the phone too)
@@ -23,6 +24,12 @@ const settings = {
   corkscrews: RANGES.corkscrews.default,
   intensity: RANGES.intensity.default,
   seed: 1,
+  trackSwitch: true,
+  trackStyle: "steel",
+  steelColors: DEFAULT_COLORS.steel,
+  woodColors: DEFAULT_COLORS.wood,
+  cartColors: DEFAULT_COLORS.cart,
+  route: "chill",
   theme: DEFAULT_THEME,
   view: "behind",
   camBack: BEHIND.back,
@@ -39,6 +46,7 @@ try {
 } catch {
   // Storage blocked: start from the defaults.
 }
+if (settings.route !== "thrill") settings.route = "chill"; // older saved names ("woods", "water")
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify(settings));
@@ -51,23 +59,45 @@ const sound = createRideSound();
 sound.setMuted(!settings.soundOn);
 sound.setVolume(settings.volume);
 sound.setTheme(settings.theme);
+sound.setStyle(settings.trackStyle);
 settings.mix = { ...DEFAULT_MIX, ...(settings.mix || {}) };
 sound.setMix(settings.mix);
 settings.tone = { ...DEFAULT_TONE, ...(settings.tone || {}) };
 sound.setTone(settings.tone);
 
+// What the prompt at the bottom says in each state. While boarding a ride
+// with a track switch, it asks for the choice (the stand-in for the real
+// tile's hint; the lab's "Choose" buttons and the arrow keys work too).
+const PROMPTS = {
+  waiting: "Tap to ride",
+  boarding: "Tap left or right to choose your way",
+  done: "Tap to ride again",
+};
 const ride = createCoasterScene(canvas, {
   onState: (state) => {
-    prompt.textContent = state === "done" ? "Tap to ride again" : "Tap to ride";
-    prompt.style.display = state === "riding" ? "none" : "block";
-    if (state !== "riding") sound.stop();
+    const ask = state === "boarding" && track?.trackSwitch;
+    prompt.textContent = ask ? PROMPTS.boarding : PROMPTS[state] || "";
+    prompt.style.display = state === "waiting" || state === "done" || ask ? "block" : "none";
+    if (state === "riding") sound.start();
+    else sound.stop();
   },
+  onCue: (name) => sound.cue(name),
 });
 
-/** Starts a ride with sound. Only call from a click or tap: browsers block sound otherwise. */
+/** Boards the cart, with sound. Only call from a click or tap: browsers block sound otherwise. */
 function startRide() {
   sound.start();
+  sound.stop(); // quiet in the station; the ride's sound starts as the cart rolls out
   ride.start();
+}
+
+/** A left or right tap (or arrow key): the route on that side of the switch. */
+function chooseSide(side) {
+  if (!track?.trackSwitch) return;
+  const route = side === ride.thrillSide ? "thrill" : "chill";
+  if (ride.choose(route)) {
+    if (ride.state === "boarding") prompt.style.display = "none";
+  }
 }
 
 // ---------- the track ----------
@@ -78,7 +108,14 @@ function rebuild() {
   clearTimeout(buildTimer);
   buildTimer = setTimeout(() => {
     const started = performance.now();
-    const input = { drops: settings.drops, loops: settings.loops, corkscrews: settings.corkscrews, intensity: settings.intensity, seed: settings.seed };
+    const input = {
+      drops: settings.drops,
+      loops: settings.loops,
+      corkscrews: settings.corkscrews,
+      intensity: settings.intensity,
+      seed: settings.seed,
+      trackSwitch: settings.trackSwitch,
+    };
     try {
       track = generateTrack(input);
     } catch (e) {
@@ -86,6 +123,8 @@ function rebuild() {
       return;
     }
     buildMs = Math.round(performance.now() - started);
+    ride.setStyle(settings.trackStyle);
+    applyColors();
     ride.setTrack(track);
     ride.setTheme(settings.theme);
     ride.setView(settings.view);
@@ -96,9 +135,17 @@ let buildMs = 0;
 
 function showInfo(live) {
   if (!track) return;
-  const left = Object.entries(track.leftOut).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${n === 1 ? k.replace(/s$/, "") : k}`);
+  const left = Object.entries(track.leftOut)
+    .filter(([k, n]) => n > 0 && k !== "trackSwitch")
+    .map(([k, n]) => `${n} ${n === 1 ? k.replace(/s$/, "") : k}`);
+  const sw = track.trackSwitch;
   const lines = [
     `${track.duration.toFixed(1)} s ride, ${Math.round(track.length)} m of track, up to ${Math.round(track.bounds.max[1])} m tall`,
+    sw
+      ? `switch at ${sw.at.toFixed(1)} s; thrill route ${sw.thrill.duration.toFixed(1)} s (${sw.extra.toFixed(1)} s longer), ${sw.feature} of ${Math.abs(sw.depth)} m`
+      : settings.trackSwitch
+        ? "no room for the switch on this layout"
+        : "no switch",
     `top speed ${Math.round(track.topSpeed * 3.6)} km/h, strongest push ${track.peakGs} g`,
     left.length ? `left out: ${left.join(", ")}` : "everything asked for fits",
     `made in ${buildMs} ms`,
@@ -132,8 +179,21 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
-canvas.addEventListener("click", () => {
-  if (ride.state !== "riding") startRide();
+canvas.addEventListener("click", (event) => {
+  // A tap during the pause back at the station skips it and boards again.
+  if (ride.state === "waiting" || ride.state === "done" || ride.state === "settling") startRide();
+  else if (ride.state === "boarding" || ride.state === "riding") {
+    const box = canvas.getBoundingClientRect();
+    chooseSide(event.clientX - box.left < box.width / 2 ? "left" : "right");
+  }
+});
+window.addEventListener("keydown", (event) => {
+  if (event.target !== document.body) return;
+  if (event.key === "ArrowLeft") chooseSide("left");
+  else if (event.key === "ArrowRight") chooseSide("right");
+  else if ((event.key === " " || event.key === "Enter") && ["waiting", "done", "settling"].includes(ride.state)) startRide();
+  else return;
+  event.preventDefault();
 });
 
 // ---------- the rider ----------
@@ -158,7 +218,7 @@ spriteFile.addEventListener("change", () => {
 
 const hot = import.meta.hot;
 const deviceId = Math.random().toString(36).slice(2);
-const SHARED = ["drops", "loops", "corkscrews", "intensity", "seed", "theme", "camBack", "camUp", "camFov"];
+const SHARED = ["drops", "loops", "corkscrews", "intensity", "seed", "trackSwitch", "trackStyle", "steelColors", "woodColors", "cartColors", "theme", "camBack", "camUp", "camFov"];
 let syncReady = false;
 let applyingRemote = false;
 function sendSync() {
@@ -171,6 +231,9 @@ if (hot) {
     applyingRemote = true;
     for (const k of SHARED) if (k in (data.ride || {})) settings[k] = data.ride[k];
     sound.setTheme(settings.theme);
+    sound.setStyle(settings.trackStyle);
+    ride.setStyle(settings.trackStyle);
+    applyColors();
     gui.controllersRecursive().forEach((c) => c.updateDisplay());
     applyingRemote = false;
     save();
@@ -198,6 +261,32 @@ fTrack.add(settings, "loops", RANGES.loops.min, RANGES.loops.max, 1).name("Loops
 fTrack.add(settings, "corkscrews", RANGES.corkscrews.min, RANGES.corkscrews.max, 1).name("Corkscrews").onFinishChange(() => changed());
 fTrack.add(settings, "intensity", RANGES.intensity.min, RANGES.intensity.max, 1).name("Intensity").onFinishChange(() => changed());
 fTrack.add(settings, "seed").name("Layout number").onFinishChange(() => changed());
+fTrack.add(settings, "trackSwitch").name("Track switch").onChange(() => changed());
+fTrack.add(settings, "trackStyle", { Steel: "steel", Wood: "wood" }).name("Track style").onChange(() => {
+  ride.setStyle(settings.trackStyle);
+  sound.setStyle(settings.trackStyle);
+  applyColors();
+  changed(false);
+});
+// Colors: the creator's ready-made schemes (the list shown follows the track style).
+const options = (list) => Object.fromEntries(list.map((c) => [c.label, c.id]));
+const steelPick = fTrack.add(settings, "steelColors", options(STEEL_SCHEMES)).name("Steel colors").onChange(() => {
+  applyColors();
+  changed(false);
+});
+const woodPick = fTrack.add(settings, "woodColors", options(WOOD_FINISHES)).name("Wood finish").onChange(() => {
+  applyColors();
+  changed(false);
+});
+fTrack.add(settings, "cartColors", options(CART_COLORS)).name("Cart color").onChange(() => {
+  applyColors();
+  changed(false);
+});
+function applyColors() {
+  ride.setColors({ steel: settings.steelColors, wood: settings.woodColors, cart: settings.cartColors });
+  steelPick?.show(settings.trackStyle !== "wood");
+  woodPick?.show(settings.trackStyle === "wood");
+}
 fTrack.add({ next: () => { settings.seed = randomSeed(); gui.controllersRecursive().forEach((c) => c.updateDisplay()); changed(); } }, "next").name("New layout");
 
 const fLook = gui.addFolder("Look and view");
@@ -211,6 +300,18 @@ fLook.add(settings, "view", { "Behind the cart": "behind", "Watch from outside":
   save();
 });
 fLook.add({ go: () => startRide() }, "go").name("Ride");
+fLook.add({ thrill: () => track?.trackSwitch && ride.choose("thrill") && (prompt.style.display = "none") }, "thrill").name("Choose Thrill");
+fLook.add({ chill: () => track?.trackSwitch && ride.choose("chill") && (prompt.style.display = "none") }, "chill").name("Choose Chill");
+fLook.add(settings, "route", { Chill: "chill", Thrill: "thrill" }).name("Route for the jump").onChange(save);
+fLook.add({
+  jump: () => {
+    if (!track?.trackSwitch) return;
+    if (ride.state !== "riding") sound.start();
+    ride.setRoute(settings.route);
+    ride.seek(Math.max(0, track.trackSwitch.at - 5));
+    ride.setRoute(settings.route);
+  },
+}, "jump").name("Jump to just before the switch");
 fLook.add({ stop: () => ride.stop() }, "stop").name("Back to the station");
 fLook.add({ pick: () => spriteFile.click() }, "pick").name("Try another sprite picture…");
 
@@ -287,6 +388,7 @@ function applyCamera() {
 if (window.innerWidth < 700) gui.close();
 
 applyCamera();
+applyColors();
 rebuild();
 
 // For checking from the browser console (development only).

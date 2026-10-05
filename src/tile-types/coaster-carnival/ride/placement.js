@@ -17,7 +17,10 @@ const PROP_SPACING = 3.5; // m between props
 
 function trackGrid(track) {
   const grid = new Map();
-  for (const [x, , z] of track.points) {
+  // With a track switch, the thrill route's own stretch counts as track too.
+  const thrill = track.trackSwitch?.thrill;
+  const points = thrill ? [...track.points, ...thrill.points.slice(thrill.from, thrill.to + 1)] : track.points;
+  for (const [x, , z] of points) {
     const key = `${Math.floor(x / CELL)},${Math.floor(z / CELL)}`;
     if (!grid.has(key)) grid.set(key, []);
     grid.get(key).push([x, z]);

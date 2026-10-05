@@ -99,12 +99,12 @@ export function boundsOf(points) {
   return { min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
 }
 
-export function checkBox(points) {
+export function checkBox(points, box = FIXED.box) {
   const b = boundsOf(points);
   const problems = [];
-  if (b.size[0] > FIXED.box.width) problems.push(`too wide (${b.size[0].toFixed(0)} m)`);
-  if (b.size[2] > FIXED.box.depth) problems.push(`too deep (${b.size[2].toFixed(0)} m)`);
-  if (b.max[1] > FIXED.box.height) problems.push(`too tall (${b.max[1].toFixed(0)} m)`);
+  if (b.size[0] > box.width) problems.push(`too wide (${b.size[0].toFixed(0)} m)`);
+  if (b.size[2] > box.depth) problems.push(`too deep (${b.size[2].toFixed(0)} m)`);
+  if (b.max[1] > box.height) problems.push(`too tall (${b.max[1].toFixed(0)} m)`);
   if (b.min[1] < 1) problems.push("goes into the ground");
   return problems;
 }

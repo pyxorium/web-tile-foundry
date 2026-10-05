@@ -13,6 +13,11 @@ import { add, sub, scale, dot, cross, length, normalize, perpendicular, rotateAr
 // keeps it steady, and from the top of the lift on, speed comes from height:
 //   v² = v_lift² + 2g (h_top − h) − 2g · friction · (distance since the top)
 // The brakes slow it down evenly to station speed; it stops in the station.
+//
+// `drag` (optional, one number per sample) scales the friction there: the
+// track switch's thrill route has drive tires along it that make up for its
+// extra length, so the cart comes back onto the main line with the same
+// speed whichever way it went (see switch.js).
 
 const BANK_LIMIT = (70 * Math.PI) / 180;
 const BANK_SMOOTHING = 4; // samples either side
@@ -62,7 +67,7 @@ export function shapeAt(track) {
 }
 
 /** Speed and arrival time at every sample. `kinds` gives each sample's piece kind. */
-export function speeds(track, kinds) {
+export function speeds(track, kinds, drag = null) {
   const { points, spacing } = track;
   const n = points.length;
   const v = new Float64Array(n);
@@ -72,6 +77,7 @@ export function speeds(track, kinds) {
   const top = points[liftEnd + 1]?.[1] ?? points[liftEnd][1];
   const vs = FIXED.stationSpeed;
   const vl = FIXED.liftSpeed;
+  let dragRun = 0; // meters since the top of the lift, each counted at its drag
 
   for (let i = 0; i < n; i++) {
     const d = i * spacing;
@@ -79,7 +85,8 @@ export function speeds(track, kinds) {
       // Station tires push the cart up to lift speed; the chain keeps it there.
       v[i] = Math.min(vl, Math.sqrt(0.25 + 2 * FIXED.startPush * d));
     } else if (i < brakeStart) {
-      const run = (i - liftEnd) * spacing;
+      if (drag) dragRun += drag[i] * spacing;
+      const run = drag ? dragRun : (i - liftEnd) * spacing;
       v[i] = Math.sqrt(Math.max(0, vl * vl + 2 * G * (top - points[i][1]) - 2 * G * FIXED.friction * run));
     } else if (i < stationIn) {
       const vb = v[brakeStart - 1];

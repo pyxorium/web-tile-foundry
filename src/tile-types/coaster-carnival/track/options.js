@@ -78,9 +78,12 @@ export const FIXED = Object.freeze({
   clearance: 4.5, // m, closest two separate parts of track may come
   box: Object.freeze({ width: 300, depth: 200, height: 50 }), // m, everything must fit inside
   sampleStep: 1, // m between stored points
-  // The track switch (see switch.js): the water route may run this many
-  // played seconds past the time cap (it is the longer way round).
-  switchExtraTime: 3,
+  // The track switch (see switch.js): the thrill route is this many played
+  // seconds longer than the chill route (aiming for the most), and may run
+  // that far past the time cap.
+  switchExtra: Object.freeze([4, 7]),
+  // The thrill route may reach a little beyond the usual box (the ride is framed to include it).
+  switchBox: Object.freeze({ width: 340, depth: 240, height: 50 }),
 });
 
 // What the intensity slider changes (1 gentle to 5 wild).

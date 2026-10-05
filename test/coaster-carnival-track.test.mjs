@@ -9,7 +9,7 @@ import { designLoop, designCorkscrew } from "../src/tile-types/coaster-carnival/
 import { shapeAt } from "../src/tile-types/coaster-carnival/track/ride.js";
 import { checkClearance, boundsOf } from "../src/tile-types/coaster-carnival/track/checks.js";
 import { smootherstep, plateau, plateauRate, angleBetween, length, sub, dot, cross } from "../src/tile-types/coaster-carnival/track/vec.js";
-import { detourOnTurn, splitTurnForSwitch } from "../src/tile-types/coaster-carnival/track/switch.js";
+import { thrillRoutes, splitTurnForSwitch, profileHeight } from "../src/tile-types/coaster-carnival/track/switch.js";
 import { walkPiece } from "../src/tile-types/coaster-carnival/track/plan.js";
 
 // Rides here use a roomy time cap (60 played seconds) unless a test is about
@@ -323,35 +323,42 @@ test("a corkscrew gets longer as the cart gets faster; too slow, no corkscrew", 
 
 // ---------- the track switch ----------
 
-
 const SWITCH_SAMPLES = SAMPLES.map((input) => ({ ...input, trackSwitch: true }));
 const nearestOn = (points, p) => Math.min(...points.map((q) => length(sub(p, q))));
 
-test("the water route lands exactly where the turn it replaces ends, facing the same way", () => {
+test("the thrill route lands exactly where the turn it replaces ends, facing the same way, with a real dip or hill", () => {
   const s = intensitySettings(3);
   let made = 0;
-  for (const deg of [40, 60, 80, 100, 120, 150]) {
-    for (const radius of [20, 40, 60]) {
-      const phi = (deg * Math.PI) / 180;
-      const turn = { kind: "turn", length: (phi * radius) / (1 - 0.25), h0: 2.5, h1: 2.5, turn: phi };
-      const d = detourOnTurn(turn, 18, s, () => 0.5);
-      if (!d) continue;
-      made++;
-      let [x, z, a] = [0, 0, 0];
-      for (const p of d.pieces) {
-        const w = walkPiece(p, a);
-        x += w.xs[w.n];
-        z += w.zs[w.n];
-        a = w.endHeading;
+  for (const [height, speed, feature] of [[20, 13.5, "dip"], [2.5, 22, "hill"]]) {
+    for (const deg of [50, 80, 100]) {
+      for (const radius of [20, 40]) {
+        const phi = (deg * Math.PI) / 180;
+        const turn = { kind: "turn", length: (phi * radius) / (1 - 0.25), h0: height, h1: height, turn: phi };
+        for (const d of thrillRoutes(turn, speed, s).slice(0, 3)) {
+          made++;
+          let [x, z, a] = [0, 0, 0];
+          for (const p of d.pieces) {
+            const w = walkPiece(p, a);
+            x += w.xs[w.n];
+            z += w.zs[w.n];
+            a = w.endHeading;
+          }
+          const end = walkPiece(turn, 0);
+          assert.ok(Math.hypot(x - end.xs[end.n], z - end.zs[end.n]) < 1e-6, `${deg}° r${radius}: lands on the turn's end`);
+          assert.ok(Math.abs(a - phi) < 1e-9, "facing the same way");
+          assert.ok(d.length > turn.length, "the thrill route is the longer way round");
+          assert.equal(d.feature, feature);
+          assert.ok(d.depth >= 4, "a dip (or hill) worth the name");
+          assert.ok(d.pieces.every((p) => p.kind === "thrill"));
+          // Starts and ends at the switch's height; down (or up) through the middle.
+          assert.equal(profileHeight(d.profile, 0), height);
+          assert.equal(profileHeight(d.profile, d.length), height);
+          assert.ok(Math.abs(profileHeight(d.profile, d.length / 2) - (height + (feature === "dip" ? -d.depth : d.depth))) < 1e-9);
+        }
       }
-      const end = walkPiece(turn, 0);
-      assert.ok(Math.hypot(x - end.xs[end.n], z - end.zs[end.n]) < 1e-6, `${deg}° r${radius}: lands on the turn's end`);
-      assert.ok(Math.abs(a - phi) < 1e-9, "facing the same way");
-      assert.ok(d.length > turn.length, "the water route is the longer way round");
-      assert.ok(d.pieces.every((p) => p.h0 === 2.5 && p.h1 === 2.5 && p.kind === "water"));
     }
   }
-  assert.ok(made >= 5, "many turns have room for a water route");
+  assert.ok(made >= 6, "turns have room for thrill routes");
   // A turn wider than about 105° is split in two, and the switch goes on the first half.
   const wide = [{ kind: "turn", length: 90, turn: 2.4, h0: 2, h1: 2, forSwitch: true }];
   const split = splitTurnForSwitch(wide);
@@ -360,8 +367,9 @@ test("the water route lands exactly where the turn it replaces ends, facing the 
   assert.ok(Math.abs(split[0].turn + split[1].turn - 2.4) < 1e-12);
 });
 
-test("with a switch: the main ride is the woods route, and the water route is a whole ride of its own", () => {
+test("with a switch: the main ride is the chill route, and the thrill route is a whole ride of its own, 4 to 7 s longer", () => {
   let fitted = 0;
+  const [fewest, most] = FIXED.switchExtra;
   for (const input of SWITCH_SAMPLES) {
     const t = ride(input);
     const sw = t.trackSwitch;
@@ -372,28 +380,37 @@ test("with a switch: the main ride is the woods route, and the water route is a 
       continue;
     }
     fitted++;
-    const w = sw.water;
+    const w = sw.thrill;
     // Same shape of data as the main ride.
     assert.equal(w.points.length, w.ups.length);
     assert.equal(w.speed.length, w.points.length);
     assert.equal(w.time.length, w.points.length);
     assert.equal(w.pieces[0].kind, "station-out");
     assert.equal(w.pieces.at(-1).kind, "station-in");
-    assert.equal(w.pieces.filter((p) => p.kind === "water").length, 1, "one water stretch");
+    assert.equal(w.pieces.filter((p) => p.kind === "thrill").length, 1, "one thrill stretch");
     // The routes part at the same moment.
-    assert.ok(Math.abs(t.time[sw.woods.from] - sw.at) < 0.01);
+    assert.ok(Math.abs(t.time[sw.chill.from] - sw.at) < 0.01);
     assert.ok(Math.abs(w.time[w.from] - sw.at) < 0.1, "both routes reach the switch together (to within a sample)");
-    // Off the detour, the water route runs on the main line.
+    // 4 to 7 seconds longer, as measured on the finished rides.
+    const extra = w.duration - t.duration;
+    assert.ok(Math.abs(extra - sw.extra) < 0.01);
+    assert.ok(extra >= fewest - 0.01 && extra <= most + 0.01, `${extra.toFixed(2)} s longer`);
+    // Off the detour, the thrill route runs on the main line.
     for (let i = 0; i < w.points.length; i += 7) {
       if (i >= w.from && i <= w.to) continue;
       assert.ok(nearestOn(t.points, w.points[i]) < t.spacing, `on the main line at ${i}`);
     }
-    // On the detour, it swings well clear of the turn it replaces.
+    // On the detour it swings clear of the turn it replaces, and dives (or climbs).
     const mid = w.points[Math.round((w.from + w.to) / 2)];
-    assert.ok(nearestOn(t.points.slice(sw.woods.from, sw.woods.to + 1), mid) > 3, "swings out");
-    // The longer way round, and within the cap plus the extra allowed.
-    assert.ok(w.duration >= t.duration - 0.05);
-    assert.ok(w.duration <= 60 + FIXED.switchExtraTime);
+    assert.ok(nearestOn(t.points.slice(sw.chill.from, sw.chill.to + 1), mid) > 3, "swings out");
+    const heights = w.points.slice(w.from, w.to + 1).map((p) => p[1]);
+    const start = w.points[w.from][1];
+    if (sw.feature === "dip") assert.ok(start - Math.min(...heights) > sw.depth - 0.5, "dives");
+    else assert.ok(Math.max(...heights) - start > sw.depth - 0.5, "climbs");
+    // Drive tires make up for the extra length: back on the main line, the
+    // cart has the same speed whichever way it went.
+    const after = 10;
+    assert.ok(Math.abs(w.speed[w.to + after] - t.speed[sw.chill.to + after]) < 0.3, "same speed after the routes meet");
     // A good ride too: keeps moving, rider's up is sound, clear of itself.
     for (let i = w.pieces.find((p) => p.kind === "crest").from; i < w.pieces.find((p) => p.kind === "brakes").from; i++) {
       assert.ok(w.speed[i] >= FIXED.minSpeed - 1e-6, "keeps moving");
@@ -403,7 +420,7 @@ test("with a switch: the main ride is the woods route, and the water route is a 
     const { tangents } = shapeAt(track);
     assert.deepEqual(checkClearance(track, tangents, w.ups), []);
   }
-  assert.ok(fitted >= SWITCH_SAMPLES.length * 0.85, `the switch fits most rides (${fitted} of ${SWITCH_SAMPLES.length})`);
+  assert.ok(fitted >= SWITCH_SAMPLES.length * 0.9, `the switch fits most rides (${fitted} of ${SWITCH_SAMPLES.length})`);
 });
 
 test("the switch sits near the middle of the ride, and the default ride keeps everything with it", () => {
@@ -413,14 +430,14 @@ test("the switch sits near the middle of the ride, and the default ride keeps ev
   const share = t.trackSwitch.at / t.duration;
   assert.ok(share > 0.3 && share < 0.7, `switch at ${Math.round(share * 100)}% of the ride`);
   assert.ok(t.duration <= FIXED.timeCap);
-  assert.ok(t.trackSwitch.water.duration <= FIXED.timeCap + FIXED.switchExtraTime);
+  assert.ok(t.trackSwitch.thrill.duration <= FIXED.timeCap + FIXED.switchExtra[1]);
   // Same input, same ride (both routes).
   assert.equal(generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: true }).fingerprint, t.fingerprint);
 });
 
 test("switch rides are locked by fingerprint too; without a switch nothing changed", () => {
-  assert.equal(generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: true }).fingerprint, "38f0dcc9");
-  assert.equal(generateTrack({ drops: 3, loops: 1, corkscrews: 1, intensity: 5, seed: 42, trackSwitch: true }, ROOMY).fingerprint, "73b13b12");
+  assert.equal(generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: true }).fingerprint, "5d07987b");
+  assert.equal(generateTrack({ drops: 3, loops: 1, corkscrews: 1, intensity: 5, seed: 42, trackSwitch: true }, ROOMY).fingerprint, "d337e47f");
   // trackSwitch: false is the same as leaving it out (the locked rides above).
   assert.equal(generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: false }, {}).fingerprint, "b044e6ab");
 });
