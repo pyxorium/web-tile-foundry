@@ -1,6 +1,9 @@
 // What the track generator takes in, and the tunable numbers behind it.
 //
-// Input: { drops, loops, corkscrews, intensity, seed, version }
+// Input: { drops, loops, corkscrews, intensity, seed, trackSwitch?, version }
+//
+// trackSwitch (true or false, default false): one track switch in the middle
+// of the ride, where the viewer can pick a second route (see switch.js).
 //
 // The theme is deliberately NOT an input: switching themes changes how a ride
 // looks and sounds, never its layout.
@@ -39,6 +42,9 @@ export function checkTrackInput(input) {
     throw new Error(`The layout seed must be a whole number from 0 to ${SEED_MAX}.`);
   }
   out.seed = seed;
+  const trackSwitch = input?.trackSwitch ?? false;
+  if (typeof trackSwitch !== "boolean") throw new Error("trackSwitch must be true or false.");
+  out.trackSwitch = trackSwitch;
   const version = input?.version ?? GENERATOR_VERSION;
   if (!SUPPORTED_VERSIONS.includes(version)) throw new Error(`Unknown track generator version ${version}.`);
   out.version = version;
@@ -72,6 +78,9 @@ export const FIXED = Object.freeze({
   clearance: 4.5, // m, closest two separate parts of track may come
   box: Object.freeze({ width: 300, depth: 200, height: 50 }), // m, everything must fit inside
   sampleStep: 1, // m between stored points
+  // The track switch (see switch.js): the water route may run this many
+  // played seconds past the time cap (it is the longer way round).
+  switchExtraTime: 3,
 });
 
 // What the intensity slider changes (1 gentle to 5 wild).

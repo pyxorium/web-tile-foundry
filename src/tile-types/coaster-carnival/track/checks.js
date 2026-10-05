@@ -62,6 +62,31 @@ export function checkClearance(track, tangents, ups) {
   return [];
 }
 
+/**
+ * Clearance between two routes of a track switch: for each [i, j] pair, point
+ * i of route a and point j of route b must be as far apart as two separate
+ * parts of one track (same rule as checkClearance).
+ */
+export function checkBetween(a, b, pairs) {
+  const near = (p, t, up, d) => {
+    const side = cross(t, up);
+    const along = dot(d, t);
+    const across = dot(d, side);
+    const stack = dot(d, up);
+    return (along * along + across * across) / (SIDE_GAP * SIDE_GAP) + (stack * stack) / (STACK_GAP * STACK_GAP) < 1;
+  };
+  for (const [i, j] of pairs) {
+    const p = a.track.points[i];
+    const q = b.track.points[j];
+    const d = sub(q, p);
+    if (dot(d, d) >= STACK_GAP * STACK_GAP) continue;
+    if (near(p, a.tangents[i], a.ups[i], d) || near(q, b.tangents[j], b.ups[j], sub([0, 0, 0], d))) {
+      return [`the two routes pass too close at ${Math.round(i * a.track.spacing)} m`];
+    }
+  }
+  return [];
+}
+
 export function boundsOf(points) {
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];

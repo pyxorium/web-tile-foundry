@@ -32,12 +32,12 @@ function turnHeading(start, turn, u) {
  * are exact. The same numbers are used for closing the circuit and for the
  * final shape, so the circuit closes exactly.
  */
-function walkPiece(piece, a) {
+export function walkPiece(piece, a) {
   let n = Math.max(1, Math.ceil(piece.length / DENSE_STEP));
   if (piece.element?.type === "corkscrew") n = Math.max(n, Math.ceil((3 * piece.length) / DENSE_STEP));
   const xs = new Float64Array(n + 1);
   const zs = new Float64Array(n + 1);
-  if (piece.kind === "turn") {
+  if (piece.turn) {
     const ds = piece.length / n;
     for (let i = 0; i < n; i++) {
       const th = turnHeading(a, piece.turn, (i + 0.5) / n);
@@ -71,7 +71,7 @@ function walkPiece(piece, a) {
 
 /** Just where a piece ends (no samples kept): [dx, dz, endHeading]. A quick estimate for turns (Simpson's rule). */
 function pieceEnd(piece, a) {
-  if (piece.kind === "turn") {
+  if (piece.turn) {
     const n = QUICK_TURN_STEPS;
     let x = 0;
     let z = 0;
@@ -340,4 +340,5 @@ export function sampleTrack(pieces) {
 }
 
 export { DENSE_STEP, MAX_FILLER };
+export { walkAll };
 export const _internal = { walkAll }; // for tests

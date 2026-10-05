@@ -35,6 +35,11 @@ const MIN_CREST_SPEED = 6; // m/s over a hilltop
 const MIN_HILL = 5; // m, a hill lower than this above the valley isn't worth having
 const LIFT_ANGLE = (45 * Math.PI) / 180;
 const BANK_AIM = (65 * Math.PI) / 180;
+// The turn the track switch sits on (see switch.js) is made this much wider
+// than the speed needs, so the water route has room to swing out around it
+// with turns of its own that are still gentle enough.
+const SWITCH_WIDEN = 2;
+const SWITCH_MAX_RADIUS = 60; // m
 
 /** Length a height change needs so slope, push into the seat and float all stay in bounds. */
 function easeLength(dh, vLow, vHigh, s) {
@@ -61,8 +66,11 @@ function shuffle(list, rand) {
  * Plans the pieces for one attempt. Returns { pieces, order }, where `order`
  * lists the drops, loops and corkscrews in riding order. Throws LayoutFail
  * when the cart wouldn't have the speed for what was asked.
+ *
+ * With `wantSwitch`, the turn nearest the middle of the ride is made wider
+ * and marked `forSwitch`: the track switch will sit on it.
  */
-export function layoutPieces(counts, s, rand) {
+export function layoutPieces(counts, s, rand, wantSwitch = false) {
   const { drops, loops, corkscrews } = counts;
 
   // Which valley each loop and corkscrew sits in. Earlier valleys are
@@ -85,6 +93,26 @@ export function layoutPieces(counts, s, rand) {
   const picked = shuffle([...fast], rand).slice(0, turnCount);
   if (picked.length < turnCount) picked.push("after-crest");
   const chosen = new Set(picked);
+  // The switch goes on the turn nearest the middle of the ride: the one with
+  // closest to half the drops, loops and corkscrews before it. Hilltop turns
+  // win ties: the cart is slower there, so the turns are smaller and the
+  // water route costs less time and room.
+  let switchSlot = null;
+  if (wantSwitch) {
+    const half = (drops + loops + corkscrews) / 2;
+    const slots = [["after-crest", 0, 1]];
+    let before = 0;
+    for (let k = 0; k < drops; k++) {
+      before += 1 + valleys[k].length;
+      slots.push([`valley-${k}`, before, 0], [`hill-${k}`, before, 1]);
+    }
+    slots.push(["before-brakes", drops + loops + corkscrews, 0]);
+    // Not the top of the lift if there's any other turn (too early, and slow).
+    let usable = slots.filter(([slot]) => chosen.has(slot) && slot !== "after-crest");
+    if (!usable.length) usable = slots.filter(([slot]) => chosen.has(slot));
+    usable.sort((a, b) => Math.abs(a[1] - half) - Math.abs(b[1] - half) || b[2] - a[2]);
+    switchSlot = usable[0][0];
+  }
   const sign = rand() < 0.5 ? 1 : -1;
   const angles = turnAngles(turnCount, rand);
   let nextTurn = 0;
@@ -110,9 +138,11 @@ export function layoutPieces(counts, s, rand) {
     const sideways = Math.min(Math.sqrt(s.maxGs * s.maxGs - 1), Math.tan(BANK_AIM));
     const tight = (speed * speed) / (G * sideways);
     const [rMin, rMax] = FIXED.turnRadiusRange;
-    const radius = Math.min(rMax, Math.max(rMin, tight * 1.15));
+    const forSwitch = slot === switchSlot;
+    const usual = Math.min(rMax, Math.max(rMin, tight * 1.15));
+    const radius = forSwitch ? Math.min(SWITCH_MAX_RADIUS, Math.max(rMin, tight * 1.15) * SWITCH_WIDEN) : usual;
     const length = (Math.abs(angle) * radius) / (1 - PLATEAU_RAMP); // turning eases in, holds, eases out
-    push({ kind: "turn", length, h0: h, h1: h, turn: angle, slot, after: length });
+    push({ kind: "turn", length, h0: h, h1: h, turn: angle, slot, after: length, ...(forSwitch ? { forSwitch } : {}) });
   };
   const ease = (kind, to, vLow, vHigh) => {
     const length = Math.max(4, easeLength(to - h, vLow, vHigh, s));

@@ -4,11 +4,13 @@
 //
 //   node lab/coaster-track-sketch.mjs                 writes coaster-tracks.svg
 //   node lab/coaster-track-sketch.mjs out.svg 60      file name, time cap in seconds
+//   node lab/coaster-track-sketch.mjs out.svg 40 switch   with the track switch
 import { writeFileSync } from "node:fs";
 import { generateTrack } from "../src/tile-types/coaster-carnival/track/index.js";
 
 const out = process.argv[2] || "coaster-tracks.svg";
 const timeCap = Number(process.argv[3] || 60);
+const withSwitch = process.argv[4] === "switch";
 
 const RIDES = [
   { drops: 1, loops: 0, corkscrews: 0, intensity: 1, seed: 7 },
@@ -32,6 +34,8 @@ const COLORS = {
   valley: "#999999",
   filler: "#bbbbbb",
   return: "#999999",
+  woods: "#1f6b3a",
+  water: "#2a8fd8",
 };
 const KEY = [
   ["station", COLORS["station-out"]],
@@ -43,6 +47,7 @@ const KEY = [
   ["turn", COLORS.turn],
   ["straight", COLORS.filler],
   ["brakes", COLORS.brakes],
+  ...(withSwitch ? [["woods route", COLORS.woods], ["water route", COLORS.water]] : []),
 ];
 
 const W = 1130;
@@ -53,10 +58,12 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
 let svg = "";
 RIDES.forEach((input, r) => {
-  const t = generateTrack(input, { timeCap });
+  const t = generateTrack({ ...input, trackSwitch: withSwitch }, { timeCap });
   const y0 = 60 + r * ROW;
   const kindAt = new Array(t.points.length);
   for (const p of t.pieces) for (let i = p.from; i <= p.to; i++) kindAt[i] = p.kind;
+  const sw = t.trackSwitch;
+  if (sw) for (let i = sw.woods.from; i <= sw.woods.to; i++) kindAt[i] = "woods";
 
   // From above: x across, z down the page (station at the front = bottom).
   const scaleTop = Math.min(TOP.w / t.bounds.size[0], TOP.h / t.bounds.size[2]);
@@ -79,11 +86,22 @@ RIDES.forEach((input, r) => {
   };
 
   const asked = `${input.drops} drop${input.drops > 1 ? "s" : ""}, ${input.loops} loop${input.loops === 1 ? "" : "s"}, ${input.corkscrews} corkscrew${input.corkscrews === 1 ? "" : "s"}, intensity ${input.intensity}, seed ${input.seed}`;
-  const left = Object.entries(t.leftOut).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k}`).join(", ");
+  const left = Object.entries(t.leftOut).filter(([, n]) => n).map(([k, n]) => (n === true ? "the switch" : `${n} ${k}`)).join(", ");
   svg += `<text x="20" y="${y0}" font-size="15" font-weight="600">${esc(asked)}</text>`;
-  svg += `<text x="20" y="${y0 + 17}" font-size="12" fill="#555">${esc(`${t.duration.toFixed(1)} s, ${Math.round(t.length)} m of track, top speed ${t.topSpeed} m/s, strongest push ${t.peakGs} g, ${Math.round(t.bounds.size[0])} × ${Math.round(t.bounds.size[2])} m, up to ${Math.round(t.bounds.max[1])} m tall${left ? `; left out: ${left}` : ""}`)}</text>`;
+  const times = sw ? `woods route ${t.duration.toFixed(1)} s, water route ${sw.water.duration.toFixed(1)} s, switch at ${sw.at.toFixed(1)} s` : `${t.duration.toFixed(1)} s`;
+  svg += `<text x="20" y="${y0 + 17}" font-size="12" fill="#555">${esc(`${times}, ${Math.round(t.length)} m of track, top speed ${t.topSpeed} m/s, strongest push ${t.peakGs} g, ${Math.round(t.bounds.size[0])} × ${Math.round(t.bounds.size[2])} m, up to ${Math.round(t.bounds.max[1])} m tall${left ? `; left out: ${left}` : ""}`)}</text>`;
   svg += `<rect x="${TOP.x}" y="${y0 + 20}" width="${TOP.w}" height="${TOP.h}" fill="#f6f4ef" rx="6"/>`;
   svg += segments(top);
+  if (sw) {
+    const w = sw.water.points;
+    for (let i = sw.water.from - 1; i <= sw.water.to; i++) {
+      const [ax, ay] = top(w[i]);
+      const [bx, by] = top(w[i + 1]);
+      svg += `<line x1="${ax.toFixed(1)}" y1="${ay.toFixed(1)}" x2="${bx.toFixed(1)}" y2="${by.toFixed(1)}" stroke="${COLORS.water}" stroke-width="2.5" stroke-linecap="round"/>`;
+    }
+    const [jx, jy] = top(t.points[sw.woods.from]);
+    svg += `<circle cx="${jx}" cy="${jy}" r="4" fill="none" stroke="#222" stroke-width="1.5"/><text x="${jx + 7}" y="${jy - 6}" font-size="11">switch</text>`;
+  }
   const [sx, sy] = top(t.points[0]);
   svg += `<circle cx="${sx}" cy="${sy}" r="5" fill="#222"/><text x="${sx + 8}" y="${sy + 4}" font-size="11">station</text>`;
   svg += `<rect x="${SIDE.x}" y="${y0 + 20}" width="${SIDE.w}" height="${SIDE.h}" fill="#f6f4ef" rx="6"/>`;
@@ -98,7 +116,7 @@ RIDES.forEach((input, r) => {
 
 let key = "";
 KEY.forEach(([label, color], i) => {
-  key += `<rect x="${20 + i * 115}" y="18" width="14" height="14" fill="${color}" rx="3"/><text x="${40 + i * 115}" y="30" font-size="12">${label}</text>`;
+  key += `<rect x="${20 + i * 98}" y="18" width="14" height="14" fill="${color}" rx="3"/><text x="${38 + i * 98}" y="30" font-size="12">${label}</text>`;
 });
 const H = 60 + RIDES.length * ROW;
 const page = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui, sans-serif"><rect width="100%" height="100%" fill="#fff"/>${key}${svg}</svg>`;

@@ -1,4 +1,4 @@
-// Coaster Carnival track generator tests (stage 2: maths only, no visuals).
+// Coaster Carnival track generator tests (stage 2 and the track switch: maths only, no visuals).
 // Run with:  npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,6 +9,8 @@ import { designLoop, designCorkscrew } from "../src/tile-types/coaster-carnival/
 import { shapeAt } from "../src/tile-types/coaster-carnival/track/ride.js";
 import { checkClearance, boundsOf } from "../src/tile-types/coaster-carnival/track/checks.js";
 import { smootherstep, plateau, plateauRate, angleBetween, length, sub, dot, cross } from "../src/tile-types/coaster-carnival/track/vec.js";
+import { detourOnTurn, splitTurnForSwitch } from "../src/tile-types/coaster-carnival/track/switch.js";
+import { walkPiece } from "../src/tile-types/coaster-carnival/track/plan.js";
 
 // Rides here use a roomy time cap (60 played seconds) unless a test is about
 // the cap, so they show the full shapes and don't depend on the cap's value.
@@ -41,7 +43,8 @@ const deg = (r) => (r * 180) / Math.PI;
 
 test("inputs are checked; the version is filled in; the theme is not part of the layout", () => {
   const ok = { drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 5 };
-  assert.deepEqual(checkTrackInput(ok), { ...ok, version: GENERATOR_VERSION });
+  assert.deepEqual(checkTrackInput(ok), { ...ok, trackSwitch: false, version: GENERATOR_VERSION });
+  assert.equal(checkTrackInput({ ...ok, trackSwitch: true }).trackSwitch, true);
   for (const [key, bad] of [
     ["drops", 0],
     ["drops", 5],
@@ -53,6 +56,7 @@ test("inputs are checked; the version is filled in; the theme is not part of the
     ["seed", 2 ** 32],
     ["seed", "7"],
     ["version", 99],
+    ["trackSwitch", "yes"],
   ]) {
     assert.throws(() => checkTrackInput({ ...ok, [key]: bad }), undefined, `${key}=${bad}`);
   }
@@ -184,7 +188,7 @@ test("times are played seconds: real ride time shown at the playback speed", () 
   assert.ok(Math.abs(t.duration * t.playbackSpeed - t.realDuration) < 0.01);
   // The modest default ride fits the standard cap whole.
   const standard = ride({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1 }, {});
-  assert.deepEqual(standard.leftOut, { drops: 0, loops: 0, corkscrews: 0 });
+  assert.deepEqual(standard.leftOut, { drops: 0, loops: 0, corkscrews: 0, trackSwitch: false });
   assert.ok(standard.duration <= FIXED.timeCap);
 });
 
@@ -222,7 +226,7 @@ test("what was built plus what was left out is what was asked for", () => {
   }
   // A modest ride at middle intensity fits whole.
   const whole = ride({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1 });
-  assert.deepEqual(whole.leftOut, { drops: 0, loops: 0, corkscrews: 0 });
+  assert.deepEqual(whole.leftOut, { drops: 0, loops: 0, corkscrews: 0, trackSwitch: false });
 });
 
 test("the time cap: rides fit it, or are already the smallest ride and say so", () => {
@@ -315,4 +319,108 @@ test("a corkscrew gets longer as the cart gets faster; too slow, no corkscrew", 
   assert.ok(fast.length > slow.length);
   // Below about 18 m/s riders wouldn't be held in over the top.
   assert.equal(designCorkscrew(14, 4, zero), null);
+});
+
+// ---------- the track switch ----------
+
+
+const SWITCH_SAMPLES = SAMPLES.map((input) => ({ ...input, trackSwitch: true }));
+const nearestOn = (points, p) => Math.min(...points.map((q) => length(sub(p, q))));
+
+test("the water route lands exactly where the turn it replaces ends, facing the same way", () => {
+  const s = intensitySettings(3);
+  let made = 0;
+  for (const deg of [40, 60, 80, 100, 120, 150]) {
+    for (const radius of [20, 40, 60]) {
+      const phi = (deg * Math.PI) / 180;
+      const turn = { kind: "turn", length: (phi * radius) / (1 - 0.25), h0: 2.5, h1: 2.5, turn: phi };
+      const d = detourOnTurn(turn, 18, s, () => 0.5);
+      if (!d) continue;
+      made++;
+      let [x, z, a] = [0, 0, 0];
+      for (const p of d.pieces) {
+        const w = walkPiece(p, a);
+        x += w.xs[w.n];
+        z += w.zs[w.n];
+        a = w.endHeading;
+      }
+      const end = walkPiece(turn, 0);
+      assert.ok(Math.hypot(x - end.xs[end.n], z - end.zs[end.n]) < 1e-6, `${deg}° r${radius}: lands on the turn's end`);
+      assert.ok(Math.abs(a - phi) < 1e-9, "facing the same way");
+      assert.ok(d.length > turn.length, "the water route is the longer way round");
+      assert.ok(d.pieces.every((p) => p.h0 === 2.5 && p.h1 === 2.5 && p.kind === "water"));
+    }
+  }
+  assert.ok(made >= 5, "many turns have room for a water route");
+  // A turn wider than about 105° is split in two, and the switch goes on the first half.
+  const wide = [{ kind: "turn", length: 90, turn: 2.4, h0: 2, h1: 2, forSwitch: true }];
+  const split = splitTurnForSwitch(wide);
+  assert.equal(split.length, 2);
+  assert.ok(split[0].forSwitch && !split[1].forSwitch);
+  assert.ok(Math.abs(split[0].turn + split[1].turn - 2.4) < 1e-12);
+});
+
+test("with a switch: the main ride is the woods route, and the water route is a whole ride of its own", () => {
+  let fitted = 0;
+  for (const input of SWITCH_SAMPLES) {
+    const t = ride(input);
+    const sw = t.trackSwitch;
+    assert.equal(t.built.trackSwitch, Boolean(sw));
+    assert.equal(t.leftOut.trackSwitch, !sw);
+    if (!sw) {
+      assert.ok(t.notes.some((n) => n.startsWith("switch left out")), "says why the switch was left out");
+      continue;
+    }
+    fitted++;
+    const w = sw.water;
+    // Same shape of data as the main ride.
+    assert.equal(w.points.length, w.ups.length);
+    assert.equal(w.speed.length, w.points.length);
+    assert.equal(w.time.length, w.points.length);
+    assert.equal(w.pieces[0].kind, "station-out");
+    assert.equal(w.pieces.at(-1).kind, "station-in");
+    assert.equal(w.pieces.filter((p) => p.kind === "water").length, 1, "one water stretch");
+    // The routes part at the same moment.
+    assert.ok(Math.abs(t.time[sw.woods.from] - sw.at) < 0.01);
+    assert.ok(Math.abs(w.time[w.from] - sw.at) < 0.1, "both routes reach the switch together (to within a sample)");
+    // Off the detour, the water route runs on the main line.
+    for (let i = 0; i < w.points.length; i += 7) {
+      if (i >= w.from && i <= w.to) continue;
+      assert.ok(nearestOn(t.points, w.points[i]) < t.spacing, `on the main line at ${i}`);
+    }
+    // On the detour, it swings well clear of the turn it replaces.
+    const mid = w.points[Math.round((w.from + w.to) / 2)];
+    assert.ok(nearestOn(t.points.slice(sw.woods.from, sw.woods.to + 1), mid) > 3, "swings out");
+    // The longer way round, and within the cap plus the extra allowed.
+    assert.ok(w.duration >= t.duration - 0.05);
+    assert.ok(w.duration <= 60 + FIXED.switchExtraTime);
+    // A good ride too: keeps moving, rider's up is sound, clear of itself.
+    for (let i = w.pieces.find((p) => p.kind === "crest").from; i < w.pieces.find((p) => p.kind === "brakes").from; i++) {
+      assert.ok(w.speed[i] >= FIXED.minSpeed - 1e-6, "keeps moving");
+    }
+    for (const u of w.ups) assert.ok(Math.abs(length(u) - 1) < 1e-3);
+    const track = { points: w.points, spacing: w.spacing };
+    const { tangents } = shapeAt(track);
+    assert.deepEqual(checkClearance(track, tangents, w.ups), []);
+  }
+  assert.ok(fitted >= SWITCH_SAMPLES.length * 0.85, `the switch fits most rides (${fitted} of ${SWITCH_SAMPLES.length})`);
+});
+
+test("the switch sits near the middle of the ride, and the default ride keeps everything with it", () => {
+  const t = ride({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: true }, {});
+  assert.ok(t.trackSwitch);
+  assert.deepEqual(t.leftOut, { drops: 0, loops: 0, corkscrews: 0, trackSwitch: false });
+  const share = t.trackSwitch.at / t.duration;
+  assert.ok(share > 0.3 && share < 0.7, `switch at ${Math.round(share * 100)}% of the ride`);
+  assert.ok(t.duration <= FIXED.timeCap);
+  assert.ok(t.trackSwitch.water.duration <= FIXED.timeCap + FIXED.switchExtraTime);
+  // Same input, same ride (both routes).
+  assert.equal(generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: true }).fingerprint, t.fingerprint);
+});
+
+test("switch rides are locked by fingerprint too; without a switch nothing changed", () => {
+  assert.equal(generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: true }).fingerprint, "38f0dcc9");
+  assert.equal(generateTrack({ drops: 3, loops: 1, corkscrews: 1, intensity: 5, seed: 42, trackSwitch: true }, ROOMY).fingerprint, "73b13b12");
+  // trackSwitch: false is the same as leaving it out (the locked rides above).
+  assert.equal(generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1, trackSwitch: false }, {}).fingerprint, "b044e6ab");
 });
