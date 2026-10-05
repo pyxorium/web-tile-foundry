@@ -78,3 +78,15 @@ export async function makeCardArt({ track, choices, sprite }) {
   const banner = await still({ track, choices, rider, width: BANNER_WIDTH, height: BANNER_HEIGHT, shot: "wide" });
   return { icon, banner };
 }
+
+// The Starting theme picture cards in the Foundry (same size as the other
+// types' picture cards). Used only to make the saved pictures
+// (public/coaster-carnival/theme-*.png, see pictures.js); the Foundry shows those files.
+export const SWATCH_WIDTH = 192;
+export const SWATCH_HEIGHT = 120;
+
+/** A small picture of the whole coaster, `scale` times the card size (2 stays sharp on high-resolution screens). */
+export async function makeSwatch({ track, choices, sprite, scale = 2 }) {
+  const rider = sprite ? await imageFromBytes(sprite) : null;
+  return still({ track, choices, rider, width: SWATCH_WIDTH * scale, height: SWATCH_HEIGHT * scale, shot: "wide", supersample: 2 });
+}

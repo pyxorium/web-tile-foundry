@@ -15,7 +15,9 @@ import { steelScheme, woodFinish, cartColor, DEFAULT_COLORS } from "./colors.js"
 //   const ride = createCoasterScene(canvas, { onState, onCue });
 //   ride.setTrack(generateTrack(...)); ride.setTheme("night"); ride.setRider(image);
 //   ride.start();                       // tap to ride: board the cart
-//   ride.choose("thrill" | "chill");    // with a track switch: which way (starts the ride)
+//   ride.choose("thrill" | "chill");    // with a track switch: which way (rings the bell, starts the ride)
+//   ride.ring();                        // without one: ring the bell (starts the ride)
+//   ride.stop();                        // back to the station, whenever
 //   ride.setStyle("steel" | "wood");    // the track's look (the layout is the same)
 //   ride.setColors({ steel, wood, cart }); // color scheme ids (colors.js), any of them
 //   ride.setView("behind" | "outside" | "above");
@@ -25,10 +27,12 @@ import { steelScheme, woodFinish, cartColor, DEFAULT_COLORS } from "./colors.js"
 // States:
 //   "waiting"   the whole coaster, cart in the station; nothing moves
 //   "boarding"  after the tap: the camera settles behind the cart, the lap bar
-//               locks (onCue "bar"). With a track switch, the cart waits here
-//               until choose() is called (the station sign shows the choice;
-//               after a few seconds both ways pulse), then the bell rings
-//               (onCue "bell") and it rolls out. Without one, a short hold.
+//               locks (onCue "bar"), and the cart waits for the viewer (no
+//               time limit). With a track switch, until choose() is called
+//               (the station sign shows the choice); without one, until
+//               ring() is called (the sign says "Ring the bell to go"). After
+//               a few seconds the sign pulses. Then the bell rings (onCue
+//               "bell") and the cart rolls out.
 //   "riding"    the ride itself (clock runs)
 //   "settling"  back in the station: a two second pause under the station
 //               sign, the lap bar lets go (onCue "release"). start() during it
@@ -69,7 +73,6 @@ const FOLLOW = 6; // how quickly a following camera catches up (per second)
 const ABOVE = { pitch: 50, fov: 40, span: 0.28, least: 25, free: 0.2, edge: 0.5, drift: 2 };
 const ABOVE_CART = 3; // the cart is drawn this much bigger from above, so it can be followed
 const ROOF = 6; // m from the rails up to the middle of the station roof
-const HOLD = 0.5; // s in the station before rolling out, without a switch
 const DISPATCH = 0.8; // s from choosing to rolling out (the bell rings at once)
 const PULSE_AFTER = 5; // s of waiting for a choice before both ways start to pulse
 const SETTLE = 2; // s paused in the station at the end (a tap skips it: start() boards again)
@@ -113,7 +116,7 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
   let style = "steel";
   const colors = { ...DEFAULT_COLORS };
   let choice = "chill";
-  let chosen = false; // a choice was made this ride
+  let chosen = false; // the way was chosen (or, without a switch, the bell rung) this ride
   let phase = 0; // seconds since the state began (boarding, settling, done)
   let dispatchAt = null; // phase at which a boarding cart rolls out
   let scenery = null;
@@ -479,6 +482,14 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     requestAnimationFrame(frame);
   }
 
+  /** The bell rings and the cart rolls out shortly after (the way chosen, or the bell rung). */
+  function send() {
+    chosen = true;
+    dispatchAt = phase + DISPATCH;
+    onCue("bell");
+    showSigns();
+  }
+
   function setState(next) {
     state = next;
     phase = 0;
@@ -517,13 +528,17 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       if (state === "boarding") {
         if (chosen) return false; // already rolling out
         choice = next;
-        chosen = true;
-        dispatchAt = phase + DISPATCH;
-        onCue("bell");
-        showSigns();
+        send();
         return true;
       }
       return this.setRoute(next);
+    },
+
+    /** Without a track switch: rings the bell, and the cart rolls out shortly after. Returns false if it can't now. */
+    ring() {
+      if (!track || track.trackSwitch || state !== "boarding" || chosen) return false;
+      send();
+      return true;
     },
 
     /** The route chosen at the switch ("chill" or "thrill"). */
@@ -653,16 +668,18 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       camReady = true;
       aboveReady = false;
       setState("boarding");
-      dispatchAt = track.trackSwitch ? null : HOLD;
+      dispatchAt = null; // waits for choose() or ring()
       onCue("bar");
-      if (!track.trackSwitch) setTimeout(() => state === "boarding" && onCue("bell"), HOLD * 600);
       showSigns();
       draw();
     },
 
     stop() {
+      if (state === "waiting") return;
       clock = 0;
       chosen = false;
+      dispatchAt = null;
+      camReady = false;
       setState("waiting");
       showSigns();
       draw();

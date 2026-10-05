@@ -273,11 +273,44 @@ function RangeInput({ input, value, onChange }) {
   );
 }
 
-function SeedInput({ input, onChange }) {
+function SeedInput({ input, value, onChange }) {
+  const max = input.max ?? 999999999;
+  // What is typed in the box (it may be empty or unfinished for a moment).
+  const [typed, setTyped] = useState(value == null ? "" : String(value));
+  useEffect(() => setTyped(value == null ? "" : String(value)), [value]);
   function pick() {
     const a = new Uint32Array(1);
     crypto.getRandomValues(a);
-    onChange(a[0] % 1000000000);
+    onChange(a[0] % (max + 1));
+  }
+  // With `editable`, the number itself shows beside the button and can be typed in.
+  if (input.editable) {
+    const id = `input-${input.key}`;
+    return (
+      <div className="field">
+        {input.label && <label className="field-label" htmlFor={id}>{input.label}</label>}
+        <div className="button-row">
+          <input
+            id={id}
+            className="text seed-number"
+            type="number"
+            inputMode="numeric"
+            min="0"
+            max={max}
+            step="1"
+            value={typed}
+            onChange={(e) => {
+              setTyped(e.target.value);
+              const n = Math.floor(Number(e.target.value));
+              if (e.target.value !== "" && Number.isFinite(n) && n >= 0 && n <= max) onChange(n);
+            }}
+            onBlur={() => setTyped(value == null ? "" : String(value))}
+          />
+          <button type="button" className="btn btn-quiet btn-small" onClick={pick}>{input.button || "New"}</button>
+        </div>
+        {input.help && <p className="field-help">{input.help}</p>}
+      </div>
+    );
   }
   return (
     <div className="field">

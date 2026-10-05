@@ -13,6 +13,10 @@ import { frameBetween } from "./path.js";
 //
 // Both can light up the chosen route (the other dims) and, while waiting for
 // a choice, pulse.
+//
+// A coaster without a switch gets the station sign alone, as the bell sign:
+// "All aboard!" over "🔔 Ring the bell to go" (pulsing while it waits), then
+// "Here we go!" lit once the bell rings.
 
 const FORK = { before: 6, clear: 4.2, w: 7, h: 1.6 }; // m: before the routes part, rails to board, board size
 // The station roof's underside is 5.9 m above the rails (see scene.js); the
@@ -34,7 +38,9 @@ export function thrillSide(track) {
  * A sign face drawn on a canvas, redrawn when its state changes:
  *   { chosen: null | "chill" | "thrill", top: null | string, pulse: 0..1 }
  */
-function signFace(theme, side, lines, aspect) {
+const BELL = Object.freeze({ top: "All aboard!", ask: "🔔 Ring the bell to go", go: "Here we go!" });
+
+function signFace(theme, side, lines, aspect, bell = false) {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = Math.round(1024 / aspect);
@@ -65,7 +71,25 @@ function signFace(theme, side, lines, aspect) {
       g.fillStyle = text;
       g.font = `bold ${size}px system-ui, sans-serif`;
       g.textAlign = "center";
-      g.fillText(top ?? "Fork ahead!", W / 2, H * 0.3);
+      g.fillText(top ?? (bell ? BELL.top : "Fork ahead!"), W / 2, H * 0.3);
+    }
+    if (bell) {
+      // One line under the top: the ask (glowing as it pulses), or "Here we go!" lit.
+      const label = chosen ? BELL.go : BELL.ask;
+      g.font = `bold ${Math.round(size * 0.9)}px system-ui, sans-serif`;
+      g.textAlign = "center";
+      const width = g.measureText(label).width;
+      const glow = chosen ? 1 : pulse;
+      if (glow > 0) {
+        g.globalAlpha = 0.85 * glow;
+        g.fillStyle = text;
+        g.fillRect(W / 2 - width / 2 - 18, rowY - plate / 2, width + 36, plate);
+        g.globalAlpha = 1;
+      }
+      g.fillStyle = glow > 0.5 ? board : text;
+      g.fillText(label, W / 2, rowY + 2);
+      texture.needsUpdate = true;
+      return;
     }
     g.font = `bold ${size}px system-ui, sans-serif`;
     for (const [route, x, align, label] of [
@@ -119,7 +143,8 @@ function board(face, w, h, frameMaterial, position, toward, group, geometries) {
  */
 export function buildSwitchSigns(track, theme) {
   const sw = track.trackSwitch;
-  if (!sw || typeof document === "undefined") return null;
+  if (typeof document === "undefined") return null;
+  if (!sw) return buildBellSign(track, theme);
   const side = thrillSide(track);
   const group = new THREE.Group();
   const geometries = [];
@@ -171,6 +196,33 @@ export function buildSwitchSigns(track, theme) {
       geometries.forEach((x) => x.dispose());
       [frameMaterial, forkMaterial, stationMaterial].forEach((x) => x.dispose());
       fork.texture.dispose();
+      station.texture.dispose();
+    },
+  };
+}
+
+/** The station sign alone, for a coaster without a switch: "All aboard!" over "Ring the bell to go". */
+function buildBellSign(track, theme) {
+  const group = new THREE.Group();
+  const geometries = [];
+  const frameMaterial = new THREE.MeshStandardMaterial({ color: theme.signColors.board, roughness: 0.7 });
+  const station = signFace(theme, "left", 2, STATION.w / STATION.h, true);
+  const stationMaterial = new THREE.MeshBasicMaterial({ map: station.texture, fog: true });
+  const f = frameBetween(track, 0, 0);
+  const flat = new THREE.Vector3(f.t[0], 0, f.t[2]).normalize();
+  const at = new THREE.Vector3(...f.p).addScaledVector(flat, STATION.ahead);
+  at.y = f.p[1] + STATION.bottom + STATION.h / 2;
+  board(stationMaterial, STATION.w, STATION.h, frameMaterial, at, flat.clone().negate(), group, geometries);
+  return {
+    group,
+    side: null,
+    /** { chosen (the bell has rung), pulse }. */
+    show(state) {
+      station.draw({ chosen: state.chosen, pulse: state.pulse });
+    },
+    dispose() {
+      geometries.forEach((x) => x.dispose());
+      [frameMaterial, stationMaterial].forEach((x) => x.dispose());
       station.texture.dispose();
     },
   };

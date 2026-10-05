@@ -84,6 +84,14 @@ export default function App() {
     }
   }, [type, account.handle, nameEdited]);
 
+  // Types that credit the maker (their starting values have a `handle`, as
+  // Coaster Carnival's "Built by @handle" does) get the signed-in handle.
+  useEffect(() => {
+    if (type && account.handle && "handle" in type.defaults({})) {
+      setValues((prev) => (prev.handle === account.handle ? prev : { ...prev, handle: account.handle }));
+    }
+  }, [type, account.handle]);
+
   // Signing out forgets the account's sprite.
   useEffect(() => {
     if (account.status === "signedOut") {

@@ -16,8 +16,10 @@ import { getTheme, THEME_IDS } from "./themes.js";
 //
 // Taps: on the waiting view, the end card or the pause back at the station, a
 // tap rides; while choosing (and until the fork), a tap on the left or right
-// half picks the way on that side. Keys: Space or Enter rides, the left and
-// right arrows choose. Every control is also a real button (controls.js).
+// half picks the way on that side; on a coaster without a switch, a tap while
+// boarding rings the bell. Keys: Space or Enter rides (and rings the bell),
+// the left and right arrows choose, Escape stops the ride. Every control is
+// also a real button (controls.js), including Stop during the ride.
 //
 // Looking after the viewer's device (as Glass Lantern does):
 //   - nothing moves or draws while the box is scrolled out of view or the tab
@@ -72,6 +74,8 @@ export function mountCoaster(box, options = {}) {
     sound: soundOn,
     onRide: () => startRide(),
     onChoose: (side) => choose(side),
+    onRing: () => ring(),
+    onStop: () => stop(),
     onTheme: (id) => api.setTheme(id),
     onView: (id) => api.setView(id),
     onSound: (on) => api.setSound(on),
@@ -96,7 +100,7 @@ export function mountCoaster(box, options = {}) {
       runSound();
     } else sound.stop();
     controls.setState(state, { names: names(), chosen: false, ridden: ridden.size, routes: routesOf() });
-    if (state === "done") controls.focusMain();
+    if (state === "done" || (state === "boarding" && routesOf() === 1)) controls.focusMain();
     if (options.onState) options.onState(state);
   }
 
@@ -137,9 +141,24 @@ export function mountCoaster(box, options = {}) {
     return done;
   }
 
+  /** Without a switch: rings the bell while boarding, and the cart rolls out. */
+  function ring() {
+    if (!ride || !ride.ring()) return false;
+    controls.setState("boarding", { names: names(), chosen: true, ridden: ridden.size, routes: routesOf() });
+    return true;
+  }
+
+  /** Back to the station, whenever (the Stop chip, or Escape). */
+  function stop() {
+    if (!ride || ride.state === "waiting") return false;
+    ride.stop();
+    return true;
+  }
+
   function onTap(event) {
     const state = ride?.state;
     if (state === "waiting" || state === "done" || state === "settling") startRide();
+    else if (state === "boarding" && !current.track?.trackSwitch) ring();
     else if (state === "boarding" || state === "riding") {
       const rect = canvas.getBoundingClientRect();
       choose(event.clientX - rect.left < rect.width / 2 ? "left" : "right");
@@ -153,9 +172,14 @@ export function mountCoaster(box, options = {}) {
     const state = ride.state;
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       if (!choose(event.key === "ArrowLeft" ? "left" : "right")) return;
+    } else if (event.key === "Escape") {
+      if (!stop()) return;
     } else if ((event.key === " " || event.key === "Enter") && ["waiting", "done", "settling"].includes(state)) {
       if (tag === "BUTTON" || tag === "A") return; // the focused button handles it
       startRide();
+    } else if ((event.key === " " || event.key === "Enter") && state === "boarding" && !current.track?.trackSwitch) {
+      if (tag === "BUTTON" || tag === "A") return;
+      if (!ring()) return;
     } else return;
     event.preventDefault();
   }
@@ -295,6 +319,8 @@ export function mountCoaster(box, options = {}) {
     },
     startRide,
     choose,
+    ring,
+    stop,
     dispose() {
       disposed = true;
       if (soundLoop) cancelAnimationFrame(soundLoop);

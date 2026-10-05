@@ -25,7 +25,8 @@
 //                        the value is a list of "#rrggbb", at least `min` (default 1)
 //               brush    one color from `colors` (a paintbrush, for painting in the preview)
 //               range    a number from `min` to `max` in steps of `step` (default 1), a slider
-//               seed     a whole number with a button (`button`, its label) that picks a new random one
+//               seed     a whole number with a button (`button`, its label) that picks a new random one;
+//                        with editable: true the number shows and can be typed (up to `max`)
 //               toggle   on or off (true or false), a switch
 //               action   a button (`button`, its label). Pressing it calls
 //                        applyChange(key, true, values), which does the work;

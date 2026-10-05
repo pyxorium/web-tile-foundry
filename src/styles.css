@@ -101,6 +101,9 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+/* A typed-in number beside its button (an "editable" seed, e.g. Coaster Carnival's Shape) */
+.text.seed-number { width: 9.5em; font-variant-numeric: tabular-nums; padding: 6px 10px; }
+.button-row:has(.seed-number) { align-items: center; }
 .btn {
   display: inline-flex; align-items: center; font: inherit; font-size: 15px; font-weight: 600; text-decoration: none;
   padding: 8px 14px; border-radius: 10px; border: 1px solid var(--accent); cursor: pointer;

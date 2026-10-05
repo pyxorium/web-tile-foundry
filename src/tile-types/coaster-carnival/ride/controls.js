@@ -8,8 +8,11 @@
 //              to choose your way"; in the view from above, two plain buttons at
 //              the bottom instead. They pulse after a while (the scene's job
 //              on the sign; here, the buttons)
-//   riding     nothing but a dimmed gear
-//   settling   nothing but a dimmed gear
+//              Without a switch: the station sign says "🔔 Ring the bell to go";
+//              a tap anywhere (or Space, Enter) rings it. A hidden "Ring the
+//              bell" button is there for keyboards and screen readers
+//   riding     a "Stop" chip (top left, back to the station) and a dimmed gear
+//   settling   the same
 //   done       "Ride again" (green) at the bottom, where "Tap to ride" was, and
 //              a slim strip along the bottom edge: "Built by @handle · Make
 //              your own"; the chips again. Nothing covers the coaster
@@ -53,10 +56,10 @@ function button(text, style = {}, label = text) {
  * box: the positioned element the ride fills. options:
  *   handle (creator's handle, for the credit), makeUrl (link to the Foundry),
  *   themes (ids), theme, view, sound (on or off),
- *   onRide(), onChoose(side "left" | "right"), onTheme(id), onView(id), onSound(on)
+ *   onRide(), onChoose(side "left" | "right"), onRing(), onStop(), onTheme(id), onView(id), onSound(on)
  */
 export function createControls(box, options) {
-  const { handle = null, makeUrl = null, themes = ["day", "night", "spooky"], onRide, onChoose, onTheme, onView, onSound } = options;
+  const { handle = null, makeUrl = null, themes = ["day", "night", "spooky"], onRide, onChoose, onRing = () => {}, onStop = () => {}, onTheme, onView, onSound } = options;
   let theme = options.theme;
   let view = options.view;
   let sound = options.sound !== false;
@@ -87,6 +90,10 @@ export function createControls(box, options) {
   const nextOf = (list, id) => list[(list.indexOf(id) + 1) % list.length];
   themeChip.addEventListener("click", () => onTheme(nextOf(themes, theme)));
   viewChip.addEventListener("click", () => onView(nextOf(VIEWS.map((v) => v.id), view)));
+
+  // ---------- "Stop" during the ride (top left, where the chips were) ----------
+  const stopChip = live(button("■ Stop", { position: "absolute", top: "10px", left: "10px", ...chipStyle }, "Stop the ride and go back to the station"));
+  stopChip.addEventListener("click", () => onStop());
 
   // ---------- the gear and its menu (top right) ----------
   const gearWrap = live(el("div", { position: "absolute", top: "10px", right: "10px" }));
@@ -168,6 +175,11 @@ export function createControls(box, options) {
   }
   labelChoices();
 
+  // ---------- without a switch: ringing the bell (the sign asks; a tap anywhere rings) ----------
+  // Hidden like the Ride button: for keyboards and screen readers.
+  const bell = live(button("Ring the bell", { position: "absolute", width: "1px", height: "1px", padding: "0", overflow: "hidden", clip: "rect(0 0 0 0)", border: "0" }, "Ring the bell to go"));
+  bell.addEventListener("click", () => onRing());
+
   // ---------- the end: "Ride again" and the credit strip ----------
   const again = live(button("Ride again", { position: "absolute", left: "50%", bottom: "34px", transform: "translateX(-50%)", height: "42px", padding: "0 30px", background: GO, border: "0", borderRadius: "999px", font: `800 16px ${FONT}`, boxShadow: "0 3px 12px rgba(0,0,0,0.35)", whiteSpace: "nowrap" }));
   again.addEventListener("click", () => onRide());
@@ -183,6 +195,9 @@ export function createControls(box, options) {
 
   function render() {
     const choosing = state === "boarding" && routes > 1 && !options.chosen;
+    const ringing = state === "boarding" && routes === 1 && !options.chosen;
+    show(stopChip, state === "boarding" || state === "riding" || state === "settling");
+    show(bell, ringing);
     show(chips, state === "waiting" || state === "done");
     themeChip.textContent = `${THEME_ICONS[theme] || ""} ${THEME_LABELS[theme] || theme}`;
     themeChip.setAttribute("aria-label", `Theme: ${THEME_LABELS[theme] || theme}. Change theme`);
@@ -203,14 +218,15 @@ export function createControls(box, options) {
     show(bottomRow, choosing && view === "above");
     show(again, state === "done");
     show(strip, state === "done" && (handle || makeUrl));
-    if (choosing && !pulse) {
+    const waiting = choosing || ringing;
+    if (waiting && !pulse) {
       const started = performance.now();
       pulse = setInterval(() => {
         const t = (performance.now() - started) / 1000;
         const k = t > 5 ? 1 + 0.06 * Math.sin((t - 5) * 4) : 1;
         for (const b of [leftBig, rightBig, leftSmall, rightSmall]) b.style.transform = `scale(${k.toFixed(3)})`;
       }, 50);
-    } else if (!choosing && pulse) {
+    } else if (!waiting && pulse) {
       clearInterval(pulse);
       pulse = null;
       for (const b of [leftBig, rightBig, leftSmall, rightSmall]) b.style.transform = "";
@@ -246,7 +262,7 @@ export function createControls(box, options) {
     },
     /** Moves keyboard focus to the main action (after "Ride again", for example). */
     focusMain() {
-      (state === "done" ? again : rideButton).focus({ preventScroll: true });
+      (state === "done" ? again : state === "boarding" && routes === 1 ? bell : rideButton).focus({ preventScroll: true });
     },
     dispose() {
       if (pulse) clearInterval(pulse);
