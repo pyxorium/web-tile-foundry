@@ -16,7 +16,7 @@ import { steelScheme, woodFinish, cartColor, DEFAULT_COLORS } from "./colors.js"
 //   ride.choose("thrill" | "chill");    // with a track switch: which way (starts the ride)
 //   ride.setStyle("steel" | "wood");    // the track's look (the layout is the same)
 //   ride.setColors({ steel, wood, cart }); // color scheme ids (colors.js), any of them
-//   ride.setView("behind" | "outside" | "side");
+//   ride.setView("behind" | "outside" | "above");
 //   ride.setRoute("chill" | "thrill");  // with a track switch: which way at the switch
 //
 // States:
@@ -28,15 +28,18 @@ import { steelScheme, woodFinish, cartColor, DEFAULT_COLORS } from "./colors.js"
 //               (onCue "bell") and it rolls out. Without one, a short hold.
 //   "riding"    the ride itself (clock runs)
 //   "settling"  back in the station: a two second pause under the station
-//               sign, the lap bar lets go (onCue "release"); the sign suggests
-//               the other way next time. start() during it boards again at once
+//               sign, the lap bar lets go (onCue "release"). start() during it
+//               boards again at once
 //   "done"      the camera eases back out to the whole coaster; start() rides again
 // None of the boarding or settling time counts as ride time.
 //
 // Views: "behind" rides along behind and a little above the cart (the main
 // view); "outside" watches the whole track with the cart running round it;
-// "side" is a level side view of the whole track, for viewers who prefer
-// reduced motion. While waiting, every view shows the whole track.
+// "above" is the gentle view, for viewers who prefer reduced motion: high up
+// and looking down at a slant, always from the same compass direction, with
+// a good part of the coaster in view. The cart is drawn bigger; the view
+// glides after it to keep it near the middle (it never turns, rolls, cuts or
+// fades). While waiting, every view shows the whole track.
 //
 // Track switch: the choice is made while boarding (choose), and can still be
 // changed (choose or setRoute) until the cart reaches the switch; up to there
@@ -49,7 +52,14 @@ const MAX_PIXELS = 1.6e6; // drawing-buffer budget, as in Glass Lantern
 export const BEHIND = Object.freeze({ back: 6.5, up: 2.6, ahead: 4, fov: 64 }); // m, m, m, degrees
 const DRONE = { distance: 26, height: 12 }; // m, for "Watch from outside"
 const FOLLOW = 6; // how quickly a following camera catches up (per second)
-const SIDE_VIEW_CART = 4; // the cart is drawn this much bigger in the side view, so it can be followed
+// The view from above: how steeply it looks down (degrees), how much of the
+// coaster fits across the tile's shorter side (a share of its longer side,
+// but at least `least` m), and how the view follows the cart. The cart can
+// wander `free` of the way from the middle to the edge before the view moves;
+// past that, the view drifts after it gently (`drift`, per second), and at
+// `edge` it keeps pace, so the cart never leaves the frame.
+const ABOVE = { pitch: 50, fov: 40, span: 0.28, least: 25, free: 0.2, edge: 0.5, drift: 2 };
+const ABOVE_CART = 3; // the cart is drawn this much bigger from above, so it can be followed
 const ROOF = 6; // m from the rails up to the middle of the station roof
 const HOLD = 0.5; // s in the station before rolling out, without a switch
 const DISPATCH = 0.8; // s from choosing to rolling out (the bell rings at once)
@@ -96,7 +106,6 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
   let chosen = false; // a choice was made this ride
   let phase = 0; // seconds since the state began (boarding, settling, done)
   let dispatchAt = null; // phase at which a boarding cart rolls out
-  const ridden = new Set(); // routes ridden on this track, for the end message
   let scenery = null;
   let theme = getTheme(DEFAULT_THEME);
   let view = "behind";
@@ -104,6 +113,7 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
   let clock = 0;
   let lastTick = 0;
   let running = false;
+  let paused = false; // scrolled away or tab hidden (see mount.js): nothing moves or draws
   let drawQueued = false;
   let disposed = false;
 
@@ -158,12 +168,9 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
 
   function showSigns(pulse = 0) {
     if (!sign) return;
-    let top = null;
-    if (state === "settling" || state === "done") {
-      const other = choice === "thrill" ? "chill" : "thrill";
-      top = ridden.size > 1 ? "You rode both!" : `Next time: ${theme.routes[other]}?`;
-    }
-    sign.show({ chosen: chosen ? choice : null, top, pulse });
+    // Back in the station the signs go back to plain (no lit way).
+    const lit = chosen && state !== "settling" && state !== "done";
+    sign.show({ chosen: lit ? choice : null, pulse });
   }
 
   /** The route the cart is following: the main ride, or the thrill route. */
@@ -212,22 +219,24 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
 
   // ---------- cameras ----------
 
-  /** A camera position that shows the whole track; `side` = level side view. With `into`, only works it out. */
-  function wideShot(side, into = null) {
+  /** A camera position that shows the whole track. With `into`, only works it out. */
+  function wideShot(into = null) {
     const b = track.bounds;
     const width = b.size[0];
     const depth = b.size[2];
     const tall = b.max[1];
     const aspect = camera.aspect;
-    camera.fov = side ? 32 : 40;
+    camera.fov = 40;
     const vfov = (camera.fov * Math.PI) / 180;
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
     // Distance so the whole width fits across and the height fits up.
     const fitWide = (width * 0.55) / Math.tan(hfov / 2);
-    const fitTall = ((side ? tall : depth * 0.5 + tall) * 0.6) / Math.tan(vfov / 2);
+    const fitTall = ((depth * 0.5 + tall) * 0.6) / Math.tan(vfov / 2);
     const dist = Math.max(fitWide, fitTall) + depth * 0.5;
-    const pos = side ? new THREE.Vector3(0, tall * 0.45 + 2, dist) : new THREE.Vector3(width * 0.08, dist * 0.36 + tall * 0.5, dist * 0.92);
-    const look = side ? new THREE.Vector3(0, tall * 0.4, 0) : new THREE.Vector3(0, tall * 0.2, 0);
+    const cx = (b.min[0] + b.max[0]) / 2;
+    const cz = (b.min[2] + b.max[2]) / 2;
+    const pos = new THREE.Vector3(cx + width * 0.08, dist * 0.36 + tall * 0.5, cz + dist * 0.92);
+    const look = new THREE.Vector3(cx, tall * 0.2, cz);
     if (into) {
       into.pos = pos;
       into.look = look;
@@ -262,6 +271,50 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     follow(want, new THREE.Vector3(...back.up), lookAt, dt, behind.fov);
   }
 
+  // The gentle view from above. It always looks the same way (toward -z, the
+  // way the whole-coaster view looks), from high up at a slant. Its middle
+  // stays put while the cart moves about near it, then drifts after it.
+  const aboveAt = new THREE.Vector2(); // the middle of the view, on the ground (x, z)
+  let aboveReady = false;
+  function aboveShot(pose, dt) {
+    const b = track.bounds;
+    const pitch = (ABOVE.pitch * Math.PI) / 180;
+    const span = Math.max(ABOVE.least, Math.max(b.size[0], b.size[2]) * ABOVE.span);
+    const look = b.max[1] * 0.3; // the height the view centers on (fixed, so the view never bobs)
+    // A raised cart shows where a ground point a little further away would:
+    // follow that point, so a cart high on a hill stays in frame too.
+    const x = pose.p[0];
+    const z = pose.p[2] - (pose.p[1] - look) / Math.tan(pitch);
+    const half = span / 2;
+    if (!aboveReady) {
+      aboveAt.set(x, z);
+      aboveReady = true;
+    }
+    const dx = x - aboveAt.x;
+    const dz = (z - aboveAt.y) * Math.sin(pitch); // ground depth looks shorter on screen when slanted
+    const off = Math.hypot(dx, dz);
+    const free = half * ABOVE.free;
+    const edge = half * ABOVE.edge;
+    if (off > free) {
+      // Drift: gently while just past the free zone; never letting the cart past the edge.
+      const k = Math.min(1, dt * ABOVE.drift * ((off - free) / (edge - free)));
+      let move = (off - free) * k;
+      move = Math.max(move, off - edge);
+      aboveAt.x += (dx / off) * move;
+      aboveAt.y += ((dz / off) * move) / Math.sin(pitch);
+    }
+    // Keep the view mostly over the coaster (it may look a little past the
+    // coaster's edge, so a cart there isn't squeezed against the frame).
+    aboveAt.x = clampMid(aboveAt.x, b.min[0], b.max[0], half * 0.6);
+    aboveAt.y = clampMid(aboveAt.y, b.min[2], b.max[2], half * 0.6);
+    const vfov = (ABOVE.fov * Math.PI) / 180;
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+    const dist = half / Math.tan(Math.min(vfov, hfov) / 2) + b.max[1] * 0.5;
+    lookAt.set(aboveAt.x, look, aboveAt.y);
+    const want = new THREE.Vector3(aboveAt.x, look + dist * Math.sin(pitch), aboveAt.y + dist * Math.cos(pitch));
+    follow(want, new THREE.Vector3(0, 1, 0), lookAt, dt, ABOVE.fov);
+  }
+
   function droneShot(pose, dt) {
     // Off to the outside of the circuit and above, looking at the cart.
     const p = new THREE.Vector3(...pose.p);
@@ -289,6 +342,11 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
 
   function frame(now) {
     drawQueued = false;
+    if (paused) {
+      running = false;
+      lastTick = 0;
+      return;
+    }
     if (disposed || !track) return;
     const dt = lastTick ? Math.min(0.1, (now - lastTick) / 1000) : 0;
     lastTick = now;
@@ -304,7 +362,6 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       clock += dt;
       if (clock >= r.duration) {
         clock = r.duration;
-        ridden.add(choice);
         setState("settling");
         onCue("release");
         showSigns();
@@ -314,17 +371,19 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     }
     const moving = state === "boarding" || state === "riding" || state === "settling";
     const pose = poseAt(r, state === "riding" ? clock : 0);
-    cart.place(pose, state === "riding" && view === "side" ? SIDE_VIEW_CART : 1);
+    const fromAbove = moving && view === "above";
+    cart.place(pose, fromAbove ? ABOVE_CART : 1);
     if (moving && view === "behind") behindShot(pose, dt);
     else if (moving && view === "outside") droneShot(pose, dt);
-    else if (state === "done" && phase < EASE_OUT && camReady && view !== "side") {
+    else if (fromAbove) aboveShot(pose, dt);
+    else if (state === "done" && phase < EASE_OUT && camReady) {
       // Ease back out to the whole coaster.
       const target = {};
-      wideShot(false, target);
+      wideShot(target);
       const k = 1 - Math.exp(-dt * 5);
       lookAt.lerp(target.look, k);
       follow(target.pos, new THREE.Vector3(0, 1, 0), lookAt, dt, camera.fov + (target.fov - camera.fov) * k);
-    } else wideShot(view === "side");
+    } else wideShot();
     cart.faceCamera(camera);
     renderer.render(scene, camera);
     if (moving || (state === "done" && phase < EASE_OUT)) {
@@ -338,7 +397,7 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
   }
 
   function draw() {
-    if (running || drawQueued || disposed) return;
+    if (running || drawQueued || disposed || paused) return;
     drawQueued = true;
     requestAnimationFrame(frame);
   }
@@ -443,7 +502,6 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       scene.add(trackParts.group);
       choice = "chill";
       chosen = false;
-      ridden.clear();
       buildStation();
       applyTheme();
       rebuildScenery();
@@ -479,7 +537,8 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     },
 
     setView(next) {
-      view = next;
+      view = next === "side" ? "above" : next; // "side" was this view's old name
+      aboveReady = false;
       camReady = false;
       draw();
     },
@@ -495,6 +554,7 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       camPos.copy(camera.position);
       camUp.copy(camera.up);
       camReady = true;
+      aboveReady = false;
       setState("boarding");
       dispatchAt = track.trackSwitch ? null : HOLD;
       onCue("bar");
@@ -509,6 +569,19 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       setState("waiting");
       showSigns();
       draw();
+    },
+
+    /** Pauses everything (the ride clock too) while the tile can't be seen; false carries on where it was. */
+    setPaused(on) {
+      paused = Boolean(on);
+      if (!paused) {
+        lastTick = 0;
+        draw();
+      }
+    },
+
+    get paused() {
+      return paused;
     },
 
     /** Jumps to a moment of the ride (played seconds), riding from there. For the lab. */
@@ -541,4 +614,10 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     // For the lab's readouts.
     renderer,
   };
+}
+
+/** `mid` kept at least `half` inside [min, max] (or the middle, if the range is narrower than the view). */
+function clampMid(mid, min, max, half) {
+  if (max - min <= half * 2) return (min + max) / 2;
+  return Math.max(min + half, Math.min(max - half, mid));
 }

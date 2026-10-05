@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { frameBetween } from "./path.js";
 
 // The track switch's two signs, both showing which way each route goes
-// ("← Thrill   Chill →"; the words come from the theme, the arrows from the
-// side the thrill route actually leaves on):
+// ("← Frolic   Detour →"; the words come from the theme, the arrows from the
+// side the long route, "thrill" in the code, actually leaves on):
 //
 //   the fork sign     on a frame over the track just before the routes part,
 //                     facing the oncoming cart
@@ -12,8 +12,7 @@ import { frameBetween } from "./path.js";
 //                     viewer chooses. Two lines: "Fork ahead!" over the arrows.
 //
 // Both can light up the chosen route (the other dims) and, while waiting for
-// a choice, pulse; the station sign's top line can change (at the end of the
-// ride, a nudge toward the other route).
+// a choice, pulse.
 
 const FORK = { before: 6, clear: 4.2, w: 7, h: 1.6 }; // m: before the routes part, rails to board, board size
 // The station roof's underside is 5.9 m above the rails (see scene.js); the

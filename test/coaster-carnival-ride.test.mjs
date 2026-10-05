@@ -152,3 +152,16 @@ test("ready-made color schemes: steel, wood and cart, each complete, with a defa
   // Themes no longer carry track or cart colors: those are the creator's.
   for (const id of THEME_IDS) for (const k of ["rails", "spine", "ties", "supports", "cart", "cartTrim"]) assert.equal(THEMES[id][k], undefined, `${id}.${k}`);
 });
+
+// ---------- the viewer's controls (stage 4) ----------
+
+import { VIEWS } from "../src/tile-types/coaster-carnival/ride/controls.js";
+
+test("the controls offer the scene's three views, behind the cart first", () => {
+  assert.deepEqual(VIEWS.map((v) => v.id), ["behind", "outside", "above"]);
+  for (const v of VIEWS) assert.ok(v.label.length > 0 && v.label.length <= 8, "short enough for a chip");
+});
+
+test("the two ways are Frolic (the long one) and Detour (the short one) in every theme", () => {
+  for (const id of THEME_IDS) assert.deepEqual({ ...THEMES[id].routes }, { chill: "Detour", thrill: "Frolic" }, id);
+});

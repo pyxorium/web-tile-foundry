@@ -12,6 +12,9 @@
 //   landmark            "ferris" (a Ferris wheel) or "haunted" (a house on a hill)
 //   extras              clouds, stars, moon, bulbs (along the track), mist
 //   routes              the words on the track switch's signs for each route
+//                       (Frolic is the long way round, Detour the short one:
+//                       a nod to the "frolic and detour" rule, where a frolic
+//                       is the bigger departure)
 //   signColors          the sign's board and lettering
 
 export const THEMES = Object.freeze({
@@ -43,7 +46,7 @@ export const THEMES = Object.freeze({
     propColors: Object.freeze({ leaves: "#3f8f45", trunk: "#7a5232", tentA: "#e23d2e", tentB: "#ffffff", tentC: "#2a5db0", sign: "#f6c531", wood: "#9a6a44", door: "#3a2a20", lamp: "#3a3f48", balloon: Object.freeze(["#e23d2e", "#f6c531", "#2a5db0", "#8e44ad", "#27ae60"]) }),
     landmark: "ferris",
     landmarkColor: "#ffffff",
-    routes: Object.freeze({ chill: "Chill", thrill: "Thrill" }),
+    routes: Object.freeze({ chill: "Detour", thrill: "Frolic" }),
     signColors: Object.freeze({ board: "#2a5db0", text: "#ffffff" }),
     extras: Object.freeze({ clouds: true, stars: false, moon: false, bulbs: false, mist: false }),
     moon: "#ffffff",
@@ -76,7 +79,7 @@ export const THEMES = Object.freeze({
     propColors: Object.freeze({ leaves: "#1f3a33", trunk: "#2b2420", tentA: "#ff4fb8", tentB: "#f4ecff", tentC: "#35e0ff", sign: "#ffd23f", wood: "#4a3a52", door: "#ffb35c", lamp: "#2c3352", balloon: Object.freeze([]) }),
     landmark: "ferris",
     landmarkColor: "#ffd23f",
-    routes: Object.freeze({ chill: "Chill", thrill: "Thrill" }),
+    routes: Object.freeze({ chill: "Detour", thrill: "Frolic" }),
     signColors: Object.freeze({ board: "#1b1d3a", text: "#ffd23f" }),
     extras: Object.freeze({ clouds: false, stars: true, moon: true, bulbs: true, mist: false }),
     moon: "#f3eecb",
@@ -107,7 +110,7 @@ export const THEMES = Object.freeze({
     propColors: Object.freeze({ leaves: "#000000", trunk: "#2e2219", tentA: "#000000", tentB: "#000000", lamp: "#000000", grave: "#8a8a8f", pumpkin: "#ff7a1a", balloon: Object.freeze([]) }),
     landmark: "haunted",
     landmarkColor: "#1c1520",
-    routes: Object.freeze({ chill: "Chill", thrill: "Thrill" }),
+    routes: Object.freeze({ chill: "Detour", thrill: "Frolic" }),
     signColors: Object.freeze({ board: "#3a2b20", text: "#e8d9b0" }),
     extras: Object.freeze({ clouds: false, stars: true, moon: true, bulbs: false, mist: true }),
     moon: "#f4f1e0",
