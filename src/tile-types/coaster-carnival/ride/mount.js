@@ -9,7 +9,7 @@ import { getTheme, THEME_IDS } from "./themes.js";
 // creator sees is what the tile does.
 //
 //   const coaster = mountCoaster(box, { track, theme, view, style, colors, rider, handle, makeUrl });
-//   coaster.setTrack(track) / setTheme(id) / setView(id) / setStyle(id) / setColors({...}) / setRider(image)
+//   coaster.setTrack(track) / setTheme(id) / setView(id) / setStyle(id) / setColors({...}) / setRider(image) / setTunnel(on)
 //   coaster.dispose()
 //
 // `box` must be positioned (relative, absolute or fixed): the canvas fills it.
@@ -41,6 +41,7 @@ export function mountCoaster(box, options = {}) {
     style: options.style || "steel",
     colors: { ...(options.colors || {}) },
     rider: options.rider || null,
+    tunnel: options.tunnel !== false, // "Add a tunnel": on unless the creator turned it off
     behind: null,
   };
   const ridden = new Set();
@@ -108,6 +109,7 @@ export function mountCoaster(box, options = {}) {
     ride = createCoasterScene(canvas, { quality, onState: stateChanged, onCue: (name) => sound.cue(name) });
     ride.setStyle(current.style);
     ride.setColors(current.colors);
+    ride.setTunnel(current.tunnel);
     if (current.track) ride.setTrack(current.track);
     ride.setTheme(current.theme);
     ride.setView(current.view);
@@ -272,6 +274,10 @@ export function mountCoaster(box, options = {}) {
     setColors(colors) {
       Object.assign(current.colors, colors);
       ride?.setColors(colors);
+    },
+    setTunnel(on) {
+      current.tunnel = Boolean(on);
+      ride?.setTunnel(current.tunnel);
     },
     setRider(image) {
       current.rider = image;

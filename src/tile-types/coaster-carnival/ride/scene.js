@@ -5,6 +5,8 @@ import { frameBetween, poseAt, pieceAt } from "./path.js";
 import { getTheme, DEFAULT_THEME } from "./themes.js";
 import { buildScenery } from "./scenery.js";
 import { buildSwitchSigns } from "./switch-sign.js";
+import { findTunnel, hillHalfWidth } from "./tunnel.js";
+import { buildTunnel } from "./tunnel-mesh.js";
 import { steelScheme, woodFinish, cartColor, DEFAULT_COLORS } from "./colors.js";
 
 // One Coaster Carnival ride in a canvas: sky, ground, station, track, cart
@@ -18,6 +20,7 @@ import { steelScheme, woodFinish, cartColor, DEFAULT_COLORS } from "./colors.js"
 //   ride.setColors({ steel, wood, cart }); // color scheme ids (colors.js), any of them
 //   ride.setView("behind" | "outside" | "above");
 //   ride.setRoute("chill" | "thrill");  // with a track switch: which way at the switch
+//   ride.setTunnel(true | false);       // "Add a tunnel" (on unless turned off; see tunnel.js)
 //
 // States:
 //   "waiting"   the whole coaster, cart in the station; nothing moves
@@ -40,6 +43,11 @@ import { steelScheme, woodFinish, cartColor, DEFAULT_COLORS } from "./colors.js"
 // a good part of the coaster in view. The cart is drawn bigger; the view
 // glides after it to keep it near the middle (it never turns, rolls, cuts or
 // fades). While waiting, every view shows the whole track.
+//
+// Tunnel: scenery round one stretch of the ride (it never changes the track).
+// Riding through it behind the cart, the light drops to near dark and the
+// lamps inside flick past; from above or outside, the hill fades to let the
+// cart show through while the cart is in or near it.
 //
 // Track switch: the choice is made while boarding (choose), and can still be
 // changed (choose or setRoute) until the cart reaches the switch; up to there
@@ -66,6 +74,8 @@ const DISPATCH = 0.8; // s from choosing to rolling out (the bell rings at once)
 const PULSE_AFTER = 5; // s of waiting for a choice before both ways start to pulse
 const SETTLE = 2; // s paused in the station at the end (a tap skips it: start() boards again)
 const EASE_OUT = 1.2; // s for the camera to ease back out to the whole coaster
+const TUNNEL_DARK = { ambient: 0.2, sun: 0.12, speed: 8 }; // light left inside the tunnel (share), and how fast it changes
+const TUNNEL_FADE = { near: 18, opacity: 0.28, speed: 4 }; // m from the tunnel when the hill starts to fade, how far, how fast
 
 export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {}, quality = 1 } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: quality >= 1, powerPreference: "high-performance" });
@@ -107,6 +117,12 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
   let phase = 0; // seconds since the state began (boarding, settling, done)
   let dispatchAt = null; // phase at which a boarding cart rolls out
   let scenery = null;
+  let wantTunnel = true;
+  let tunnelSpot = null; // where the tunnel goes on this track (tunnel.js), or null
+  let tunnelPart = null; // the built tunnel (tunnel-mesh.js), or null
+  let dark = 0; // 0 outside, 1 deep in the tunnel (the riding camera)
+  let fade = 1; // the hill's opacity
+  let cartInTunnel = false;
   let theme = getTheme(DEFAULT_THEME);
   let view = "behind";
   let state = "waiting";
@@ -185,8 +201,55 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       scenery = null;
     }
     if (!track) return;
-    scenery = buildScenery(track, theme);
+    // Props stay off the tunnel's hill.
+    const keepOff = [];
+    if (wantTunnel && tunnelSpot) {
+      const r = hillHalfWidth(Math.max(...track.points.slice(tunnelSpot.from, tunnelSpot.to + 1).map((p) => p[1]))) + 1.5;
+      for (let i = tunnelSpot.from; i <= tunnelSpot.to; i += 3) keepOff.push([track.points[i][0], track.points[i][2], r]);
+    }
+    scenery = buildScenery(track, theme, keepOff);
     scene.add(scenery.group);
+  }
+
+  function rebuildTunnel() {
+    if (tunnelPart) {
+      scene.remove(tunnelPart.group);
+      tunnelPart.dispose();
+      tunnelPart = null;
+    }
+    fade = 1;
+    if (!track || !wantTunnel || !tunnelSpot) return;
+    tunnelPart = buildTunnel(track, tunnelSpot, theme);
+    scene.add(tunnelPart.group);
+  }
+
+  /** Horizontal distance from a point to the tunnel's middle line. */
+  function fromTunnel(p) {
+    let best = Infinity;
+    for (const e of tunnelPart.line) best = Math.min(best, Math.hypot(p[0] - e.p[0], p[2] - e.p[2]));
+    return best;
+  }
+
+  /** Dims the light while the camera is in the tunnel; fades the hill from above and outside. */
+  function tunnelEffects(pose, moving, dt) {
+    let wantDark = 0;
+    let wantFade = 1;
+    cartInTunnel = false;
+    if (tunnelPart && moving) {
+      cartInTunnel = tunnelPart.contains(...pose.p);
+      if (tunnelPart.contains(camera.position.x, camera.position.y, camera.position.z)) wantDark = 1;
+      if ((view === "above" || view === "outside") && fromTunnel(pose.p) < TUNNEL_FADE.near) wantFade = TUNNEL_FADE.opacity;
+    }
+    if (!moving) {
+      dark = 0;
+      fade = 1;
+    } else {
+      dark += (wantDark - dark) * (1 - Math.exp(-dt * TUNNEL_DARK.speed));
+      fade += (wantFade - fade) * (1 - Math.exp(-dt * TUNNEL_FADE.speed));
+    }
+    hemi.intensity = theme.ambient * (1 - (1 - TUNNEL_DARK.ambient) * dark);
+    sun.intensity = theme.sunStrength * (1 - (1 - TUNNEL_DARK.sun) * dark);
+    if (tunnelPart) tunnelPart.setFade(fade > 0.985 ? 1 : fade);
   }
 
   function applyTheme() {
@@ -384,6 +447,7 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       lookAt.lerp(target.look, k);
       follow(target.pos, new THREE.Vector3(0, 1, 0), lookAt, dt, camera.fov + (target.fov - camera.fov) * k);
     } else wideShot();
+    tunnelEffects(pose, moving, dt);
     cart.faceCamera(camera);
     renderer.render(scene, camera);
     if (moving || (state === "done" && phase < EASE_OUT)) {
@@ -421,7 +485,7 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
     /** What the cart is doing now: { kind, speed, seconds } (for sound, readouts). */
     now() {
       if (!track || !info.pose) return null;
-      return { kind: pieceAt(route(), info.pose.index).kind, speed: info.pose.speed, seconds: clock, route: choice };
+      return { kind: pieceAt(route(), info.pose.index).kind, speed: info.pose.speed, seconds: clock, route: choice, tunnel: cartInTunnel };
     },
 
     /** With a track switch: which side the thrill route leaves on ("left" or "right"), for taps and keys. */
@@ -504,7 +568,9 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       chosen = false;
       buildStation();
       applyTheme();
+      tunnelSpot = findTunnel(track);
       rebuildScenery();
+      rebuildTunnel();
       rebuildSign();
       clock = 0;
       camReady = false;
@@ -519,9 +585,27 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       applyTheme();
       if (changed) {
         rebuildScenery();
+        rebuildTunnel();
         rebuildSign();
       }
       draw();
+    },
+
+    /** "Add a tunnel": true to build it (where the track has room; see tunnel.js), false for none. */
+    setTunnel(on) {
+      const next = Boolean(on);
+      if (next === wantTunnel) return;
+      wantTunnel = next;
+      if (track) {
+        rebuildScenery();
+        rebuildTunnel();
+      }
+      draw();
+    },
+
+    /** Where the tunnel is on this track ({ from, to, length, pass }), or null (none, or turned off). */
+    get tunnel() {
+      return wantTunnel ? tunnelSpot : null;
     },
 
     setRider(image) {
@@ -603,6 +687,7 @@ export function createCoasterScene(canvas, { onState = () => {}, onCue = () => {
       if (trackParts) trackParts.dispose();
       if (scenery) scenery.dispose();
       if (sign) sign.dispose();
+      if (tunnelPart) tunnelPart.dispose();
       stationGeometries.forEach((g) => g.dispose());
       Object.values(stationMaterials).forEach((m) => m.dispose());
       groundGeometry.dispose();

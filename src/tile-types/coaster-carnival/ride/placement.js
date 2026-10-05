@@ -7,8 +7,9 @@ import { seededRandom } from "../../glass-lantern/geometry/gem.js";
 // never changes the track: props are kept a set distance from every point of
 // the track (which also clears its supports) and from the station.
 //
-//   placeProps(track, [{ kind, count, gap?, near?, sizes?: [min, max] }, ...])
+//   placeProps(track, [{ kind, count, gap?, near?, sizes?: [min, max] }, ...], keepOff?)
 //     → { [kind]: [{ x, z, turn, size }, ...] }
+//   keepOff: optional [[x, z, radius], ...] circles props stay out of (the tunnel's hill)
 //   landmarkSpot(track, salt) → { x, z, facing }   somewhere just outside the ride
 
 const CELL = 12; // m, size of the lookup grid for "how close is the track"
@@ -49,7 +50,7 @@ export function sceneryRandom(track, salt = 0) {
   return seededRandom(((track.input?.seed ?? 0) ^ 0x5ce4e5 ^ (salt * 0x9e3779b1)) >>> 0);
 }
 
-export function placeProps(track, plan) {
+export function placeProps(track, plan, keepOff = []) {
   const grid = trackGrid(track);
   const station = track.points[0];
   const b = track.bounds;
@@ -68,6 +69,7 @@ export function placeProps(track, plan) {
       const z = b.min[2] - margin + rand() * (b.size[2] + 2 * margin);
       if (Math.hypot(x - station[0], z - station[2]) < STATION_CLEAR) continue;
       if (nearestTrack(grid, x, z, gap) < gap) continue;
+      if (keepOff.some(([cx, cz, r]) => Math.hypot(cx - x, cz - z) < r)) continue;
       if (placed.some(([px, pz]) => Math.hypot(px - x, pz - z) < PROP_SPACING)) continue;
       placed.push([x, z]);
       list.push({ x, z, turn: rand() * Math.PI * 2, size: small + rand() * (large - small) });

@@ -16,6 +16,9 @@
 //                       a nod to the "frolic and detour" rule, where a frolic
 //                       is the bigger departure)
 //   signColors          the sign's board and lettering
+//   tunnel              the tunnel's look ("hill", "lantern" or "mouth"), colors, and
+//                       lift (how much the portal lights itself)
+//                       (see tunnel-mesh.js)
 
 export const THEMES = Object.freeze({
   day: Object.freeze({
@@ -48,6 +51,7 @@ export const THEMES = Object.freeze({
     landmarkColor: "#ffffff",
     routes: Object.freeze({ chill: "Detour", thrill: "Frolic" }),
     signColors: Object.freeze({ board: "#2a5db0", text: "#ffffff" }),
+    tunnel: Object.freeze({ look: "hill", hill: "#5f9e47", portal: "#a39d92", rim: "#cfc8ba", lift: 0.45, inside: "#2a2622", lamp: "#fff2c8" }),
     extras: Object.freeze({ clouds: true, stars: false, moon: false, bulbs: false, mist: false }),
     moon: "#ffffff",
     lampGlow: 0,
@@ -81,6 +85,7 @@ export const THEMES = Object.freeze({
     landmarkColor: "#ffd23f",
     routes: Object.freeze({ chill: "Detour", thrill: "Frolic" }),
     signColors: Object.freeze({ board: "#1b1d3a", text: "#ffd23f" }),
+    tunnel: Object.freeze({ look: "lantern", hill: "#1d2a44", portal: "#6a3b36", rim: "#8a5a4e", lift: 0.12, inside: "#120e14", lamp: "#ffc45c" }),
     extras: Object.freeze({ clouds: false, stars: true, moon: true, bulbs: true, mist: false }),
     moon: "#f3eecb",
     lampGlow: 1,
@@ -112,6 +117,7 @@ export const THEMES = Object.freeze({
     landmarkColor: "#1c1520",
     routes: Object.freeze({ chill: "Detour", thrill: "Frolic" }),
     signColors: Object.freeze({ board: "#3a2b20", text: "#e8d9b0" }),
+    tunnel: Object.freeze({ look: "mouth", hill: "#2a2620", portal: "#3b3833", rim: "#55504a", inside: "#0c0a08", lamp: "#9dff4a", extra: "#e8e0c8" }),
     extras: Object.freeze({ clouds: false, stars: true, moon: true, bulbs: false, mist: true }),
     moon: "#f4f1e0",
     lampGlow: 0,

@@ -27,6 +27,7 @@ const settings = {
   intensity: RANGES.intensity.default,
   seed: 1,
   trackSwitch: true,
+  tunnel: true,
   trackStyle: "steel",
   steelColors: DEFAULT_COLORS.steel,
   woodColors: DEFAULT_COLORS.wood,
@@ -66,6 +67,7 @@ const coaster = mountCoaster(stage, {
   theme: settings.theme,
   view: settings.view,
   style: settings.trackStyle,
+  tunnel: settings.tunnel,
   colors: { steel: settings.steelColors, wood: settings.woodColors, cart: settings.cartColors },
   handle: "thunderbirdwine.bsky.social",
   makeUrl: "https://foundry.thunderbird.cafe/",
@@ -144,6 +146,7 @@ function showInfo(live) {
       : settings.trackSwitch
         ? "no room for the switch on this layout"
         : "no switch",
+    tunnelLine(),
     `top speed ${Math.round(track.topSpeed * 3.6)} km/h, strongest push ${track.peakGs} g`,
     left.length ? `left out: ${left.join(", ")}` : "everything asked for fits",
     `made in ${buildMs} ms`,
@@ -151,6 +154,15 @@ function showInfo(live) {
   if (live) lines.unshift(live);
   readout.style.display = settings.readout ? "" : "none";
   readout.innerHTML = `<b>${fps ? `${fps} fps` : "Coaster Carnival"}</b>${lines.map((l) => `<small>${l}</small>`).join("")}`;
+}
+
+/** The readout's line about the tunnel. */
+function tunnelLine() {
+  if (!settings.tunnel) return "no tunnel";
+  const t = coaster.ride?.tunnel;
+  if (!t) return "no room for a tunnel on this layout";
+  const where = { snug: "low and level", roomy: "a roomier spot", home: "the run back in" }[t.pass];
+  return `tunnel ${t.length} m long at ${track.time[t.from].toFixed(1)} s (${where})`;
 }
 
 // Frames per second and what the cart is doing, while riding.
@@ -167,7 +179,7 @@ function tick(now) {
   const ride = coaster.ride;
   if (ride?.state === "riding") {
     const n = ride.now();
-    if (n) showInfo(`${n.kind}, ${Math.round(n.speed * 3.6)} km/h, ${n.seconds.toFixed(1)} s`);
+    if (n) showInfo(`${n.kind}${n.tunnel ? " (in the tunnel)" : ""}, ${Math.round(n.speed * 3.6)} km/h, ${n.seconds.toFixed(1)} s`);
   } else if (fps) {
     fps = 0;
     showInfo();
@@ -198,7 +210,7 @@ spriteFile.addEventListener("change", () => {
 
 const hot = import.meta.hot;
 const deviceId = Math.random().toString(36).slice(2);
-const SHARED = ["drops", "loops", "corkscrews", "intensity", "seed", "trackSwitch", "trackStyle", "steelColors", "woodColors", "cartColors", "theme", "camBack", "camUp", "camFov"];
+const SHARED = ["drops", "loops", "corkscrews", "intensity", "seed", "trackSwitch", "tunnel", "trackStyle", "steelColors", "woodColors", "cartColors", "theme", "camBack", "camUp", "camFov"];
 let syncReady = false;
 let applyingRemote = false;
 function sendSync() {
@@ -212,6 +224,7 @@ if (hot) {
     for (const k of SHARED) if (k in (data.ride || {})) settings[k] = data.ride[k];
     coaster.setTheme(settings.theme);
     coaster.setStyle(settings.trackStyle);
+    coaster.setTunnel(settings.tunnel);
     applyColors();
     gui.controllersRecursive().forEach((c) => c.updateDisplay());
     applyingRemote = false;
@@ -243,6 +256,11 @@ fTrack.add(settings, "corkscrews", RANGES.corkscrews.min, RANGES.corkscrews.max,
 fTrack.add(settings, "intensity", RANGES.intensity.min, RANGES.intensity.max, 1).name("Intensity").onFinishChange(() => changed());
 fTrack.add(settings, "seed").name("Layout number").onFinishChange(() => changed());
 fTrack.add(settings, "trackSwitch").name("Track switch").onChange(() => changed());
+fTrack.add(settings, "tunnel").name("Add a tunnel").onChange(() => {
+  coaster.setTunnel(settings.tunnel);
+  showInfo();
+  changed(false);
+});
 fTrack.add(settings, "trackStyle", { Steel: "steel", Wood: "wood" }).name("Track style").onChange(() => {
   coaster.setStyle(settings.trackStyle);
   applyColors();
@@ -285,6 +303,15 @@ fLook.add({
     ride.setRoute(settings.route);
   },
 }, "jump").name("Jump to just before the switch");
+fLook.add({
+  jump: () => {
+    const ride = coaster.ride;
+    const t = ride?.tunnel;
+    if (!t) return;
+    ride.setRoute("chill");
+    ride.seek(Math.max(0, track.time[t.from] - 4));
+  },
+}, "jump").name("Jump to just before the tunnel");
 fLook.add({ stop: () => coaster.ride?.stop() }, "stop").name("Back to the station");
 fLook.add({ pick: () => spriteFile.click() }, "pick").name("Try another sprite picture…");
 

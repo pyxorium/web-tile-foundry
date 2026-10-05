@@ -18,7 +18,7 @@ import { TRACK_SIZES } from "./track-mesh.js";
 const SKY_RADIUS = 1900;
 const BAND_RADIUS = 1250;
 
-export function buildScenery(track, theme) {
+export function buildScenery(track, theme, keepOff = []) {
   const group = new THREE.Group();
   const toDispose = [];
   const keep = (thing) => {
@@ -30,7 +30,7 @@ export function buildScenery(track, theme) {
   group.add(skyDome(theme, keep));
   group.add(horizonBand(theme, track, keep));
 
-  const spots = placeProps(track, theme.props);
+  const spots = placeProps(track, theme.props, keepOff);
   for (const [kind, list] of Object.entries(spots)) {
     const made = PROPS[kind]?.(list, theme, keep, glows);
     if (made) group.add(made);

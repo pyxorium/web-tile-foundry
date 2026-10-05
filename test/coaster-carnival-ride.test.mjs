@@ -165,3 +165,46 @@ test("the controls offer the scene's three views, behind the cart first", () => 
 test("the two ways are Frolic (the long one) and Detour (the short one) in every theme", () => {
   for (const id of THEME_IDS) assert.deepEqual({ ...THEMES[id].routes }, { chill: "Detour", thrill: "Frolic" }, id);
 });
+
+// ---------- the tunnel ----------
+
+import { findTunnel, tunnelLine, insideTunnel, TUNNEL } from "../src/tile-types/coaster-carnival/ride/tunnel.js";
+
+test("a tunnel finds a place on every sample layout, within its limits and clear of the station, switch and special pieces", () => {
+  const banned = new Set(["loop", "corkscrew", "lift", "crest", "hilltop", "station-out", "station-in"]);
+  for (let seed = 1; seed <= 12; seed++) {
+    const track = generateTrack({ drops: 1 + (seed % 3), loops: seed % 2, corkscrews: (seed >> 1) % 2, intensity: 3, seed, trackSwitch: seed % 2 === 0 });
+    const t = findTunnel(track);
+    assert.ok(t, `seed ${seed}: a tunnel`);
+    assert.ok(t.length >= TUNNEL.shortest && t.length <= TUNNEL.longest + 1, `seed ${seed}: ${t.length} m`);
+    assert.deepEqual(findTunnel(track), t, "the same every time");
+    const station = track.points[0];
+    for (let i = t.from; i <= t.to; i++) {
+      const piece = track.pieces.find((p) => i >= p.from && i <= p.to);
+      assert.ok(!banned.has(piece.kind), `seed ${seed}: not on a ${piece.kind}`);
+      const p = track.points[i];
+      assert.ok(Math.hypot(p[0] - station[0], p[2] - station[2]) >= TUNNEL.station, "clear of the station");
+    }
+    const sw = track.trackSwitch;
+    if (sw) assert.ok(t.to < sw.chill.from - 10 || t.from > sw.chill.to, `seed ${seed}: clear of the switch`);
+  }
+});
+
+test("the tunnel knows what is inside it", () => {
+  const track = generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1 });
+  const line = tunnelLine(track, findTunnel(track));
+  const mid = line[line.length >> 1].p;
+  assert.ok(insideTunnel(line, mid[0], mid[1] + 1, mid[2]), "the middle of the tunnel, cart height");
+  assert.ok(!insideTunnel(line, mid[0], mid[1] + TUNNEL.crown + 3, mid[2]), "above it, on the hill");
+  const s = track.points[0];
+  assert.ok(!insideTunnel(line, s[0], s[1] + 1, s[2]), "the station");
+});
+
+test("every theme dresses the tunnel, and props keep off its hill", () => {
+  for (const id of THEME_IDS) assert.ok(["hill", "lantern", "mouth"].includes(THEMES[id].tunnel?.look), id);
+  const track = generateTrack({ drops: 2, loops: 1, corkscrews: 1, intensity: 3, seed: 1 });
+  const p = track.points[findTunnel(track).from];
+  const keepOff = [[p[0], p[2], 30]];
+  const spots = placeProps(track, THEMES.day.props, keepOff);
+  for (const list of Object.values(spots)) for (const s of list) assert.ok(Math.hypot(s.x - p[0], s.z - p[2]) >= 30);
+});

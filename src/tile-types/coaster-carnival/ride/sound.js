@@ -3,7 +3,7 @@
 //
 //   const sound = createRideSound();
 //   sound.start();                 // must be called from a tap or click (browsers block sound otherwise)
-//   sound.update({ kind, speed }); // every frame while riding (kind = the piece of track, speed in m/s)
+//   sound.update({ kind, speed, tunnel }); // every frame while riding (kind = the piece of track, speed in m/s, tunnel = in the tunnel)
 //   sound.stop();                  // fade everything out
 //   sound.setTheme("spooky"); sound.setMuted(true); sound.setVolume(0.8);
 //   sound.setMix({ roar: 1, clicks: 1, wind: 1, rumble: 1, effects: 1, drone: 1 }); // the lab's sliders
@@ -43,6 +43,10 @@ export const TRACK_SOUNDS = Object.freeze({
   wood: Object.freeze({ jointEvery: 1.4, jointPitch: 0.5, jointLevel: 1.6, rumble: 1.5, rattle: 1 }),
 });
 const PLAYBACK = 1.3; // the ride plays at 1.3x real time, so joints pass that much faster
+
+// Inside the tunnel: an echo (seconds between repeats, how much each repeat
+// keeps, how dark the repeats get, how loud the echo is) and a louder rumble.
+export const TUNNEL_ECHO = Object.freeze({ delay: 0.085, feedback: 0.38, tone: 2200, level: 0.55, rumble: 1.7 });
 
 export function createRideSound() {
   let ctx = null;
@@ -92,7 +96,20 @@ export function createRideSound() {
     const limiter = ctx.createDynamicsCompressor();
     master.connect(limiter).connect(ctx.destination);
     const { white, brown } = buffers();
-    nodes = { master, white, brown };
+    // The tunnel's echo: a short slap back off the walls, a little darker each
+    // time, faded in only while the cart is inside.
+    const echoSend = ctx.createGain();
+    echoSend.gain.value = 0;
+    const echo = ctx.createDelay(0.5);
+    echo.delayTime.value = TUNNEL_ECHO.delay;
+    const echoBack = ctx.createGain();
+    echoBack.gain.value = TUNNEL_ECHO.feedback;
+    const echoTone = ctx.createBiquadFilter();
+    echoTone.type = "lowpass";
+    echoTone.frequency.value = TUNNEL_ECHO.tone;
+    master.connect(echoSend).connect(echo).connect(echoTone).connect(limiter);
+    echoTone.connect(echoBack).connect(echo);
+    nodes = { master, white, brown, echoSend };
 
     // Roar: a few low tones a little apart, softened by a filter, with a slow wobble.
     const roarFilter = ctx.createBiquadFilter();
@@ -244,7 +261,7 @@ export function createRideSound() {
     },
 
     /** Call every frame while riding. */
-    update({ kind, speed }) {
+    update({ kind, speed, tunnel = false }) {
       if (!ctx || !running) return;
       const t = ctx.currentTime;
       const dt = Math.min(0.1, Math.max(0, t - lastTime));
@@ -261,7 +278,9 @@ export function createRideSound() {
       nodes.wobbleDepth.gain.setTargetAtTime(0.15 + level * 0.25, t, 0.3); // share of the roar's own volume
 
       // Rumble: deep, grows with speed.
-      nodes.rumbleGain.gain.setTargetAtTime((inStation ? 0.02 : 0.05 + level * 0.25) * mix.rumble * trackSound.rumble, t, 0.2);
+      const boom = tunnel ? TUNNEL_ECHO.rumble : 1; // the rumble fills a tunnel
+      nodes.rumbleGain.gain.setTargetAtTime((inStation ? 0.02 : 0.05 + level * 0.25) * mix.rumble * trackSound.rumble * boom, t, 0.2);
+      nodes.echoSend.gain.setTargetAtTime(tunnel ? TUNNEL_ECHO.level : 0, t, 0.08);
       nodes.rumbleFilter.frequency.setTargetAtTime(80 + v * 3, t, 0.3);
 
       // Wind: only at speed, and kept light.
@@ -321,7 +340,7 @@ export function createRideSound() {
       running = false;
       if (!ctx) return;
       const t = ctx.currentTime;
-      for (const g of [nodes.roarGain, nodes.rumbleGain, nodes.windGain, nodes.wobbleDepth]) g.gain.setTargetAtTime(0, t, 0.3);
+      for (const g of [nodes.roarGain, nodes.rumbleGain, nodes.windGain, nodes.wobbleDepth, nodes.echoSend]) g.gain.setTargetAtTime(0, t, 0.3);
       nodes.droneGain.gain.setTargetAtTime(0, t, 0.6);
     },
 
