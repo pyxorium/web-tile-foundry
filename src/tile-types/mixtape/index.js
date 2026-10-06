@@ -29,7 +29,7 @@ const picker = {
 export const mixtape = {
   id: "mixtape",
   version: 1,
-  title: "Mixtape",
+  title: "Mixtape C60",
   summary: "Your plyr.fm songs on a cassette, Side A and Side B.",
   maxBytes: 50 * 1024 * 1024,
 
@@ -52,7 +52,7 @@ export const mixtape = {
       key: "tracks",
       kind: "tracks",
       label: "Songs",
-      help: "Pick songs from your plyr.fm uploads. Each side holds 30 minutes, like a C60 cassette. \"Then\" is how a song leads into the next: straight on keeps a segue from a show; a pause or fade suits songs from different recordings.",
+      help: "Pick songs from your plyr.fm uploads. Each side of the cassette can hold 30 minutes. \"Then\" is how a song leads into the next: straight on keeps a segue from a show; a pause or fade suits songs from different recordings.",
       required: true,
       sides: SIDES,
       maxSecondsPerSide: SIDE_SECONDS,
@@ -63,14 +63,14 @@ export const mixtape = {
     {
       key: "kit",
       kind: "choice",
-      label: "Cassette",
+      label: "Shell color",
       required: true,
       options: KITS.map((k) => ({ value: k.id, label: k.label, color: k.shell })),
       group: "tape",
     },
     { key: "label", kind: "text", label: "Label (optional)", help: "Handwritten on the cassette, like JAM CRUISE '26. Without one, the cassette shows the tape's title.", maxLength: LABEL_MAX, group: "tape" },
     { key: "dedication", kind: "text", label: "Dedication (optional)", help: "Like \"For Sam, summer 2026\".", maxLength: DEDICATION_MAX, group: "tape" },
-    { key: "notes", kind: "text", label: "Liner notes (optional)", multiline: true, maxLength: NOTES_MAX, group: "tape" },
+    { key: "notes", kind: "text", label: "Liner notes (J-card, optional)", multiline: true, maxLength: NOTES_MAX, group: "tape" },
     { key: "addShows", kind: "action", button: "Add the shows to the notes", disabledIf: (v) => !(v.tracks && v.tracks.some((t) => t.album)), group: "tape" },
     { key: "genres", kind: "text", label: "Genres", help: "Words separated by commas, like funk, soul.", maxLength: WORDS_MAX, group: "words" },
     { key: "moods", kind: "text", label: "Moods", help: "Like mellow, upbeat.", maxLength: WORDS_MAX, group: "words" },
@@ -101,7 +101,7 @@ export const mixtape = {
   preview: {
     needsResult: true,
     mount: async (element, options) => (await import("./preview.js")).mountPreview(element, options),
-    caption: () => "Your tape as listeners will hear it, played from memory. Nothing is uploaded until you publish.",
+    caption: () => "Your tape as listeners will hear it. Your songs and Side A/B choices show up here, so keep mixing and playing until you're happy with it.",
   },
 
   // Each build joins and fingerprints every song (tens of MB), so it waits a little longer.

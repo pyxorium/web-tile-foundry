@@ -66,7 +66,7 @@ export function mountPreview(element, { result = null } = {}) {
     shownTape = tape;
     if (!tape) {
       box.className = "mixtape-preview mixtape-preview-empty";
-      box.textContent = "Your tape will appear here once its songs are ready.";
+      box.textContent = "Your mixtape will appear here once its songs are ready.";
       return;
     }
     box.className = "mixtape-preview";
