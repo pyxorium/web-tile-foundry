@@ -1,4 +1,4 @@
-import { checkInputs, maxBytesFor } from "./contract.js";
+import { checkInputs, buildProblems, maxBytesFor } from "./contract.js";
 import { readCspMeta, TILE_CSP } from "./policy.js";
 import { makeRecipeFile, RECIPE_PATH } from "./recipe.js";
 import { rawCid } from "./cid.js";
@@ -32,7 +32,9 @@ function checkCardImages(list, kind, byPath) {
  *     files: [{ path, bytes, contentType, cid }], html, totalBytes }
  */
 export async function buildTile(type, inputs, { final = true } = {}) {
-  const problems = checkInputs(type, inputs);
+  // Publish-only problems (an unticked confirmation) don't stop the build;
+  // the Foundry's Publish step checks them.
+  const problems = buildProblems(checkInputs(type, inputs));
   if (problems.length) throw new TileBuildError("Some inputs need attention.", problems);
 
   const out = await type.build(inputs, { final });

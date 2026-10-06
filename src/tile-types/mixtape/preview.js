@@ -7,8 +7,10 @@ import { TAPE_PATH } from "./tape.js";
 // and plays is exactly what would be published (the same tape.json, the same
 // song files with their transitions baked in).
 //
-// mountPreview(element, { result }) -> { update(result), dispose() }
-// `result` is a built tile (buildTile in src/core/build.js) or null.
+// mountPreview(element, { result }) -> { update(values, result), dispose() }
+// `result` is the latest built tile (buildTile in src/core/build.js) or null.
+// The tile is rebuilt after every change (typing in the notes, too); if a song
+// was playing and is still on the tape unchanged, it carries on from where it was.
 
 let styled = false;
 function addStyles() {
@@ -26,6 +28,16 @@ export function tapeOf(result) {
   return file ? JSON.parse(new TextDecoder().decode(file.bytes)) : null;
 }
 
+/** Where song `cid` is on the tape: { side, index } or null. */
+export function findSong(tape, cid) {
+  const sides = (tape && tape.sides) || [];
+  for (let side = 0; side < sides.length; side++) {
+    const index = sides[side].tracks.findIndex((t) => t.cid === cid);
+    if (index >= 0) return { side, index };
+  }
+  return null;
+}
+
 export function mountPreview(element, { result = null } = {}) {
   addStyles();
   const box = document.createElement("div");
@@ -33,18 +45,31 @@ export function mountPreview(element, { result = null } = {}) {
   box.style.height = "400px"; // the embed box height on the blog and webtil.es
   element.replaceChildren(box);
   let player = null;
-  let shown = null;
+  let shownTape = null;
+  let shown;
 
   function update(next) {
     if (next === shown) return;
     shown = next;
+    // What was playing, to carry on with.
+    let resume = null;
+    if (player && shownTape) {
+      const st = player.state();
+      if (st.playing && st.side != null) {
+        const t = shownTape.sides[st.side] && shownTape.sides[st.side].tracks[st.index];
+        if (t) resume = { cid: t.cid, time: st.time };
+      }
+    }
     if (player) player.dispose();
     player = null;
     const tape = tapeOf(next);
+    shownTape = tape;
     if (!tape) {
-      box.textContent = "Your tape will appear here once it has songs.";
+      box.className = "mixtape-preview mixtape-preview-empty";
+      box.textContent = "Your tape will appear here once its songs are ready.";
       return;
     }
+    box.className = "mixtape-preview";
     const files = new Map(next.files.map((f) => [f.path, f]));
     player = mountPlayer(box, {
       tape,
@@ -55,11 +80,16 @@ export function mountPreview(element, { result = null } = {}) {
         return new Blob([f.bytes], { type: f.contentType });
       },
     });
+    const at = resume && findSong(tape, resume.cid);
+    if (at) player.play(at.side, at.index, resume.time);
   }
 
   update(result);
   return {
-    update,
+    // Called as update(values, result) by the Foundry, or update(result).
+    update(a, b) {
+      update(arguments.length > 1 ? b : a && a.files ? a : shown);
+    },
     player: () => player,
     dispose() {
       if (player) player.dispose();

@@ -19,6 +19,7 @@ export const spriteWalker = {
   version: 1,
   title: "Sprite Walker",
   summary: "Your rpg.actor sprite, out for a walk.",
+  credits: [["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, "."]],
 
   inputs: [
     { key: "sprite", kind: "sprite", label: "Sprite", required: true },

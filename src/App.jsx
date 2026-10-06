@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./tile-types/index.js";
 import { listTileTypes, getTileType } from "./core/registry.js";
-import { checkInputs } from "./core/contract.js";
+import { checkInputs, buildProblems } from "./core/contract.js";
 import { buildTile } from "./core/build.js";
 import { FOUNDRY_VERSION } from "./core/version.js";
 import { InputForm } from "./ui/InputForm.jsx";
@@ -33,6 +33,25 @@ function Step({ n, title, children, muted }) {
       </h2>
       {children}
     </section>
+  );
+}
+
+// Thanks for outside work a tile type uses (its `credits`), shown with its panel.
+function TypeCredits({ credits }) {
+  return (
+    <div className="type-credits">
+      {credits.map((parts, i) => (
+        <p key={i}>
+          {parts.map((part, k) =>
+            typeof part === "string" ? (
+              <span key={k}>{part}</span>
+            ) : (
+              <a key={k} href={part.href} target="_blank" rel="noopener">{part.text}</a>
+            )
+          )}
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -104,7 +123,11 @@ export default function App() {
   }, [account.status]);
 
   const problems = useMemo(() => (type ? checkInputs(type, values) : []), [type, values]);
-  const ready = !!type && problems.length === 0;
+  // Publish-only problems (an unticked confirmation) don't stop the preview.
+  const ready = !!type && buildProblems(problems).length === 0;
+  const publishBlockers = problems.filter((p) => p.publishOnly);
+  // The same object while nothing in it changes, so pickers aren't told of changes that didn't happen.
+  const context = useMemo(() => ({ ownSprite, account }), [ownSprite, account]);
   // While making the tile, types may skip costly card pictures; the debug views
   // show the exact files, so they get the complete tile.
   const { result, error, building } = useTileBuild(type, values, ready, type && type.buildDelayMs ? type.buildDelayMs : 250, DEBUG);
@@ -160,11 +183,11 @@ export default function App() {
       {canMake && type ? (
         <Step n={++n} title="Make your tile">
           <div className="make">
-            <InputForm type={type} values={values} onChange={setValue} problems={problems} context={{ ownSprite, account }} />
+            <InputForm type={type} values={values} onChange={setValue} problems={problems} context={context} />
             <div className="make-preview">
               {type.preview ? (
                 <>
-                  <TypePreview type={type} values={values} setValue={setValue} />
+                  <TypePreview type={type} values={values} setValue={setValue} result={result} />
                   <p className="caption">{type.preview.caption ? type.preview.caption(values) : "Live preview."}</p>
                   {error ? (
                     <p className="field-error" role="alert">{error.message}</p>
@@ -190,6 +213,7 @@ export default function App() {
               )}
             </div>
           </div>
+          {type.credits && <TypeCredits credits={type.credits} />}
         </Step>
       ) : (
         <Step n={++n} title="Make your tile" muted>
@@ -198,7 +222,11 @@ export default function App() {
       )}
 
       <Step n={++n} title="Publish" muted={!result}>
-        {result ? (
+        {result && publishBlockers.length ? (
+          <ul className="publish-blockers">
+            {publishBlockers.map((p) => <li key={p.key}>{p.message}</li>)}
+          </ul>
+        ) : result ? (
           <PublishPanel result={result} getFinal={finalResult} account={account} who={who} />
         ) : (
           <p className="step-help">Available once your tile is ready.</p>
@@ -224,13 +252,8 @@ export default function App() {
       )}
 
       <footer className="foot">
-        Sprites from <a href="https://rpg.actor/" target="_blank" rel="noopener">rpg.actor</a>. Tiles view on{" "}
-        <a href="https://appmosphe.re/tiles" target="_blank" rel="noopener">appmosphe.re</a>. Foundry by{" "}
-        <a href="https://thunderbird.cafe/" target="_blank" rel="noopener">thunderbird.cafe</a>. MP3 encoding by{" "}
-        <a href="https://github.com/zhuker/lamejs" target="_blank" rel="noopener">lamejs</a>, a port of{" "}
-        <a href="https://lame.sourceforge.io/" target="_blank" rel="noopener">LAME</a>, unmodified under the{" "}
-        <a href="https://www.gnu.org/licenses/lgpl-3.0.html" target="_blank" rel="noopener">LGPL</a>{" "}
-        (<a href={`${import.meta.env?.BASE_URL ?? "/"}vendor/lamejs/README.txt`} target="_blank" rel="noopener">details</a>).
+        Tiles view on <a href="https://appmosphe.re/tiles" target="_blank" rel="noopener">appmosphe.re</a>. Foundry by{" "}
+        <a href="https://thunderbird.cafe/" target="_blank" rel="noopener">thunderbird.cafe</a>.
       </footer>
     </div>
   );

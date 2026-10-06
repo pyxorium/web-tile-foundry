@@ -28,6 +28,9 @@
 //               seed     a whole number with a button (`button`, its label) that picks a new random one;
 //                        with editable: true the number shows and can be typed (up to `max`)
 //               toggle   on or off (true or false), a switch
+//                        With mustBeOn (a sentence), it must be on to PUBLISH, though
+//                        the tile is still built and previewed while it is off (for
+//                        a confirmation such as "these are my songs").
 //               action   a button (`button`, its label). Pressing it calls
 //                        applyChange(key, true, values), which does the work;
 //                        nothing is kept under the key. disabledIf(values), optional,
@@ -41,9 +44,12 @@
 //                        Options: sides (default ["A"]); maxSecondsPerSide;
 //                        maxTracks; transitions: true shows the choice between songs;
 //                        picker: { mount(element, { getTracks, setTracks, context })
-//                        -> { update(tracks), dispose() } }, the type's own way of
-//                        adding songs, shown above the list. Songs are converted by
-//                        the type (src/core/audio/), which updates their status.
+//                        -> { update(tracks, context), dispose() } }, the type's own
+//                        way of adding songs, shown above the list (update is also
+//                        called when the context changes, e.g. the account's details
+//                        arrive). Songs are converted by the type (src/core/audio/),
+//                        which updates their status. When the creator picks a "Then",
+//                        the song also gets transitionChosen: true.
 //             showIf(values): OPTIONAL; the input is shown (and checked) only when it returns true.
 //             Inputs with the same `group` are shown together under that group's title.
 //   groups    array    OPTIONAL: [{ id, title, collapsed? }] titles for grouped inputs;
@@ -57,9 +63,15 @@
 //                      -> string: swatch pictures for input `key` are redrawn when it
 //                         changes (without it, when the sprite changes).
 //   preview            OPTIONAL: a live preview run in the Foundry page instead of the
-//                      built tile in a frame: { mount(element, { values, setValue })
-//                      -> { update(values), dispose() }, caption?(values) }.
+//                      built tile in a frame: { mount(element, { values, setValue, result })
+//                      -> { update(values, result), dispose() }, caption?(values) }.
+//                      `result` is the latest built tile (buildTile), or null while
+//                      the inputs have problems. With needsResult: true, update is
+//                      also called after each new build; other types ignore it.
 //                      `setValue(key, value)` changes a value as if the user had.
+//   credits            OPTIONAL: thanks shown with the type's panel, e.g. for
+//                      outside work the type uses. A list of credits, each a list of
+//                      parts: a string, or { text, href } for a link.
 //   buildDelayMs       OPTIONAL: how long to wait after the last change before
 //                      rebuilding the tile (default 250).
 //   maxBytes           OPTIONAL: the most a tile of this type may weigh, all files
@@ -168,6 +180,17 @@ export function checkTileType(type) {
   for (const input of type.inputs) {
     if (input.group && !groupIds.has(input.group)) throw new Error(`${where}: input "${input.key}" names an unknown group "${input.group}".`);
   }
+  for (const input of type.inputs) {
+    if (input.mustBeOn !== undefined && (input.kind !== "toggle" || typeof input.mustBeOn !== "string" || !input.mustBeOn)) {
+      throw new Error(`${where}: mustBeOn on "${input.key}" must be a sentence, on a toggle.`);
+    }
+  }
+  if (type.credits !== undefined) {
+    const part = (x) => (typeof x === "string" && x) || (x && typeof x.text === "string" && x.text && typeof x.href === "string" && /^(https:\/\/|\/)/.test(x.href));
+    if (!Array.isArray(type.credits) || !type.credits.every((c) => Array.isArray(c) && c.length && c.every(part))) {
+      throw new Error(`${where}: credits must be a list of credits, each a list of strings and { text, href } links.`);
+    }
+  }
   if (type.maxBytes !== undefined && !(Number.isInteger(type.maxBytes) && type.maxBytes > 0 && type.maxBytes <= MAX_TILE_BYTES_CAP)) {
     throw new Error(`${where}: maxBytes must be a whole number of bytes from 1 to ${MAX_TILE_BYTES_CAP}.`);
   }
@@ -189,7 +212,11 @@ export function checkTileType(type) {
   return type;
 }
 
-/** Checks the values a user entered against a type's inputs. Returns a list of problems. */
+/**
+ * Checks the values a user entered against a type's inputs. Returns a list of
+ * problems, each { key, message, publishOnly? }. A publishOnly problem (a
+ * toggle with mustBeOn that is off) stops publishing but not building.
+ */
 export function checkInputs(type, values) {
   const problems = [];
   for (const input of type.inputs) {
@@ -200,6 +227,7 @@ export function checkInputs(type, values) {
       problems.push({ key: input.key, message: `${input.label || input.key} is required.` });
       continue;
     }
+    if (empty && input.kind === "toggle" && input.mustBeOn) problems.push({ key: input.key, message: input.mustBeOn, publishOnly: true });
     if (empty) continue;
     if (input.kind === "choice" && !input.options.some((o) => o.value === v)) {
       problems.push({ key: input.key, message: `${input.label || input.key} has an unknown choice.` });
@@ -224,6 +252,8 @@ export function checkInputs(type, values) {
     }
     if (input.kind === "toggle" && typeof v !== "boolean") {
       problems.push({ key: input.key, message: `${input.label || input.key} must be on or off.` });
+    } else if (input.kind === "toggle" && input.mustBeOn && v !== true) {
+      problems.push({ key: input.key, message: input.mustBeOn, publishOnly: true });
     }
     if (input.kind === "tracks") {
       for (const message of trackProblems(input, v)) problems.push({ key: input.key, message });
@@ -275,4 +305,9 @@ export function trackProblems(input, tracks) {
 /** Whether an input is shown for these values (see showIf). */
 export function isShown(input, values) {
   return typeof input.showIf !== "function" || Boolean(input.showIf(values));
+}
+
+/** The problems that stop the tile being built (all but the publish-only ones). */
+export function buildProblems(problems) {
+  return problems.filter((p) => !p.publishOnly);
 }

@@ -465,8 +465,8 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
         loaded: [...urls.keys()],
       };
     },
-    /** For tests and the preview: play a song. */
-    play: (side, index) => play({ side, index }),
+    /** For tests and the preview: play a song, from `at` seconds. */
+    play: (side, index, at = 0) => play({ side, index }, { at }),
     audio,
     dispose() {
       disposed = true;

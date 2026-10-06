@@ -342,3 +342,37 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .track-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0 2.2em; }
 .track-transition { display: flex; align-items: center; gap: 8px; margin: 8px 0 0 2.2em; font-size: 13px; color: var(--ink-2); }
 .track-transition select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }
+
+/* Mixtape: the plyr.fm song picker (src/tile-types/mixtape/picker.js) */
+.mx-picker { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface); }
+.mx-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.mx-who { font-weight: 700; overflow-wrap: anywhere; }
+.mx-note { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: var(--gold-soft); font-size: 14px; }
+.mx-status { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
+.mx-status.is-error { color: var(--danger); }
+.mx-shows { display: grid; gap: 6px; margin-top: 10px; max-height: 420px; overflow-y: auto; overscroll-behavior: contain; }
+.mx-show { border-top: 1px solid var(--line); padding-top: 6px; }
+.mx-show > summary { cursor: pointer; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; padding: 2px 0; }
+.mx-album { font-weight: 600; }
+.mx-count { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.mx-show-tools { margin: 6px 0 2px; }
+.mx-songs { list-style: none; margin: 4px 0 6px; padding: 0; display: grid; gap: 2px; }
+.mx-song { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 10px; padding: 3px 0; }
+.mx-song label { display: flex; align-items: center; gap: 8px; flex: 1 1 260px; min-width: 0; cursor: pointer; }
+.mx-song.is-off label { cursor: default; color: var(--ink-2); }
+.mx-n { width: 1.8em; text-align: right; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
+.mx-title { flex: 1; min-width: 0; }
+.mx-len { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.mx-extra { font-size: 13px; color: var(--ink-2); margin-left: calc(1.8em + 30px); }
+.mx-reason { margin: 6px 0; font-size: 14px; color: var(--ink-2); }
+.mx-unusable-list { margin: 0 0 6px; padding-left: 20px; font-size: 14px; color: var(--ink-2); }
+
+/* Mixtape preview box */
+.mixtape-preview { border-radius: var(--radius); overflow: hidden; }
+.mixtape-preview-empty { display: grid; place-items: center; padding: 20px; text-align: center; color: var(--ink-2);
+  border: 1px dashed var(--line); background: var(--surface); }
+
+/* Credits shown with a tile type's panel, and publish blockers */
+.type-credits { margin-top: 16px; font-size: 13px; color: var(--ink-2); }
+.type-credits p { margin: 0; }
+.publish-blockers { margin: 0; padding-left: 20px; color: var(--danger); }

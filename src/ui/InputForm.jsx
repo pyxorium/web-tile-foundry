@@ -353,6 +353,8 @@ function ActionInput({ input, onChange, values }) {
 const TRANSITION_LABELS = { straight: "Straight on", pause: "Short pause", fade: "Fade and pause" };
 
 function TrackPicker({ picker, tracks, setTracks, context }) {
+  const contextRef = useRef(context);
+  contextRef.current = context;
   const boxRef = useRef(null);
   const handleRef = useRef(null);
   const tracksRef = useRef(tracks);
@@ -377,7 +379,7 @@ function TrackPicker({ picker, tracks, setTracks, context }) {
     ).then((h) => {
       if (disposed) { if (h && h.dispose) h.dispose(); return; }
       handleRef.current = h;
-      if (h && h.update) h.update(tracksRef.current);
+      if (h && h.update) h.update(tracksRef.current, contextRef.current);
     });
     return () => {
       disposed = true;
@@ -388,9 +390,11 @@ function TrackPicker({ picker, tracks, setTracks, context }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picker]);
 
+  // The account can arrive after the picker mounts (its details are looked up
+  // after sign-in), so the picker also hears about context changes.
   useEffect(() => {
-    if (handleRef.current && handleRef.current.update) handleRef.current.update(tracks);
-  }, [tracks]);
+    if (handleRef.current && handleRef.current.update) handleRef.current.update(tracks, context);
+  }, [tracks, context]);
 
   return <div ref={boxRef} className="track-picker" />;
 }
@@ -491,7 +495,7 @@ function TracksInput({ input, value, onChange, context }) {
                   {input.transitions && k < list.length - 1 && (
                     <label className="track-transition">
                       <span>Then</span>
-                      <select value={t.transition || "fade"} onChange={(e) => patch(t.id, { transition: e.target.value })}>
+                      <select value={t.transition || "fade"} onChange={(e) => patch(t.id, { transition: e.target.value, transitionChosen: true })}>
                         {TRANSITIONS.map((x) => <option key={x} value={x}>{TRANSITION_LABELS[x]}</option>)}
                       </select>
                     </label>

@@ -87,11 +87,21 @@ function sameJson(a, b) {
 }
 
 /**
+ * Where a tile is published. Today only the signed-in account's public repo.
+ * Later, perhaps a private atproto space ({ kind: "space", ... }): the tile
+ * is built the same way, only the upload step changes.
+ */
+export const REPO_DESTINATION = Object.freeze({ kind: "repo" });
+
+/**
  * Publishes a built tile. `onStep(id, state, detail)` reports progress:
  *   ids "upload", "create", "verify"; states "active", "done".
  * Resolves to { uri, rkey, recordCid, manifestCid, record }.
  */
-export async function publishTile({ xrpc, fetchBlob, did, result, now = () => new Date().toISOString(), onStep = () => {} }) {
+export async function publishTile({ xrpc, fetchBlob, did, result, destination = REPO_DESTINATION, now = () => new Date().toISOString(), onStep = () => {} }) {
+  if (!destination || destination.kind !== "repo") {
+    throw new PublishError("This kind of place to publish isn't supported yet; tiles go to your public repo.", "upload");
+  }
   // 1. Upload every file and check each address. Progress counts files and bytes.
   const bytesTotal = result.files.reduce((sum, f) => sum + f.bytes.length, 0);
   let bytesDone = 0;

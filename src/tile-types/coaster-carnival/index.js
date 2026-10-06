@@ -51,6 +51,7 @@ export const coasterCarnival = {
   version: 1,
   title: "Coaster Carnival",
   summary: "A roller coaster to ride, with your rpg.actor sprite in the front row.",
+  credits: [["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, "."]],
 
   inputs: [
     { key: "sprite", kind: "sprite", label: "Your rider", help: "Your rpg.actor sprite rides in the front row. Without one, the default rider takes your seat." },
