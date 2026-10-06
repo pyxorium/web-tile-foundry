@@ -3,6 +3,7 @@
 // and what goes in the public recipe.
 
 import { normalizeTracks } from "./workshop.js";
+import { DEFAULT_KIT, kitById, kitColors } from "./kits.js";
 
 export const SIDES = Object.freeze(["A", "B"]);
 export const NAME_MAX = 64;
@@ -17,6 +18,7 @@ export function panelDefaults({ handle = null } = {}) {
   return {
     tracks: [],
     label: "",
+    kit: DEFAULT_KIT,
     dedication: "",
     notes: "",
     genres: "",
@@ -66,7 +68,7 @@ export function applyPanelChange(key, value, values) {
 /** The tape's own details for tape.json (tile.js makes the rest). */
 export function tapeDetails(values) {
   return {
-    label: { text: values.label },
+    label: { text: values.label, style: kitById(values.kit).id, colors: kitColors(values.kit) },
     dedication: values.dedication,
     notes: values.notes,
     describe: { genres: splitWords(values.genres), moods: splitWords(values.moods), tags: splitWords(values.tags) },
@@ -80,6 +82,7 @@ export function panelRecipe(values) {
   const owners = [...new Set(songsFrom.filter(Boolean))];
   return {
     songsFrom: owners.map((did) => ({ kind: "plyr.fm", did })),
+    kit: kitById(values.kit).id,
     chosenTransitions: (values.tracks || []).filter((t) => t.transitionChosen).length,
     confirmed: values.confirm === true,
   };

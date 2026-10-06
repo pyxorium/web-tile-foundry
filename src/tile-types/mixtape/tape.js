@@ -86,6 +86,24 @@ export function cleanPerson(p) {
   return Object.keys(out).length ? out : null;
 }
 
+const HEX = /^#[0-9a-f]{6}$/i;
+const COLOR_KEYS = ["shell", "paper", "ink", "stripe1", "stripe2"];
+
+/** { text?, style?, colors? } (each only if valid), or null. */
+export function cleanLabel(label) {
+  if (!label || typeof label !== "object") return null;
+  const out = {};
+  const text = cleanText(label.text, LIMITS.label);
+  if (text) out.text = text;
+  if (typeof label.style === "string" && /^[a-z0-9-]{1,40}$/.test(label.style)) out.style = label.style;
+  if (label.colors && typeof label.colors === "object") {
+    const colors = {};
+    for (const k of COLOR_KEYS) if (typeof label.colors[k] === "string" && HEX.test(label.colors[k])) colors[k] = label.colors[k].toLowerCase();
+    if (Object.keys(colors).length) out.colors = colors;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 /** Where a song came from: { record: { uri, cid }, url } (each part only if valid), or null. */
 export function cleanSource(s) {
   if (!s || typeof s !== "object") return null;
@@ -128,8 +146,8 @@ export function makeTape({ title, artist, madeBy, dedication, notes, label, desc
   if (ded) tape.dedication = ded;
   const n = cleanText(notes, LIMITS.notes, { lines: true });
   if (n) tape.notes = n;
-  const labelText = cleanText(label && label.text, LIMITS.label);
-  if (labelText) tape.label = { text: labelText };
+  const lab = cleanLabel(label);
+  if (lab) tape.label = lab;
   if (typeof cover === "string" && /^\/[a-z0-9/_-]+\.png$/.test(cover)) tape.cover = cover;
   const desc = cleanDescribe(describe);
   if (desc) tape.describe = desc;

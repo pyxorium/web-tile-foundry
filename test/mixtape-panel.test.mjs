@@ -10,6 +10,9 @@ import { songFromRecord, groupShows, listPlyrSongs, stripTrackNumber, REASONS } 
 import { normalizeTracks, createWorkshop, trackFromSong, sideFor, SIDE_SECONDS } from "../src/tile-types/mixtape/workshop.js";
 import { SIDES, panelDefaults, addShowsToNotes, splitWords, tapeDetails, panelRecipe, applyPanelChange, showsOf } from "../src/tile-types/mixtape/panel.js";
 import { TIMING } from "../src/tile-types/mixtape/transitions.js";
+import { KITS, DEFAULT_KIT, kitById, kitColors } from "../src/tile-types/mixtape/kits.js";
+import { cassetteWords } from "../src/tile-types/mixtape/art.js";
+import { cleanLabel } from "../src/tile-types/mixtape/tape.js";
 import { checkTileType, checkInputs, buildProblems } from "../src/core/contract.js";
 import { publishTile, REPO_DESTINATION } from "../src/core/publish.js";
 
@@ -270,8 +273,29 @@ test("liner notes can list the shows, words become terms, and the recipe stays p
   const v = { ...panelDefaults({ handle: "pyxorium.com" }), label: "JAM CRUISE '26", genres: "funk, soul", confirm: true,
     tracks: [{ ...song(1, "a"), transitionChosen: true, source: { record: { uri: `at://${DID}/fm.plyr.track/x`, cid: "bafy" } } }] };
   const d = tapeDetails(v);
-  assert.deepEqual(d.label, { text: "JAM CRUISE '26" });
+  assert.deepEqual(d.label, { text: "JAM CRUISE '26", style: "cassette-classic", colors: kitColors("cassette-classic") });
   assert.deepEqual(d.describe.genres, ["funk", "soul"]);
   assert.deepEqual(d.madeBy, { handle: "pyxorium.com" });
-  assert.deepEqual(panelRecipe(v), { songsFrom: [{ kind: "plyr.fm", did: DID }], chosenTransitions: 1, confirmed: true });
+  assert.deepEqual(panelRecipe(v), { songsFrom: [{ kind: "plyr.fm", did: DID }], kit: "cassette-classic", chosenTransitions: 1, confirmed: true });
+});
+
+// ---- stage 5: cassette looks and card pictures -------------------------------------
+
+test("every cassette look has valid colors, and tapes record their look and colors", () => {
+  const hex = /^#[0-9a-f]{6}$/;
+  assert.equal(DEFAULT_KIT, "cassette-classic");
+  assert.equal(new Set(KITS.map((k) => k.id)).size, KITS.length);
+  for (const k of KITS) for (const c of [k.shell, k.edge, k.paper, k.ink, k.stripe1, k.stripe2, ...k.backdrop]) assert.match(c, hex, k.id);
+  assert.equal(kitById("nonsense").id, DEFAULT_KIT);
+  assert.ok(mixtape.inputs.find((i) => i.key === "kit").options.every((o) => o.color));
+  assert.deepEqual(cleanLabel({ text: " Hi ", style: "cassette-ocean", colors: { ...kitColors("cassette-ocean"), ink: "red", extra: "#000000" } }),
+    { text: "Hi", style: "cassette-ocean", colors: { shell: "#1f4e79", paper: "#f2efe6", stripe1: "#f28c38", stripe2: "#f6c85f" } });
+  assert.equal(cleanLabel({ style: "Bad Style!" }), null);
+});
+
+test("the cassette shows the label (or title), the maker, and each side's length", () => {
+  const tape = { title: "Road Trip", label: { text: "ROAD TRIP '26" }, madeBy: { handle: "pyxorium.com" },
+    sides: [{ name: "A", tracks: [{ duration: 600 }, { duration: 790.4 }] }, { name: "B", tracks: [{ duration: 224 }] }] };
+  assert.deepEqual(cassetteWords(tape), { label: "ROAD TRIP '26", sub: "Road Trip · made by @pyxorium.com", left: ["SIDE A", "23:10"], right: ["SIDE B", "3:44"] });
+  assert.deepEqual(cassetteWords({ title: "T", sides: [{ name: "A", tracks: [] }] }), { label: "T", sub: "", left: ["SIDE A", "0:00"], right: null });
 });

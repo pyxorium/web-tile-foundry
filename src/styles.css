@@ -368,7 +368,9 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .mx-unusable-list { margin: 0 0 6px; padding-left: 20px; font-size: 14px; color: var(--ink-2); }
 
 /* Mixtape preview box */
-.mixtape-preview { border-radius: var(--radius); overflow: hidden; }
+/* Fills the preview box on top, so nothing left in the box can cover it
+   (more specific than the player's own .mt rules, which come later). */
+.type-preview > .mixtape-preview { position: absolute; inset: 0; z-index: 1; height: auto; min-height: 0; border-radius: var(--radius); overflow: hidden; }
 .mixtape-preview-empty { display: grid; place-items: center; padding: 20px; text-align: center; color: var(--ink-2);
   border: 1px dashed var(--line); background: var(--surface); }
 

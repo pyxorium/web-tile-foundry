@@ -24,7 +24,8 @@ function el(tag, className, text) {
 const onPhone = () => typeof matchMedia === "function" && (matchMedia("(pointer: coarse)").matches || matchMedia("(max-width: 700px)").matches);
 
 export function mountPicker(root, { getTracks, setTracks, context, sides, maxTracks = 40 }) {
-  root.replaceChildren();
+  // Added alongside, not replacing: React may mount twice in development, and
+  // the first one removes only its own box when it is disposed.
   const box = el("div", "mx-picker");
   root.append(box);
   if (onPhone()) {
@@ -233,7 +234,8 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     dispose() {
       disposed = true;
       if (workshop) workshop.dispose();
-      root.replaceChildren();
+      // Only this picker's own box (see preview.js: React may mount twice).
+      box.remove();
     },
   };
 }

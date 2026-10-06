@@ -43,7 +43,7 @@ export function mountPreview(element, { result = null } = {}) {
   const box = document.createElement("div");
   box.className = "mixtape-preview";
   box.style.height = "400px"; // the embed box height on the blog and webtil.es
-  element.replaceChildren(box);
+  element.append(box); // alongside, not replacing (see dispose)
   let player = null;
   let shownTape = null;
   let shown;
@@ -94,7 +94,9 @@ export function mountPreview(element, { result = null } = {}) {
     dispose() {
       if (player) player.dispose();
       player = null;
-      element.replaceChildren();
+      // Only this preview's own box: in development React mounts previews
+      // twice, and a late dispose of the first must not empty the second.
+      box.remove();
     },
   };
 }

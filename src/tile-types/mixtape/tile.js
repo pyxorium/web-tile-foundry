@@ -23,12 +23,14 @@ import { RUNTIME_PATH } from "./runtime/paths.js";
 //   recipe   the panel's choices for /foundry.json
 //   runtime  the text of /mixtape.js (see runtime/bundle.js)
 //   art      { icon, banner }: PNG bytes, or null while editing
+//   drawArt  or: async (tape) -> { icon, banner }, given the finished tape.json
+//            object (the card pictures show its label and side lengths)
 //
 // Each song becomes one file, /tracks/a1.mp3 and so on, with the silence
 // after it baked in, so the files join into one continuous side (Tileman) and
 // sound the same in every player.
 
-export async function makeMixtapeTile({ name, description = "", tape = {}, sides = ["A"], tracks, silence = null, recipe = {}, runtime, art = null }) {
+export async function makeMixtapeTile({ name, description = "", tape = {}, sides = ["A"], tracks, silence = null, recipe = {}, runtime, art: givenArt = null, drawArt = null }) {
   if (typeof runtime !== "string" || !runtime) throw new Error("The tape's player (/mixtape.js) is missing.");
   if (!Array.isArray(tracks) || !tracks.length) throw new Error("The tape has no songs.");
   const title = String(name || "").trim();
@@ -78,6 +80,7 @@ export async function makeMixtapeTile({ name, description = "", tape = {}, sides
   }
 
   const tapeObj = makeTape({ ...tape, title, sides: tapeSides });
+  const art = drawArt ? await drawArt(tapeObj) : givenArt;
   const config = mixtapeConfig({ tape: tapeObj, artwork: art ? "/icon.png" : null });
   const html = renderMixtapeHtml({ title, config });
   files.unshift(makeFile("/", html), makeFile(RUNTIME_PATH, runtime), makeFile(TAPE_PATH, tapeJson(tapeObj)));

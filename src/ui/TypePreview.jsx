@@ -31,6 +31,8 @@ export function TypePreview({ type, values, setValue, result = null }) {
       cancelled = true;
       if (handle.current) handle.current.dispose();
       handle.current = null;
+      // Start the next type's preview in an empty box, whatever this one left.
+      if (mountRef.current) mountRef.current.replaceChildren();
     };
     // Mounted once per type; later changes go through update().
     // eslint-disable-next-line react-hooks/exhaustive-deps

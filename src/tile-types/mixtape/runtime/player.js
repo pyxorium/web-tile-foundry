@@ -85,6 +85,15 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
 
   root.classList.add("mt");
   root.replaceChildren();
+  // The cassette's own colors (tape.json label.colors), if it has them.
+  const colors = (tape && tape.label && tape.label.colors) || {};
+  const HEX = /^#[0-9a-f]{6}$/i;
+  const setVar = (name, c) => typeof c === "string" && HEX.test(c) && root.style.setProperty(name, c);
+  setVar("--label", colors.paper);
+  setVar("--label-ink", colors.ink);
+  setVar("--stripe1", colors.stripe1);
+  setVar("--stripe2", colors.stripe2);
+  setVar("--accent", colors.stripe2);
 
   // ---- label ------------------------------------------------------------------
   const head = el("header", "mt-head");
@@ -488,6 +497,7 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
       }
       root.replaceChildren();
       root.classList.remove("mt", "mt-busy");
+      for (const v of ["--label", "--label-ink", "--stripe1", "--stripe2", "--accent"]) root.style.removeProperty(v);
     },
   };
 }

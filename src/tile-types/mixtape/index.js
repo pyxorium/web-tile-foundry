@@ -5,13 +5,14 @@ import {
   panelDefaults, applyPanelChange, tapeDetails, panelRecipe,
 } from "./panel.js";
 import { SIDE_SECONDS } from "./workshop.js";
+import { KITS } from "./kits.js";
 
 // Tile type: Mixtape.
 // The creator's own plyr.fm songs on a cassette, Side A and Side B, with the
 // changes between songs baked into the audio. The song picker lives in
 // picker.js, the song list's rules in workshop.js and panel.js, the tile's
 // files in tile.js and tape.js, the player in runtime/, the preview in
-// preview.js. Card pictures come in stage 5.
+// preview.js, the cassette looks in kits.js and the card pictures in art.js.
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || "/";
 
@@ -59,6 +60,14 @@ export const mixtape = {
       transitions: true,
       picker,
     },
+    {
+      key: "kit",
+      kind: "choice",
+      label: "Cassette",
+      required: true,
+      options: KITS.map((k) => ({ value: k.id, label: k.label, color: k.shell })),
+      group: "tape",
+    },
     { key: "label", kind: "text", label: "Label (optional)", help: "Handwritten on the cassette, like JAM CRUISE '26. Without one, the cassette shows the tape's title.", maxLength: LABEL_MAX, group: "tape" },
     { key: "dedication", kind: "text", label: "Dedication (optional)", help: "Like \"For Sam, summer 2026\".", maxLength: DEDICATION_MAX, group: "tape" },
     { key: "notes", kind: "text", label: "Liner notes (optional)", multiline: true, maxLength: NOTES_MAX, group: "tape" },
@@ -98,7 +107,9 @@ export const mixtape = {
   // Each build joins and fingerprints every song (tens of MB), so it waits a little longer.
   buildDelayMs: 700,
 
-  async build(values) {
+  // The card pictures are drawn for the final build (Publish, and the debug
+  // views), not on every change.
+  async build(values, { final = true } = {}) {
     const runtime = await loadRuntime();
     const tracks = values.tracks || [];
     const needsSilence = [...shapesFor(tracks, SIDES).values()].some((s) => s.pause > 0);
@@ -116,7 +127,7 @@ export const mixtape = {
       silence,
       recipe: panelRecipe(values),
       runtime,
-      art: null,
+      drawArt: final ? async (tape) => (await import("./art.js")).makeCardArt({ tape, kit: values.kit }) : null,
     });
   },
 };

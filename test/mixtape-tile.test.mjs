@@ -267,3 +267,11 @@ test("the player reads v2 sides and v1 track lists, and skips songs without a pa
   assert.equal(clock(225.9), "3:45");
   assert.equal(clock(3723), "1:02:03");
 });
+
+test("card pictures can be drawn from the finished tape (its label and side lengths)", async () => {
+  let seen = null;
+  const tile = await makeTile({ art: null, drawArt: async (tape) => { seen = tape; return { icon: new Uint8Array([1]), banner: new Uint8Array([2]) }; } });
+  assert.deepEqual(seen, tapeOf(tile));
+  assert.deepEqual(tile.icons, [{ src: "/icon.png" }]);
+  assert.equal(configOf(tile).artwork, "/icon.png");
+});
