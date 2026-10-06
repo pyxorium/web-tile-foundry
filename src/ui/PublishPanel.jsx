@@ -152,7 +152,13 @@ export function PublishPanel({ result, getFinal, account, who }) {
             {(progress.prepare ? [PREPARE_STEP, ...STEPS] : STEPS).map((s) => {
               const p = progress[s.id];
               const status = p ? p.state : "waiting";
-              const count = s.id === "upload" && p && p.detail && p.detail.total ? ` (${p.detail.done} of ${p.detail.total})` : "";
+              const d = p && p.detail;
+              // Big tiles (songs) also show megabytes, since files differ so much in size.
+              const big = d && d.bytesTotal > 1024 * 1024;
+              const mb = (x) => (x / 1024 / 1024).toFixed(1);
+              const count = s.id === "upload" && d && d.total
+                ? ` (${d.done} of ${d.total}${big ? `, ${mb(d.bytesDone)} of ${mb(d.bytesTotal)} MB` : ""})`
+                : "";
               const failed = state.phase === "error" && state.step === s.id;
               return (
                 <li key={s.id} className={`ps-${failed ? "failed" : status}`}>

@@ -32,6 +32,18 @@
 //                        applyChange(key, true, values), which does the work;
 //                        nothing is kept under the key. disabledIf(values), optional,
 //                        dims the button when there is nothing to do.
+//               tracks   a list of songs, in playing order. Each song:
+//                          { id, title, artist?, side, seconds, status, bytes?,
+//                            progress?, error?, transition?, source? }
+//                        status is "converting", "ready" (bytes holds the finished
+//                        file) or "error" (error says why). transition is how the
+//                        song leads into the next one on its side (TRANSITIONS).
+//                        Options: sides (default ["A"]); maxSecondsPerSide;
+//                        maxTracks; transitions: true shows the choice between songs;
+//                        picker: { mount(element, { getTracks, setTracks, context })
+//                        -> { update(tracks), dispose() } }, the type's own way of
+//                        adding songs, shown above the list. Songs are converted by
+//                        the type (src/core/audio/), which updates their status.
 //             showIf(values): OPTIONAL; the input is shown (and checked) only when it returns true.
 //             Inputs with the same `group` are shown together under that group's title.
 //   groups    array    OPTIONAL: [{ id, title, collapsed? }] titles for grouped inputs;
@@ -50,6 +62,10 @@
 //                      `setValue(key, value)` changes a value as if the user had.
 //   buildDelayMs       OPTIONAL: how long to wait after the last change before
 //                      rebuilding the tile (default 250).
+//   maxBytes           OPTIONAL: the most a tile of this type may weigh, all files
+//                      together, in bytes. Default DEFAULT_MAX_TILE_BYTES (5 MB);
+//                      never more than MAX_TILE_BYTES_CAP (60 MB). Types with big
+//                      files (songs) raise it; each file is still uploaded on its own.
 //   defaults(context)  -> object of starting input values. `context` may carry
 //                         { handle } once sign-in exists.
 //   optionPreview(key, value, inputs)   OPTIONAL
@@ -73,7 +89,29 @@
 // recipeInputs is PUBLIC: it is stored inside the tile for anyone to read.
 // A type must only put in it what is safe to publish.
 
-export const INPUT_KINDS = Object.freeze(["sprite", "choice", "text", "palette", "brush", "range", "seed", "toggle", "action"]);
+/** Size budget for a tile when its type doesn't set maxBytes. */
+export const DEFAULT_MAX_TILE_BYTES = 5 * 1024 * 1024;
+/** The most any type may allow (each file is a separate upload; seen accepted up to 25 MB). */
+export const MAX_TILE_BYTES_CAP = 60 * 1024 * 1024;
+
+/** The size budget for tiles of this type. */
+export function maxBytesFor(type) {
+  return type && type.maxBytes != null ? type.maxBytes : DEFAULT_MAX_TILE_BYTES;
+}
+
+export const INPUT_KINDS = Object.freeze(["sprite", "choice", "text", "palette", "brush", "range", "seed", "toggle", "action", "tracks"]);
+
+/** How a song leads into the next one (tracks input): straight on, a short pause, or fade out and in with a pause. */
+export const TRANSITIONS = Object.freeze(["straight", "pause", "fade"]);
+export const TRACK_TITLE_MAX = 120;
+
+/** 75 -> "1:15" */
+export function formatDuration(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const mm = h ? String(m).padStart(2, "0") : String(m);
+  return `${h ? h + ":" : ""}${mm}:${String(r).padStart(2, "0")}`;
+}
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -107,6 +145,21 @@ export function checkTileType(type) {
     if (input.kind === "action" && (typeof input.button !== "string" || !input.button || typeof type.applyChange !== "function")) {
       throw new Error(`${where}: action input "${input.key}" needs a button label, and the type needs applyChange.`);
     }
+    if (input.kind === "tracks") {
+      const sides = input.sides === undefined ? ["A"] : input.sides;
+      if (!Array.isArray(sides) || !sides.length || !sides.every((x) => typeof x === "string" && x) || new Set(sides).size !== sides.length) {
+        throw new Error(`${where}: tracks input "${input.key}" needs sides, a list of different names.`);
+      }
+      if (input.maxSecondsPerSide !== undefined && !(Number.isFinite(input.maxSecondsPerSide) && input.maxSecondsPerSide > 0)) {
+        throw new Error(`${where}: tracks input "${input.key}": maxSecondsPerSide must be a positive number.`);
+      }
+      if (input.maxTracks !== undefined && !(Number.isInteger(input.maxTracks) && input.maxTracks > 0)) {
+        throw new Error(`${where}: tracks input "${input.key}": maxTracks must be a positive whole number.`);
+      }
+      if (input.picker !== undefined && (!input.picker || typeof input.picker.mount !== "function")) {
+        throw new Error(`${where}: tracks input "${input.key}": picker needs mount(element, options).`);
+      }
+    }
     if (input.showIf !== undefined && typeof input.showIf !== "function") {
       throw new Error(`${where}: showIf on "${input.key}" must be a function.`);
     }
@@ -114,6 +167,9 @@ export function checkTileType(type) {
   const groupIds = new Set((type.groups || []).map((g) => g.id));
   for (const input of type.inputs) {
     if (input.group && !groupIds.has(input.group)) throw new Error(`${where}: input "${input.key}" names an unknown group "${input.group}".`);
+  }
+  if (type.maxBytes !== undefined && !(Number.isInteger(type.maxBytes) && type.maxBytes > 0 && type.maxBytes <= MAX_TILE_BYTES_CAP)) {
+    throw new Error(`${where}: maxBytes must be a whole number of bytes from 1 to ${MAX_TILE_BYTES_CAP}.`);
   }
   if (typeof type.defaults !== "function") throw new Error(`${where}: defaults(context) is missing.`);
   if (typeof type.build !== "function") throw new Error(`${where}: build(inputs) is missing.`);
@@ -169,8 +225,51 @@ export function checkInputs(type, values) {
     if (input.kind === "toggle" && typeof v !== "boolean") {
       problems.push({ key: input.key, message: `${input.label || input.key} must be on or off.` });
     }
+    if (input.kind === "tracks") {
+      for (const message of trackProblems(input, v)) problems.push({ key: input.key, message });
+    }
   }
   return problems;
+}
+
+/** Problems with a tracks input's value, as plain sentences (empty when all is well). */
+export function trackProblems(input, tracks) {
+  if (!Array.isArray(tracks)) return ["The song list is missing."];
+  const out = [];
+  const sides = input.sides || ["A"];
+  if (input.required && tracks.length === 0) out.push("Add at least one song.");
+  if (input.maxTracks && tracks.length > input.maxTracks) out.push(`A tile can hold up to ${input.maxTracks} songs.`);
+  const ids = new Set();
+  let converting = 0;
+  for (const t of tracks) {
+    if (!t || typeof t.id !== "string" || !t.id || ids.has(t.id)) {
+      out.push("Two songs share the same id.");
+      break;
+    }
+    ids.add(t.id);
+  }
+  for (const t of tracks) {
+    if (!t) continue;
+    const name = typeof t.title === "string" && t.title.trim() ? `"${t.title.trim()}"` : "A song";
+    if (!sides.includes(t.side)) out.push(`${name} is on an unknown side.`);
+    if (typeof t.title !== "string" || !t.title.trim()) out.push("Every song needs a title.");
+    else if (t.title.length > TRACK_TITLE_MAX) out.push(`${name}'s title is longer than ${TRACK_TITLE_MAX} characters.`);
+    if (t.transition !== undefined && !TRANSITIONS.includes(t.transition)) out.push(`${name} has an unknown change to the next song.`);
+    if (t.status === "converting") converting++;
+    else if (t.status === "error") out.push(`${name} couldn't be converted: ${String(t.error || "unknown problem").replace(/[.\s]+$/, "")}. Remove it or try again.`);
+    else if (t.status !== "ready" || !(t.bytes instanceof Uint8Array) || !t.bytes.length) out.push(`${name} isn't ready.`);
+    else if (!(Number.isFinite(t.seconds) && t.seconds > 0)) out.push(`${name} has no length.`);
+  }
+  if (converting) out.unshift(`${converting === 1 ? "1 song is" : converting + " songs are"} still converting.`);
+  if (input.maxSecondsPerSide) {
+    for (const side of sides) {
+      const total = tracks.filter((t) => t && t.side === side).reduce((n, t) => n + (Number(t.seconds) || 0), 0);
+      if (total > input.maxSecondsPerSide) {
+        out.push(`${sides.length > 1 ? "Side " + side : "The tape"} is ${formatDuration(total)} long; it holds up to ${formatDuration(input.maxSecondsPerSide)}.`);
+      }
+    }
+  }
+  return out;
 }
 
 /** Whether an input is shown for these values (see showIf). */

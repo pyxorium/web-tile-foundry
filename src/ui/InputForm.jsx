@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { spriteFromBytes } from "../core/sprite-source.js";
 import { formatSize } from "../core/fileset.js";
 import { DEBUG } from "./debug.js";
-import { isShown } from "../core/contract.js";
+import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
 // (see INPUT_KINDS in src/core/contract.js).
@@ -346,7 +346,168 @@ function ActionInput({ input, onChange, values }) {
   );
 }
 
+// A list of songs, in playing order, grouped by side (see "tracks" in
+// src/core/contract.js). The type adds songs through its own picker (shown
+// above the list) and converts them; here they can be renamed, reordered,
+// moved to another side, removed, and given a change into the next song.
+const TRANSITION_LABELS = { straight: "Straight on", pause: "Short pause", fade: "Fade and pause" };
+
+function TrackPicker({ picker, tracks, setTracks, context }) {
+  const boxRef = useRef(null);
+  const handleRef = useRef(null);
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
+  const setRef = useRef(setTracks);
+  setRef.current = setTracks;
+
+  useEffect(() => {
+    let disposed = false;
+    Promise.resolve(
+      picker.mount(boxRef.current, {
+        getTracks: () => tracksRef.current,
+        // Several songs convert at once and report back in quick succession, so
+        // each change builds on the latest list, not the one last drawn.
+        setTracks: (next) => {
+          const resolved = typeof next === "function" ? next(tracksRef.current) : next;
+          tracksRef.current = resolved;
+          setRef.current(resolved);
+        },
+        context,
+      })
+    ).then((h) => {
+      if (disposed) { if (h && h.dispose) h.dispose(); return; }
+      handleRef.current = h;
+      if (h && h.update) h.update(tracksRef.current);
+    });
+    return () => {
+      disposed = true;
+      if (handleRef.current && handleRef.current.dispose) handleRef.current.dispose();
+      handleRef.current = null;
+    };
+    // Mount once per picker; later changes reach it through update().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picker]);
+
+  useEffect(() => {
+    if (handleRef.current && handleRef.current.update) handleRef.current.update(tracks);
+  }, [tracks]);
+
+  return <div ref={boxRef} className="track-picker" />;
+}
+
+function TrackStatus({ t }) {
+  if (t.status === "converting") {
+    const pct = Number.isFinite(t.progress) ? Math.round(t.progress) : null;
+    return (
+      <span className="track-status converting">
+        Converting{pct != null ? ` ${pct}%` : "…"}
+        {pct != null && <span className="track-bar" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>}
+      </span>
+    );
+  }
+  if (t.status === "error") return <span className="track-status error">Couldn't convert</span>;
+  return <span className="track-status">{formatDuration(t.seconds)}</span>;
+}
+
+function TracksInput({ input, value, onChange, context }) {
+  const tracks = Array.isArray(value) ? value : [];
+  const sides = input.sides || ["A"];
+  const max = input.maxSecondsPerSide;
+
+  const update = (next) => onChange(next);
+  const patch = (id, change) => update(tracks.map((t) => (t.id === id ? { ...t, ...change } : t)));
+  const remove = (id) => update(tracks.filter((t) => t.id !== id));
+
+  // Move a song up or down among the songs on its side.
+  function move(id, dir) {
+    const t = tracks.find((x) => x.id === id);
+    const same = tracks.filter((x) => x.side === t.side);
+    const k = same.indexOf(t);
+    const other = same[k + dir];
+    if (!other) return;
+    const next = tracks.slice();
+    const a = next.indexOf(t), b = next.indexOf(other);
+    next[a] = other;
+    next[b] = t;
+    update(next);
+  }
+  // Move a song to the end of another side.
+  function toSide(id, side) {
+    const t = tracks.find((x) => x.id === id);
+    update([...tracks.filter((x) => x.id !== id), { ...t, side }]);
+  }
+
+  return (
+    <fieldset className="field tracks">
+      <legend className="field-label">{input.label}</legend>
+      {input.help && <p className="field-help">{input.help}</p>}
+      {input.picker && <TrackPicker picker={input.picker} tracks={tracks} setTracks={update} context={context} />}
+      {sides.map((side) => {
+        const list = tracks.filter((t) => t.side === side);
+        const total = list.reduce((n, t) => n + (Number(t.seconds) || 0), 0);
+        const over = max && total > max;
+        return (
+          <section key={side} className="track-side" aria-label={sides.length > 1 ? `Side ${side}` : "Songs"}>
+            <div className="track-side-head">
+              <span className="track-side-name">{sides.length > 1 ? `Side ${side}` : "Songs"}</span>
+              <span className={`track-side-time ${over ? "over" : ""}`}>
+                {formatDuration(total)}{max ? ` of ${formatDuration(max)}` : ""}
+              </span>
+            </div>
+            {max ? (
+              <span className="track-side-meter" aria-hidden="true">
+                <span style={{ width: `${Math.min(100, (total / max) * 100)}%` }} className={over ? "over" : ""} />
+              </span>
+            ) : null}
+            {list.length === 0 && <p className="field-help track-empty">No songs on this side yet.</p>}
+            <ol className="track-list">
+              {list.map((t, k) => (
+                <li key={t.id} className={`track-row ${t.status === "error" ? "is-error" : ""}`}>
+                  <div className="track-main">
+                    <span className="track-num">{k + 1}</span>
+                    <input
+                      className="text track-title"
+                      value={t.title || ""}
+                      maxLength={TRACK_TITLE_MAX}
+                      aria-label={`Title of song ${k + 1}`}
+                      onChange={(e) => patch(t.id, { title: e.target.value })}
+                    />
+                    <TrackStatus t={t} />
+                  </div>
+                  {(t.artist || t.status === "error") && (
+                    <p className="track-sub">
+                      {t.artist}
+                      {t.status === "error" && <span className="field-error"> {t.error}</span>}
+                    </p>
+                  )}
+                  <div className="track-tools">
+                    <button type="button" className="btn btn-quiet btn-small" disabled={k === 0} onClick={() => move(t.id, -1)} aria-label={`Move "${t.title}" up`}>↑</button>
+                    <button type="button" className="btn btn-quiet btn-small" disabled={k === list.length - 1} onClick={() => move(t.id, 1)} aria-label={`Move "${t.title}" down`}>↓</button>
+                    {sides.filter((x) => x !== side).map((x) => (
+                      <button key={x} type="button" className="btn btn-quiet btn-small" onClick={() => toSide(t.id, x)}>To side {x}</button>
+                    ))}
+                    <button type="button" className="btn btn-quiet btn-small" onClick={() => remove(t.id)} aria-label={`Remove "${t.title}"`}>Remove</button>
+                  </div>
+                  {input.transitions && k < list.length - 1 && (
+                    <label className="track-transition">
+                      <span>Then</span>
+                      <select value={t.transition || "fade"} onChange={(e) => patch(t.id, { transition: e.target.value })}>
+                        {TRANSITIONS.map((x) => <option key={x} value={x}>{TRANSITION_LABELS[x]}</option>)}
+                      </select>
+                    </label>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        );
+      })}
+    </fieldset>
+  );
+}
+
 const KIND_COMPONENTS = {
+  tracks: TracksInput,
   action: ActionInput,
   sprite: SpriteInput,
   choice: ChoiceInput,

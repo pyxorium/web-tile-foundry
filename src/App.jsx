@@ -160,7 +160,7 @@ export default function App() {
       {canMake && type ? (
         <Step n={++n} title="Make your tile">
           <div className="make">
-            <InputForm type={type} values={values} onChange={setValue} problems={problems} context={{ ownSprite }} />
+            <InputForm type={type} values={values} onChange={setValue} problems={problems} context={{ ownSprite, account }} />
             <div className="make-preview">
               {type.preview ? (
                 <>
@@ -226,7 +226,11 @@ export default function App() {
       <footer className="foot">
         Sprites from <a href="https://rpg.actor/" target="_blank" rel="noopener">rpg.actor</a>. Tiles view on{" "}
         <a href="https://appmosphe.re/tiles" target="_blank" rel="noopener">appmosphe.re</a>. Foundry by{" "}
-        <a href="https://thunderbird.cafe/" target="_blank" rel="noopener">thunderbird.cafe</a>.
+        <a href="https://thunderbird.cafe/" target="_blank" rel="noopener">thunderbird.cafe</a>. MP3 encoding by{" "}
+        <a href="https://github.com/zhuker/lamejs" target="_blank" rel="noopener">lamejs</a>, a port of{" "}
+        <a href="https://lame.sourceforge.io/" target="_blank" rel="noopener">LAME</a>, unmodified under the{" "}
+        <a href="https://www.gnu.org/licenses/lgpl-3.0.html" target="_blank" rel="noopener">LGPL</a>{" "}
+        (<a href={`${import.meta.env?.BASE_URL ?? "/"}vendor/lamejs/README.txt`} target="_blank" rel="noopener">details</a>).
       </footer>
     </div>
   );

@@ -12,6 +12,7 @@ export const CONTENT_TYPES = Object.freeze({
   ".json": "application/json",
   ".glb": "model/gltf-binary",
   ".js": "text/javascript",
+  ".mp3": "audio/mpeg",
 });
 
 const encoder = new TextEncoder();

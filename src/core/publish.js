@@ -63,6 +63,13 @@ export async function buildRecord(manifest, createdAt) {
   return { $type: TILE_COLLECTION, cid: await dagCborCid(manifest), tile: manifest, createdAt };
 }
 
+/** Whether an upload error means the server refused the file for its size. */
+export function isTooLarge(err) {
+  if (!err) return false;
+  if (err.status === 413) return true;
+  return /BlobTooLarge|PayloadTooLarge|too large|exceeds.*(size|limit)/i.test(`${err.error || ""} ${err.message || ""}`);
+}
+
 /** Parses "Expected: X, Got: Y" from a PDS InvalidMimeType message. */
 export function parseMimeMismatch(message) {
   const m = /Expected:\s*([^,\s]+)\s*,\s*Got:\s*([^\s,]+)/i.exec(message || "");
@@ -85,16 +92,23 @@ function sameJson(a, b) {
  * Resolves to { uri, rkey, recordCid, manifestCid, record }.
  */
 export async function publishTile({ xrpc, fetchBlob, did, result, now = () => new Date().toISOString(), onStep = () => {} }) {
-  // 1. Upload every file and check each address.
-  onStep("upload", "active", { done: 0, total: result.files.length });
+  // 1. Upload every file and check each address. Progress counts files and bytes.
+  const bytesTotal = result.files.reduce((sum, f) => sum + f.bytes.length, 0);
+  let bytesDone = 0;
+  onStep("upload", "active", { done: 0, total: result.files.length, bytesDone, bytesTotal });
   const blobRefs = {};
   let n = 0;
   for (const file of result.files) {
     let res;
+    const what = file.path === "/" ? "the tile" : file.path;
     try {
       res = await xrpc("com.atproto.repo.uploadBlob", { method: "POST", body: file.bytes, contentType: file.contentType });
     } catch (err) {
-      throw new PublishError(`Uploading ${file.path === "/" ? "the tile" : file.path} failed: ${err.message}`, "upload");
+      if (isTooLarge(err)) {
+        const mb = (file.bytes.length / 1024 / 1024).toFixed(1);
+        throw new PublishError(`Your account's server refused ${what} (${mb} MB) as too large. Try a smaller tile, for example fewer or shorter songs.`, "upload");
+      }
+      throw new PublishError(`Uploading ${what} failed: ${err.message}`, "upload");
     }
     const blob = res && res.blob;
     const link = blob && blob.ref && blob.ref.$link;
@@ -105,7 +119,8 @@ export async function publishTile({ xrpc, fetchBlob, did, result, now = () => ne
       );
     }
     blobRefs[file.path] = { $type: "blob", ref: { $link: link }, mimeType: blob.mimeType, size: blob.size ?? file.bytes.length };
-    onStep("upload", "active", { done: ++n, total: result.files.length });
+    bytesDone += file.bytes.length;
+    onStep("upload", "active", { done: ++n, total: result.files.length, bytesDone, bytesTotal });
   }
   onStep("upload", "done");
 

@@ -1,4 +1,4 @@
-import { checkInputs } from "./contract.js";
+import { checkInputs, maxBytesFor } from "./contract.js";
 import { readCspMeta, TILE_CSP } from "./policy.js";
 import { makeRecipeFile, RECIPE_PATH } from "./recipe.js";
 import { rawCid } from "./cid.js";
@@ -6,8 +6,6 @@ import { rawCid } from "./cid.js";
 // Turns a tile type plus the user's inputs into a finished, checked set of tile
 // files. This is the type-agnostic middle of the Foundry: every tile, of any
 // type, passes through here before preview and (later) publishing.
-
-const MAX_TILE_BYTES = 5 * 1024 * 1024; // well under any PDS blob limit seen so far
 
 export class TileBuildError extends Error {
   constructor(message, problems = []) {
@@ -65,7 +63,11 @@ export async function buildTile(type, inputs, { final = true } = {}) {
     totalBytes += file.bytes.length;
     files.push({ ...file, cid: await rawCid(file.bytes) });
   }
-  if (totalBytes > MAX_TILE_BYTES) throw new TileBuildError("The tile is larger than the Foundry allows (5 MB).");
+  const limit = maxBytesFor(type);
+  if (totalBytes > limit) {
+    const mb = (n) => (n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0);
+    throw new TileBuildError(`The tile is ${mb(totalBytes)} MB; a ${type.title} tile can be up to ${mb(limit)} MB.`);
+  }
 
   return { typeId: type.id, typeVersion: type.version, name, description, icons, screenshots, files, html, totalBytes, final };
 }
