@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mixtape tile test</title>
+    <style>
+      body { margin: 0; padding: 16px; background: #f4efe6; color: #2a211b; font: 15px/1.45 system-ui, sans-serif; max-width: 1100px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      h2 { font-size: 17px; margin: 18px 0 6px; }
+      p { margin: 6px 0; }
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+      select, button, input[type="text"] { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid #b9ab98; background: #fff; }
+      button.main { background: #2a211b; color: #f4efe6; border-color: #2a211b; }
+      button:disabled { opacity: .5; }
+      #status { min-height: 1.4em; }
+      #status.error { color: #a11c30; font-weight: 600; }
+      table { border-collapse: collapse; background: #fff; border-radius: 8px; }
+      td, th { padding: 4px 8px; border-bottom: 1px solid #e6ddd0; text-align: left; font-size: 14px; }
+      .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+      .stage { background: #ddd3c4; border-radius: 10px; overflow: hidden; height: 400px; }
+      .stage iframe { display: block; border: 0; width: 100%; height: 400px; }
+      #facts { font: 13px ui-monospace, monospace; white-space: pre-wrap; background: #fff; border-radius: 8px; padding: 10px; }
+      .small { font-size: 13px; opacity: .75; }
+    </style>
+  </head>
+  <body>
+    <h1>Mixtape tile test</h1>
+    <p>Pick a few MP3 files from this computer. They are converted to the tape format with the transitions you choose baked in, built into a real Mixtape tile, and played two ways: through the real tile loader (as on webtil.es) and as the Foundry's preview. Nothing is uploaded or published.</p>
+    <div class="row">
+      <input id="files" type="file" accept="audio/mpeg,.mp3" multiple />
+      <label>Side B starts at song <select id="sideB"></select></label>
+    </div>
+    <div class="row">
+      <label>Title <input id="title" type="text" value="Tile test tape" maxlength="64" /></label>
+      <label>Label <input id="label" type="text" value="TEST MIX '26" maxlength="60" /></label>
+      <label>Dedication <input id="dedication" type="text" value="For the test bench" maxlength="300" /></label>
+    </div>
+    <table id="songs"><tr><td>No songs picked yet.</td></tr></table>
+    <div class="row">
+      <button id="go" class="main" type="button" disabled>Convert, build and load</button>
+      <span class="small">Changing a transition converts again only the songs whose fades change.</span>
+    </div>
+    <p id="status"></p>
+    <div class="two">
+      <div>
+        <h2>Through the real tile loader</h2>
+        <div class="stage" id="stage"></div>
+      </div>
+      <div>
+        <h2>As the Foundry's preview</h2>
+        <div class="stage" id="preview"></div>
+      </div>
+    </div>
+    <h2>Files</h2>
+    <div id="facts">Not built yet.</div>
+    <h2>tape.json</h2>
+    <div id="tape" class="small" style="font: 12px ui-monospace, monospace; white-space: pre-wrap; background: #fff; border-radius: 8px; padding: 10px;">Not built yet.</div>
+    <script type="module" src="./mixtape-tile-test.js"></script>
+  </body>
+</html>
