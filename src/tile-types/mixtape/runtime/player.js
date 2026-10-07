@@ -2,22 +2,24 @@
 // previous / next with a position bar. Used by the tile's own page
 // (tile-main.js) and by the Foundry's preview (preview.js).
 //
-// Songs play one at a time. In a tile, a song starts playing while it is still
-// arriving ("streaming"), so play starts in a moment instead of after the whole
-// file is in. Some tile hosts can't jump around in a file that is still
-// arriving; if a jump with the position bar doesn't land (or the stream fails),
-// the player downloads the song whole and plays that, from the same place
-// ("download, then play", which always works). Once the current song can play
-// through, the next one is downloaded whole in the background (even a long
-// song is only about 11 MB), so a side runs on without a gap beyond the one
-// baked into the audio.
+// Songs play one at a time, each downloaded whole before it plays. That's
+// how tile hosts hand a tile its files anyway (the host page downloads the
+// whole file from the author's server, then passes it into the tile), so
+// "streaming" gains nothing there. Each song is downloaded once: a song on
+// its way is never asked for again, and nothing is cancelled, because the
+// host can't cancel a download it has started (asking again only adds a
+// second download that competes with the first). Every song on the side
+// being played is kept once it's in, and the songs either side of the current
+// one are downloaded in the background (next first, then previous), so
+// skipping either way is usually instant and a side runs on without a gap
+// beyond the one baked into the audio.
 //
-// Nothing can hang forever: if no data arrives for 10 seconds while a song is
-// loading or waiting to play, the player tries once more by itself (a fresh
-// download); if that stalls too, it says "This is taking a while." with a
-// Try again button. A side ends like a cassette side: "Turn the tape" offers
-// the next one. The phone's lock screen and headset buttons work through
-// Media Session.
+// A slow download says so: after 10 seconds "Still loading <song>…", after 20
+// seconds a Try again button as well. Try again waits for the same download
+// unless it failed (or has been going for a minute), and only then starts a
+// new one. A side ends like a cassette side: "Turn the tape" offers the next
+// one. The phone's lock screen and headset buttons work through Media
+// Session.
 //
 // Everything from the tape is shown as plain text (textContent), never as HTML.
 
@@ -57,8 +59,8 @@ export function clock(seconds) {
 
 const text = (v) => (typeof v === "string" ? v : "");
 
-/** How long with no data arriving counts as stuck. */
-export const STALL_MS = 10000;
+/** Loading messages: "Still loading…", then Try again; a download older than giveUp counts as failed. */
+export const LOAD_TIMES = { slow: 10000, again: 20000, giveUp: 60000 };
 
 /**
  * The tape's sides as [{ name, tracks }], from a tape.json object (v2 sides,
@@ -83,20 +85,14 @@ const inSentence = (label) => label.replace(/^(Side|Tape)\b/, (w) => w.toLowerCa
 /**
  * Mounts a player in `root`. Options:
  *   tape         the tape.json object
- *   getBlob      (path, { stallMs }) -> Promise<Blob>: a song's whole file (default:
- *                fetch it from the tile, giving up after stallMs with no data)
- *   streamUrl    (path) -> URL to play a song from while it arrives, or null to
- *                always download first (default: the path itself in a tile; none
- *                when getBlob is given, as in the Foundry's preview)
- *   stallMs      see STALL_MS
+ *   getBlob      (path) -> Promise<Blob>: a song's whole file (default: fetch it from the tile)
+ *   loadTimes    see LOAD_TIMES (for tests)
  *   artwork      a picture path or URL for the lock screen, or null
  *   makeUrl      link shown small in the corner (the Foundry), or null
  *   mediaSession use the lock screen and headset controls (default true)
  * Returns { dispose(), state() }.
  */
-export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = null, makeUrl = null, mediaSession = true, stallMs = STALL_MS } = {}) {
-  if (streamUrl === undefined) streamUrl = getBlob ? null : (path) => path;
-  if (!getBlob) getBlob = defaultGetBlob;
+export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = null, makeUrl = null, mediaSession = true, loadTimes = LOAD_TIMES } = {}) {
   const sides = sidesOf(tape);
   const title = text(tape && tape.title) || "Mixtape";
   const tapeArtist = text(tape && tape.artist);
@@ -211,18 +207,14 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
   const audio = new Audio();
   audio.preload = "auto";
   const urls = new Map(); // path -> object URL (the current song and the next one)
-  const loading = new Map(); // path -> Promise<url>
+  const loading = new Map(); // path -> { started, promise } (a download on its way)
   let shownSide = 0;
   let cur = null; // { side, index }
   let sideOver = false;
   let seeking = false;
   let disposed = false;
   let ticket = 0; // the latest request to play; older ones give way
-  let mode = null; // how the current song plays: "stream" (while it arrives) or "blob" (downloaded whole)
-  let streamRetried = false;
-  let pendingSeek = null; // a jump in a streaming song, checked when it lands
-  let loadingShown = false; // the bar says "Loading…" until the song plays
-  let lastData = Date.now(); // when the song last made progress
+  let loadTimers = []; // the "Still loading…" and Try again messages for the song on its way
 
   function trackAt(c) {
     return c ? sides[c.side].tracks[c.index] : null;
@@ -231,37 +223,34 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
     return text(t.artist) || tapeArtist;
   }
 
-  // A song's whole file as an object URL. A download that stalls or drops is
-  // tried again once (`retries`) before giving up.
-  function fetchUrl(path, { retries = 1 } = {}) {
+  // A song's whole file as an object URL. One download per song: a song on its
+  // way is waited for, not asked for again. `again` (Try again) starts a new
+  // download only if there's none on its way, or the one on its way has been
+  // going for longer than loadTimes.giveUp.
+  function fetchUrl(path, { again = false } = {}) {
     if (urls.has(path)) return Promise.resolve(urls.get(path));
-    if (!loading.has(path)) {
-      const attempt = (left) =>
-        Promise.resolve()
-          .then(() => getBlob(path, { stallMs }))
-          .catch((err) => {
-            if (left > 0 && err && err.retry && !disposed) return attempt(left - 1);
-            throw err;
-          });
-      const p = attempt(retries)
-        .then((blob) => {
-          const url = URL.createObjectURL(blob.type === "audio/mpeg" ? blob : new Blob([blob], { type: "audio/mpeg" }));
-          urls.set(path, url);
-          return url;
-        })
-        .finally(() => loading.delete(path));
-      loading.set(path, p);
-    }
-    return loading.get(path);
+    const going = loading.get(path);
+    if (going && !(again && Date.now() - going.started > loadTimes.giveUp)) return going.promise;
+    const entry = { started: Date.now(), promise: null };
+    entry.promise = Promise.resolve()
+      .then(() => getBlob(path))
+      .then((blob) => {
+        if (urls.has(path)) return urls.get(path); // an earlier download got here first
+        const url = URL.createObjectURL(blob.type === "audio/mpeg" ? blob : new Blob([blob], { type: "audio/mpeg" }));
+        urls.set(path, url);
+        return url;
+      })
+      .finally(() => {
+        if (loading.get(path) === entry) loading.delete(path);
+      });
+    loading.set(path, entry);
+    return entry.promise;
   }
 
-  // Keep only the current song and the next one in memory.
+  // Keep every song on the side being played (a side is at most about 22 MB);
+  // songs on other sides are let go.
   function forgetOthers() {
-    const keep = new Set();
-    const t = trackAt(cur);
-    if (t) keep.add(t.path);
-    const n = nextOf(cur);
-    if (n) keep.add(trackAt(n).path);
+    const keep = new Set(cur ? sides[cur.side].tracks.map((t) => t.path) : []);
     for (const [path, url] of urls) {
       if (!keep.has(path)) {
         URL.revokeObjectURL(url);
@@ -275,41 +264,40 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
     return c.index + 1 < sides[c.side].tracks.length ? { side: c.side, index: c.index + 1 } : null;
   }
 
+  // The songs either side of the current one, in the background: the next
+  // one, then the one before (one download at a time, so they don't compete).
+  function prefetchAround() {
+    const c = cur;
+    if (!c) return;
+    const around = [nextOf(c), c.index > 0 ? { side: c.side, index: c.index - 1 } : null]
+      .filter(Boolean)
+      .map((x) => trackAt(x).path);
+    around.reduce(
+      (p, path) => p.then(() => (!disposed && cur && cur.side === c.side ? fetchUrl(path).then(() => {}, () => {}) : null)),
+      Promise.resolve(),
+    );
+  }
+
   function say(msg, error = false) {
     now.textContent = msg;
     now.removeAttribute("data-stuck");
-    loadingShown = false;
     if (error) now.setAttribute("data-error", "");
     else now.removeAttribute("data-error");
   }
 
-  function sayLoading(t) {
-    root.classList.add("mt-busy");
-    say(`Loading ${text(t.title) || "the song"}…`);
-    loadingShown = true;
+  function clearLoadTimers() {
+    for (const id of loadTimers) clearTimeout(id);
+    loadTimers = [];
   }
 
-  // Gave up on this song for now: say why, with a button to try again from
-  // where it was.
-  function stuck(msg, error = false, at = audio.currentTime || 0) {
-    const c = cur;
-    ticket++;
-    audio.pause();
-    root.classList.remove("mt-busy");
+  // A message with a Try again button, to play song `c` from `at`.
+  function offerAgain(msg, error, c, at) {
     say(msg, error);
     const again = el("button", "mt-again", "Try again");
     again.type = "button";
-    again.addEventListener("click", () => {
-      if (cur === c) play(c, { at, blob: at > 0 });
-    });
+    again.addEventListener("click", () => play(c, { at, again: true }));
     now.append(" ", again);
     now.setAttribute("data-stuck", "");
-    updateButtons();
-  }
-
-  function prefetchNext() {
-    const n = nextOf(cur);
-    if (n) fetchUrl(trackAt(n).path).catch(() => {});
   }
 
   function nowText() {
@@ -319,109 +307,53 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
     return `${sides.length > 1 ? sideLabel(sides[cur.side], sides.length) + " · " : ""}${cur.index + 1}. ${text(t.title) || "Untitled"}${who ? " · " + who : ""}`;
   }
 
-  // Plays song `c` from `at` seconds. A song already downloaded (or on its way)
-  // plays from its file; otherwise it streams, unless `blob` asks for the whole
-  // file first (to start part way in, or as the retry). `retries`: automatic
-  // tries again for a stalled download.
-  async function play(c, { at = 0, blob = false, retries = 1, autoplay = true } = {}) {
+  // Plays song `c` from `at` seconds, once its file is in. `again`: Try again.
+  async function play(c, { at = 0, again = false } = {}) {
     const mine = ++ticket;
     cur = c;
     sideOver = false;
-    pendingSeek = null;
-    mode = null; // until the song is set up (a download has its own watch)
+    clearLoadTimers();
     if (shownSide !== c.side) showSide(c.side);
     else renderList();
     const t = trackAt(c);
-    sayLoading(t);
+    const name = text(t.title) || "the song";
     setMeta(t);
-    lastData = Date.now();
+    if (!urls.has(t.path)) {
+      root.classList.add("mt-busy");
+      say(`${again && loading.has(t.path) ? "Still loading" : "Loading"} ${name}…`);
+      loadTimers.push(
+        setTimeout(() => mine === ticket && say(`Still loading ${name}…`), loadTimes.slow),
+        setTimeout(() => mine === ticket && offerAgain(`Still loading ${name}…`, false, c, at), loadTimes.again),
+      );
+    }
     try {
-      const stream = !blob && !at && streamUrl && !urls.has(t.path) && !loading.has(t.path);
-      let url;
-      if (stream) {
-        url = streamUrl(t.path);
-        mode = "stream";
-        streamRetried = false;
-      } else {
-        url = await fetchUrl(t.path, { retries });
-        if (mine !== ticket || disposed) return;
-        mode = "blob";
-      }
+      const url = await fetchUrl(t.path, { again });
+      if (mine !== ticket || disposed) return;
+      clearLoadTimers();
       audio.src = url;
       if (at) audio.currentTime = at;
-      lastData = Date.now();
-      if (mode === "blob") {
-        root.classList.remove("mt-busy");
-        say(nowText());
-        // Fetch the next song now, so it's ready even if the listener skips ahead.
-        prefetchNext();
-      }
+      root.classList.remove("mt-busy");
+      say(nowText());
       forgetOthers();
-      if (!autoplay) {
-        if (mode === "stream") say(`${nowText()} · press play`);
-        updateButtons();
-        return;
-      }
+      prefetchAround();
       await audio.play().catch((err) => {
-        if (mine === ticket) {
-          root.classList.remove("mt-busy");
-          say(`${nowText()} · press play`, false);
-        }
+        if (mine === ticket) say(`${nowText()} · press play`, false);
         if (err && err.name !== "NotAllowedError" && err.name !== "AbortError") throw err;
       });
     } catch (err) {
       if (mine !== ticket) return;
-      if (err && err.stalled) stuck("This is taking a while.", false, at);
-      else stuck(`Couldn't play "${text(t.title) || "this song"}" (${(err && err.message) || "unknown problem"}).`, true, at);
+      clearLoadTimers();
+      root.classList.remove("mt-busy");
+      offerAgain(`Couldn't load "${text(t.title) || "this song"}" (${(err && err.message) || "unknown problem"}).`, true, c, at);
       return;
     }
     updateButtons();
   }
 
-  // The streaming song can't go on (it failed, stalled, or a jump didn't
-  // land): download it whole and carry on from `at`.
-  function toWholeFile(at, { retries = 0 } = {}) {
-    if (!cur || sideOver) return;
-    play(cur, { at, blob: true, retries, autoplay: !audio.paused || loadingShown });
-  }
-
   /** Jump to `s` seconds in the current song. */
   function seekTo(s) {
-    if (!Number.isFinite(s)) return;
-    if (mode === "stream" && !canSeek(s)) {
-      // Back to the start: just start the stream again.
-      if (s === 0) play(cur, { autoplay: !audio.paused });
-      else toWholeFile(s, { retries: 1 });
-      return;
-    }
-    if (mode === "stream") pendingSeek = s;
-    audio.currentTime = s;
+    if (Number.isFinite(s)) audio.currentTime = s;
   }
-
-  function canSeek(s) {
-    const r = audio.seekable;
-    for (let i = 0; r && i < r.length; i++) if (s >= r.start(i) && s <= r.end(i)) return true;
-    return false;
-  }
-
-  // The stall watch: a song that should be playing but has had no data for
-  // stallMs is tried again once as a whole download, then given up on.
-  function checkStall() {
-    if (disposed || sideOver || !cur || mode !== "stream" || audio.paused || audio.readyState >= 3) {
-      lastData = Date.now();
-      return;
-    }
-    if (Date.now() - lastData < stallMs) return;
-    if (!streamRetried) {
-      streamRetried = true;
-      toWholeFile(audio.currentTime || 0, { retries: 0 });
-    } else stuck("This is taking a while.");
-  }
-  const watch = setInterval(checkStall, 1000);
-  const fresh = () => {
-    lastData = Date.now();
-  };
-  for (const ev of ["progress", "loadeddata", "canplay", "playing", "seeked"]) audio.addEventListener(ev, fresh);
 
   function toggle() {
     if (!cur) {
@@ -463,7 +395,6 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
 
   function endOfSide() {
     sideOver = true;
-    mode = null;
     audio.removeAttribute("src");
     audio.load();
     const more = sides.length > 1;
@@ -477,36 +408,13 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
     if (n) play(n);
     else endOfSide();
   });
-  audio.addEventListener("timeupdate", () => {
-    if (!audio.paused) lastData = Date.now();
-    updatePosition();
-  });
+  audio.addEventListener("timeupdate", updatePosition);
   audio.addEventListener("loadedmetadata", updatePosition);
   audio.addEventListener("play", updateButtons);
   audio.addEventListener("pause", updateButtons);
-  audio.addEventListener("playing", () => {
-    if (loadingShown) {
-      root.classList.remove("mt-busy");
-      say(nowText());
-    }
-  });
-  // The streaming song can play through: time to fetch the next one.
-  audio.addEventListener("canplaythrough", () => {
-    if (mode === "stream") prefetchNext();
-  });
-  audio.addEventListener("seeked", () => {
-    // A jump in a streaming song that didn't land (the host can't jump in a
-    // file still arriving): play the whole file from there instead.
-    if (mode === "stream" && pendingSeek !== null) {
-      const want = pendingSeek;
-      pendingSeek = null;
-      if (Math.abs(audio.currentTime - want) > 1.5) toWholeFile(want, { retries: 1 });
-    }
-  });
   audio.addEventListener("error", () => {
-    if (!audio.getAttribute("src") || (audio.error && audio.error.code === 1)) return;
-    if (mode === "stream" && cur && !sideOver) toWholeFile(audio.currentTime || 0, { retries: 1 });
-    else stuck("This song couldn't be played.", true);
+    if (!audio.getAttribute("src") || (audio.error && audio.error.code === 1) || !cur) return;
+    offerAgain("This song couldn't be played.", true, cur, audio.currentTime || 0);
   });
 
   pos.addEventListener("input", () => {
@@ -602,8 +510,8 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
     ticket++; // a song still loading gives way
     cur = c;
     sideOver = false;
-    mode = null;
-    pendingSeek = null;
+    clearLoadTimers();
+    root.classList.remove("mt-busy");
     audio.pause();
     audio.removeAttribute("src");
     audio.load();
@@ -680,19 +588,19 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
         index: cur ? cur.index : null,
         playing: !!cur && !audio.paused && !sideOver,
         sideOver,
-        mode,
         time: audio.currentTime,
         duration: audio.duration,
         loaded: [...urls.keys()],
+        loading: [...loading.keys()],
       };
     },
     /** For tests and the preview: play a song, from `at` seconds. */
-    play: (side, index, at = 0) => play({ side, index }, { at, blob: at > 0 }),
+    play: (side, index, at = 0) => play({ side, index }, { at }),
     audio,
     dispose() {
       disposed = true;
       ticket++;
-      clearInterval(watch);
+      clearLoadTimers();
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
@@ -715,46 +623,9 @@ export function mountPlayer(root, { tape, getBlob = null, streamUrl, artwork = n
   };
 }
 
-/**
- * A song's whole file from the tile. Gives up (err.stalled, err.retry) if no
- * data arrives for stallMs, so a stuck download never hangs the player; a
- * dropped connection is also marked err.retry.
- */
-export async function defaultGetBlob(path, { stallMs = STALL_MS, fetchImpl = fetch } = {}) {
-  const ctrl = new AbortController();
-  let last = Date.now();
-  let stalled = false;
-  const timer = setInterval(() => {
-    if (Date.now() - last > stallMs) {
-      stalled = true;
-      ctrl.abort();
-    }
-  }, Math.min(1000, Math.max(50, stallMs / 4)));
-  try {
-    const response = await fetchImpl(path, { signal: ctrl.signal });
-    if (!response.ok) throw new Error(`${path} wasn't found in the tile (${response.status})`);
-    last = Date.now();
-    const type = response.headers.get("content-type") || "";
-    if (!response.body || !response.body.getReader) return await response.blob();
-    const reader = response.body.getReader();
-    const chunks = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      last = Date.now();
-    }
-    return new Blob(chunks, { type });
-  } catch (err) {
-    if (stalled) {
-      const e = new Error("no data arrived for a while");
-      e.stalled = true;
-      e.retry = true;
-      throw e;
-    }
-    if (err && err.name === "TypeError") err.retry = true; // the connection dropped
-    throw err;
-  } finally {
-    clearInterval(timer);
-  }
+/** A song's whole file from the tile. */
+export async function defaultGetBlob(path) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(response.status === 404 ? `${path} isn't in the tile` : `the host answered ${response.status}`);
+  return response.blob();
 }
