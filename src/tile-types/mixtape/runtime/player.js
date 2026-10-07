@@ -123,7 +123,7 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     const total = s.tracks.reduce((n, t) => n + (Number(t.duration) || 0), 0);
     const b = el("button", "mt-side", `${sideLabel(s, sides.length)}${total ? " · " + clock(total) : ""}`);
     b.type = "button";
-    b.addEventListener("click", () => showSide(k));
+    b.addEventListener("click", () => chooseSide(k));
     tabs.append(b);
     return b;
   });
@@ -302,6 +302,11 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
 
   function prev() {
     if (!cur) return;
+    // Cued but not loaded yet: start the song before it, or this one.
+    if (!audio.getAttribute("src") && !sideOver) {
+      play({ side: cur.side, index: Math.max(0, cur.index - 1) });
+      return;
+    }
     if (audio.currentTime > 3 || cur.index === 0) {
       audio.currentTime = 0;
       if (audio.paused && !sideOver) audio.play().catch(() => {});
@@ -357,7 +362,9 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     const d = audio.duration;
     const t = audio.currentTime;
     if (!seeking) pos.value = Number.isFinite(d) && d > 0 ? String(Math.round((t / d) * 1000)) : "0";
-    time.textContent = Number.isFinite(d) ? `${clock(t)} / ${clock(d)}` : clock(t);
+    // A cued song isn't loaded yet; its length comes from the track list.
+    const listed = !audio.getAttribute("src") && cur && !sideOver ? Number(trackAt(cur).duration) : NaN;
+    time.textContent = Number.isFinite(d) ? `${clock(t)} / ${clock(d)}` : Number.isFinite(listed) && listed > 0 ? `0:00 / ${clock(listed)}` : clock(t);
     if (mediaSession && navigator.mediaSession && navigator.mediaSession.setPositionState && Number.isFinite(d) && d > 0) {
       try {
         navigator.mediaSession.setPositionState({ duration: d, position: Math.min(t, d), playbackRate: audio.playbackRate || 1 });
@@ -404,6 +411,31 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     });
   }
 
+  // ---- sides ----------------------------------------------------------------------
+  // A side button is like flipping the cassette: with nothing playing, the
+  // side's first song is cued (marked, and play starts it). While a song plays,
+  // the other side can be looked at without stopping the music.
+  function chooseSide(k) {
+    const playing = !!cur && !audio.paused && !sideOver;
+    if (!playing && (!cur || cur.side !== k || sideOver)) cue({ side: k, index: 0 });
+    showSide(k);
+  }
+
+  function cue(c) {
+    ticket++; // a song still loading gives way
+    cur = c;
+    sideOver = false;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    pos.value = "0";
+    const t = trackAt(c);
+    time.textContent = `0:00${t && t.duration ? " / " + clock(t.duration) : ""}`;
+    say(`${nowText()} · press play`);
+    setMeta(t);
+    updateButtons();
+  }
+
   // ---- the list -----------------------------------------------------------------
   function showSide(k) {
     shownSide = k;
@@ -417,6 +449,15 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     const side = sides[shownSide];
     list.replaceChildren();
     if (!side) return;
+    // Looking at one side while the other plays: say so, with a way back.
+    if (cur && cur.side !== shownSide && !audio.paused && !sideOver) {
+      const back = el("button", "mt-elsewhere", `Now playing on ${inSentence(sideLabel(sides[cur.side], sides.length))} ›`);
+      back.type = "button";
+      back.addEventListener("click", () => showSide(cur.side));
+      const li = el("li");
+      li.append(back);
+      list.append(li);
+    }
     side.tracks.forEach((t, i) => {
       const li = el("li");
       const row = el("button", "mt-row");

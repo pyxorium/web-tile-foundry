@@ -40,6 +40,9 @@ export const PLAYER_CSS = `
 .mt-tt { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-ta { display: block; color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-d { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mt-elsewhere { display: block; width: calc(100% - 16px); margin: 4px 8px 6px; padding: 6px 10px; border-radius: 6px;
+  border: 1px dashed var(--line); color: var(--dim); font-size: 12px; text-align: left; }
+.mt-elsewhere:hover { color: var(--ink); border-color: var(--accent); }
 .mt-end { margin: 6px 8px 10px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--line); color: var(--dim); text-align: center; }
 .mt-end button { margin-top: 6px; padding: 6px 14px; border-radius: 999px; background: var(--accent); color: var(--bg); font-weight: 600; }
 .mt-notes { position: absolute; inset: 0; padding: 10px 14px 14px; background: var(--bg); overflow-y: auto; white-space: pre-wrap;

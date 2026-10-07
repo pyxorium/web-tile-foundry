@@ -134,6 +134,7 @@ test("the script replaces the record at the same address, after a backup and a y
     log: (s) => out.push(s),
     saveBackup: (name, text) => backups.push({ name, text }),
     now: () => new Date("2026-10-07T01:00:00Z"),
+    bundlePlayer: async () => "/* player */",
   });
   assert.equal(res.changed, true);
   assert.equal(server.state.puts.length, 1);
@@ -158,11 +159,37 @@ test("the script replaces the record at the same address, after a backup and a y
 test("the script changes nothing without a yes, or with the wrong password", async () => {
   const pub = await publishedTape();
   const s1 = standIn(pub);
-  const r1 = await runRevision({ uri: URI, fetchImpl: s1.fetchImpl, ask: answers(["new words", "", "", "", "n"]), askHidden: async () => "app-pass", log: () => {}, saveBackup: () => assert.fail("no backup without a yes") });
+  const r1 = await runRevision({ uri: URI, fetchImpl: s1.fetchImpl, ask: answers(["new words", "", "", "", "n"]), askHidden: async () => "app-pass", log: () => {}, saveBackup: () => assert.fail("no backup without a yes"), bundlePlayer: async () => "/* player */" });
   assert.equal(r1.changed, false);
   assert.equal(s1.state.puts.length, 0);
   const s2 = standIn(await publishedTape());
-  await assert.rejects(runRevision({ uri: URI, fetchImpl: s2.fetchImpl, ask: answers(["new words"]), askHidden: async () => "wrong", log: () => {}, saveBackup: () => {} }), /Invalid identifier or password/);
+  await assert.rejects(runRevision({ uri: URI, fetchImpl: s2.fetchImpl, ask: answers(["new words"]), askHidden: async () => "wrong", log: () => {}, saveBackup: () => {}, bundlePlayer: async () => "/* player */" }), /Invalid identifier or password/);
   assert.equal(s2.state.puts.length, 0);
   await assert.rejects(runRevision({ uri: "at://did:plc:x/app.bsky.feed.post/1", ask: answers([]), askHidden: async () => "", log: () => {}, saveBackup: () => {} }), /tape's address/);
+});
+
+test("the script offers the Foundry's current player, and replaces only that file and the page", async () => {
+  const pub = await publishedTape();
+  const server = standIn(pub);
+  const out = [];
+  const res = await runRevision({
+    uri: URI,
+    fetchImpl: server.fetchImpl,
+    ask: answers(["", "", "", "", "", "y"]), // no new words; Enter = yes to the player; then yes
+    askHidden: async () => "app-pass",
+    log: (s) => out.push(s),
+    saveBackup: () => {},
+    bundlePlayer: async () => "/* new player */",
+  });
+  assert.equal(res.changed, true);
+  assert.ok(out.some((l) => l.includes("Player (/mixtape.js)")));
+  const tile = server.state.record.tile;
+  const js = new TextDecoder().decode(pub.blobs.get(tile.resources["/mixtape.js"].src.ref.$link));
+  assert.equal(js, "/* new player */");
+  assert.deepEqual(server.state.uploads, ["text/html", "text/javascript"]);
+  assert.equal(tile.description, pub.record.tile.description);
+  // Saying no to the player leaves it alone.
+  const s2 = standIn(await publishedTape());
+  await runRevision({ uri: URI, fetchImpl: s2.fetchImpl, ask: answers(["", "", "", "", "n", "y"]), askHidden: async () => "app-pass", log: () => {}, saveBackup: () => {}, bundlePlayer: async () => "/* new player */" });
+  assert.deepEqual(s2.state.uploads, ["text/html"]);
 });

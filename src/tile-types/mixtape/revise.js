@@ -2,6 +2,7 @@ import { makeFile } from "../../core/fileset.js";
 import { rawCid } from "../../core/cid.js";
 import { TAPE_PATH, tapeJson, cleanText, cleanLabel, LIMITS } from "./tape.js";
 import { renderMixtapeHtml, mixtapeConfig } from "./runtime/template.js";
+import { RUNTIME_PATH } from "./runtime/paths.js";
 
 // Revising a published tape's words in place: its description, liner notes,
 // dedication and label text. The songs, their order and the player program are
@@ -29,10 +30,13 @@ export function configFromPage(html) {
  * page, tapeFile: the current "/" and "/tape.json" bytes.
  * edits: { description?, notes?, dedication?, label? }; a value of undefined
  *   leaves that part as it is, "" removes it.
+ * player, runtime (optional): the tape's current /mixtape.js bytes, and the
+ *   Foundry's current player text; given both and they differ, the player is
+ *   replaced too.
  * Returns { manifest (without the new files' blob refs yet), files: [changed
  * files, each { path, bytes, contentType, cid }], changes: [readable lines] }.
  */
-export async function reviseTape({ manifest, page, tapeFile, edits = {} }) {
+export async function reviseTape({ manifest, page, tapeFile, edits = {}, player = null, runtime = null }) {
   if (!manifest || !manifest.resources || !manifest.resources["/"] || !manifest.resources[TAPE_PATH]) {
     throw new Error("This tile isn't a Mixtape tape (it has no /tape.json).");
   }
@@ -86,6 +90,11 @@ export async function reviseTape({ manifest, page, tapeFile, edits = {} }) {
   }
   const newTapeJson = tapeJson(next);
   if (newTapeJson !== new TextDecoder().decode(tapeFile)) made.push(makeFile(TAPE_PATH, newTapeJson));
+  if (typeof runtime === "string" && runtime && player && new TextDecoder().decode(player) !== runtime) {
+    if (!manifest.resources[RUNTIME_PATH]) throw new Error("This tape has no player file to update.");
+    made.push(makeFile(RUNTIME_PATH, runtime));
+    changes.push("Player (/mixtape.js): updated to the Foundry's current version");
+  }
   const files = [];
   for (const f of made) files.push({ ...f, cid: await rawCid(f.bytes) });
   return { manifest: nextManifest, files, changes, tape: next };

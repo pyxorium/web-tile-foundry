@@ -1,7 +1,8 @@
 // Revise a published Mixtape tape in place: its description, liner notes,
-// dedication or label text. The tape keeps its address (at://…), so links,
-// embeds and posts keep working; the songs and the player are not touched.
-// The page is also made again with the Foundry's current page template.
+// dedication or label text, and (if you agree) its player program, brought
+// up to the Foundry's current version. The tape keeps its address (at://…),
+// so links, embeds and posts keep working; the songs are not touched. The page
+// is also made again with the Foundry's current page template.
 //
 // Run from the web-tile-foundry folder:
 //   node scripts/revise-tape.mjs at://did:plc:…/ing.dasl.masl/<record key>
@@ -20,6 +21,14 @@ import { rawCid } from "../src/core/cid.js";
 import { buildRecord, parseMimeMismatch, TILE_COLLECTION } from "../src/core/publish.js";
 import { reviseTape } from "../src/tile-types/mixtape/revise.js";
 import { TAPE_PATH } from "../src/tile-types/mixtape/tape.js";
+import { RUNTIME_PATH } from "../src/tile-types/mixtape/runtime/paths.js";
+
+/** The Foundry's current tape player (/mixtape.js), bundled the same way the Foundry does. */
+async function bundleCurrentPlayer() {
+  const esbuild = await import("esbuild");
+  const { bundleRuntime } = await import("../src/tile-types/mixtape/runtime/bundle.js");
+  return (await bundleRuntime(esbuild)).code;
+}
 
 const BACKUP_DIR = fileURLToPath(new URL("./backups/", import.meta.url));
 
@@ -56,7 +65,7 @@ function unescapeLines(s) {
  * The whole revision. Everything outside (network, questions, files) is passed
  * in, so the tests can run it against a stand-in server.
  */
-export async function runRevision({ uri, fetchImpl = fetch, ask, askHidden, log = console.log, saveBackup, now = () => new Date() }) {
+export async function runRevision({ uri, fetchImpl = fetch, ask, askHidden, log = console.log, saveBackup, now = () => new Date(), bundlePlayer = bundleCurrentPlayer }) {
   const { did, rkey } = parseUri(uri);
   const doc = await resolveDidDocument(did, fetchImpl);
   const pds = pdsFromDidDocument(doc);
@@ -92,7 +101,20 @@ export async function runRevision({ uri, fetchImpl = fetch, ask, askHidden, log 
     edits[key] = answer === "-" ? "" : key === "notes" ? unescapeLines(answer) : answer;
   }
 
-  const revised = await reviseTape({ manifest, page, tapeFile, edits });
+  // The player: offer the Foundry's current one if the tape's is older.
+  let player = null;
+  let runtime = null;
+  if (manifest.resources[RUNTIME_PATH]) {
+    player = await download(RUNTIME_PATH);
+    const current = await bundlePlayer();
+    if (new TextDecoder().decode(player) !== current) {
+      log("\nThis tape's player is older than the Foundry's current one (which has fixes and improvements).");
+      const up = (await ask("Update the tape's player too? [Y/n] ")).trim().toLowerCase();
+      if (up === "" || up === "y" || up === "yes") runtime = current;
+    }
+  }
+
+  const revised = await reviseTape({ manifest, page, tapeFile, edits, player, runtime });
   if (!revised.changes.length) {
     log("\nNothing to change.");
     return { changed: false };
@@ -100,7 +122,7 @@ export async function runRevision({ uri, fetchImpl = fetch, ask, askHidden, log 
   log("\nThese changes will be made:");
   for (const c of revised.changes) log(`  - ${c}`);
   log(`Files to upload: ${revised.files.map((f) => f.path).join(", ") || "none"}`);
-  log("The songs, the player and the card pictures stay as they are.\n");
+  log(runtime ? "The songs and the card pictures stay as they are.\n" : "The songs, the player and the card pictures stay as they are.\n");
 
   const password = await askHidden(`App password for @${handle || did} (hidden): `);
   if (!password) throw new Error("No app password given; nothing was changed.");
