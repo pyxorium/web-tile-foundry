@@ -1,6 +1,6 @@
 import { mountPlayer } from "./player.js";
 
-// The program in every Mixtape tile (/mixtape.js): reads the tape from the
+// The program in every Mixtape tile (built into its page): reads the tape from the
 // page (the same object as /tape.json) and starts the player. Songs are
 // fetched from the tile itself, one at a time, as they are played.
 

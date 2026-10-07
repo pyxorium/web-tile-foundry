@@ -18,7 +18,10 @@ const RKEY = "3mx7opazqwe2a";
 const URI = `at://${DID}/ing.dasl.masl/${RKEY}`;
 const TONE = new Uint8Array(readFileSync(new URL("./fixtures/audio/tone-a-96k-32k.mp3", import.meta.url)));
 
-// A tape as the Foundry made it before the label fix: old page style.
+const PLAYER = "/* player */";
+
+// A tape as the Foundry made it before Oct 7: old page style (label
+// clipped), and the player as a separate /mixtape.js the page loads.
 async function publishedTape() {
   const tile = await makeMixtapeTile({
     name: "Parlor Greens Jam Cruise Set",
@@ -26,12 +29,17 @@ async function publishedTape() {
     tape: { label: { text: "Parlor Greens jam" }, notes: "test cassette", madeBy: { handle: "pyxorium.com" } },
     sides: ["A", "B"],
     tracks: [{ id: "1", title: "Drop Top", side: "A", bytes: TONE }],
-    runtime: "/* player */",
+    runtime: PLAYER,
     art: { icon: new Uint8Array([1]), banner: new Uint8Array([2]) },
   });
   const page = tile.files.find((f) => f.path === "/");
-  const oldHtml = new TextDecoder().decode(page.bytes).replace("font: 22px/1.35", "font: 22px/1.15");
+  const oldHtml = new TextDecoder()
+    .decode(page.bytes)
+    .replace("font: 22px/1.35", "font: 22px/1.15")
+    .replace(/<div id="mixtape" class="mt"[^>]*>.*?<\/div>/, '<div id="mixtape" class="mt"></div>')
+    .replace(`<script>${PLAYER}</script>`, '<script src="/mixtape.js"></script>');
   const files = tile.files.map((f) => (f.path === "/" ? { ...f, bytes: new TextEncoder().encode(oldHtml) } : f));
+  files.splice(1, 0, { path: "/mixtape.js", bytes: new TextEncoder().encode("/* old player */"), contentType: "text/javascript" });
   const blobs = new Map();
   const refs = {};
   for (const f of files) {
@@ -98,15 +106,20 @@ test("the handwritten label is never clipped: no line clamp or hidden overflow, 
   assert.match(rule, /22px\/1\.35/);
 });
 
-test("revising keeps the songs and settings, changes only the words asked for, and refreshes the page style", async () => {
+test("revising keeps the songs and settings, changes only the words asked for, and brings the page and player up to date", async () => {
   const { record, blobs } = await publishedTape();
   const page = blobs.get(record.tile.resources["/"].src.ref.$link);
   const tapeFile = blobs.get(record.tile.resources["/tape.json"].src.ref.$link);
-  const r = await reviseTape({ manifest: record.tile, page, tapeFile, edits: { description: "A mixtape C60 cassette for Tileman phone app", notes: "Songs from Jam Cruise 2026" } });
+  await assert.rejects(reviseTape({ manifest: record.tile, page, tapeFile, edits: {} }), /current player/);
+  const r = await reviseTape({ manifest: record.tile, page, tapeFile, runtime: PLAYER, edits: { description: "A mixtape C60 cassette for Tileman phone app", notes: "Songs from Jam Cruise 2026" } });
   assert.equal(r.manifest.description, "A mixtape C60 cassette for Tileman phone app");
   assert.deepEqual(r.files.map((f) => f.path), ["/", "/tape.json"]);
   const html = new TextDecoder().decode(r.files[0].bytes);
   assert.ok(html.includes("font: 22px/1.35"), "the page has the label fix");
+  assert.ok(html.includes(`<script>${PLAYER}</script>`), "the player is built into the page");
+  assert.ok(html.includes("Loading mixtape…"));
+  assert.ok(!r.manifest.resources["/mixtape.js"], "the separate player file is taken out");
+  assert.ok(r.changes.some((c) => c.startsWith("Player: now built into the page")));
   const cfg = configFromPage(html);
   assert.equal(cfg.tape.notes, "Songs from Jam Cruise 2026");
   assert.equal(cfg.artwork, "/icon.png");
@@ -114,11 +127,15 @@ test("revising keeps the songs and settings, changes only the words asked for, a
   assert.deepEqual(r.tape.sides, before.sides, "songs untouched");
   assert.deepEqual(r.tape.label, before.label);
   assert.deepEqual(JSON.parse(new TextDecoder().decode(r.files[1].bytes)), r.tape);
-  assert.equal(r.changes.length, 3);
-  // Nothing asked for, page already current: nothing changes.
-  const again = await reviseTape({ manifest: r.manifest, page: r.files[0].bytes, tapeFile: r.files[1].bytes, edits: {} });
+  assert.equal(r.changes.length, 4);
+  // Nothing asked for, page and player already current: nothing changes.
+  const again = await reviseTape({ manifest: r.manifest, page: r.files[0].bytes, tapeFile: r.files[1].bytes, runtime: PLAYER, edits: {} });
   assert.deepEqual(again.files, []);
   assert.deepEqual(again.changes, []);
+  // A newer player: only the page changes.
+  const newer = await reviseTape({ manifest: r.manifest, page: r.files[0].bytes, tapeFile: r.files[1].bytes, runtime: "/* newer player */", edits: {} });
+  assert.deepEqual(newer.files.map((f) => f.path), ["/"]);
+  assert.ok(newer.changes.includes("Player: updated to the Foundry's current version"));
 });
 
 test("the script replaces the record at the same address, after a backup and a yes", async () => {
@@ -134,7 +151,7 @@ test("the script replaces the record at the same address, after a backup and a y
     log: (s) => out.push(s),
     saveBackup: (name, text) => backups.push({ name, text }),
     now: () => new Date("2026-10-07T01:00:00Z"),
-    bundlePlayer: async () => "/* player */",
+    bundlePlayer: async () => PLAYER,
   });
   assert.equal(res.changed, true);
   assert.equal(server.state.puts.length, 1);
@@ -145,8 +162,11 @@ test("the script replaces the record at the same address, after a backup and a y
   assert.equal(tile.description, "A mixtape C60 cassette for Tileman phone app");
   assert.equal(tile.name, "Parlor Greens Jam Cruise Set");
   assert.equal(server.state.record.createdAt, "2026-10-06T15:00:00.000Z", "keeps when it was made");
-  // Songs and card pictures point at the same files as before.
+  // Songs and card pictures point at the same files as before; the old player file is gone.
+  assert.ok(!tile.resources["/mixtape.js"]);
+  assert.ok(out.some((l) => l === "Files taken out: /mixtape.js"));
   for (const path of Object.keys(pub.record.tile.resources)) {
+    if (path === "/mixtape.js") continue;
     if (path === "/" || path === "/tape.json") assert.notEqual(tile.resources[path].src.ref.$link, pub.record.tile.resources[path].src.ref.$link);
     else assert.deepEqual(tile.resources[path], pub.record.tile.resources[path]);
   }
@@ -159,37 +179,37 @@ test("the script replaces the record at the same address, after a backup and a y
 test("the script changes nothing without a yes, or with the wrong password", async () => {
   const pub = await publishedTape();
   const s1 = standIn(pub);
-  const r1 = await runRevision({ uri: URI, fetchImpl: s1.fetchImpl, ask: answers(["new words", "", "", "", "n"]), askHidden: async () => "app-pass", log: () => {}, saveBackup: () => assert.fail("no backup without a yes"), bundlePlayer: async () => "/* player */" });
+  const r1 = await runRevision({ uri: URI, fetchImpl: s1.fetchImpl, ask: answers(["new words", "", "", "", "n"]), askHidden: async () => "app-pass", log: () => {}, saveBackup: () => assert.fail("no backup without a yes"), bundlePlayer: async () => PLAYER });
   assert.equal(r1.changed, false);
   assert.equal(s1.state.puts.length, 0);
   const s2 = standIn(await publishedTape());
-  await assert.rejects(runRevision({ uri: URI, fetchImpl: s2.fetchImpl, ask: answers(["new words"]), askHidden: async () => "wrong", log: () => {}, saveBackup: () => {}, bundlePlayer: async () => "/* player */" }), /Invalid identifier or password/);
+  await assert.rejects(runRevision({ uri: URI, fetchImpl: s2.fetchImpl, ask: answers(["new words"]), askHidden: async () => "wrong", log: () => {}, saveBackup: () => {}, bundlePlayer: async () => PLAYER }), /Invalid identifier or password/);
   assert.equal(s2.state.puts.length, 0);
   await assert.rejects(runRevision({ uri: "at://did:plc:x/app.bsky.feed.post/1", ask: answers([]), askHidden: async () => "", log: () => {}, saveBackup: () => {} }), /tape's address/);
 });
 
-test("the script offers the Foundry's current player, and replaces only that file and the page", async () => {
+test("with no new words, the script still brings an old tape's page and player up to date", async () => {
   const pub = await publishedTape();
   const server = standIn(pub);
   const out = [];
   const res = await runRevision({
     uri: URI,
     fetchImpl: server.fetchImpl,
-    ask: answers(["", "", "", "", "", "y"]), // no new words; Enter = yes to the player; then yes
+    ask: answers(["", "", "", "", "y"]), // no new words; then yes
     askHidden: async () => "app-pass",
     log: (s) => out.push(s),
     saveBackup: () => {},
     bundlePlayer: async () => "/* new player */",
   });
   assert.equal(res.changed, true);
-  assert.ok(out.some((l) => l.includes("Player (/mixtape.js)")));
+  assert.ok(out.some((l) => l.includes("Player: now built into the page")));
   const tile = server.state.record.tile;
-  const js = new TextDecoder().decode(pub.blobs.get(tile.resources["/mixtape.js"].src.ref.$link));
-  assert.equal(js, "/* new player */");
-  assert.deepEqual(server.state.uploads, ["text/html", "text/javascript"]);
+  const html = new TextDecoder().decode(pub.blobs.get(tile.resources["/"].src.ref.$link));
+  assert.ok(html.includes("<script>/* new player */</script>"));
+  assert.deepEqual(server.state.uploads, ["text/html"]);
   assert.equal(tile.description, pub.record.tile.description);
-  // Saying no to the player leaves it alone.
-  const s2 = standIn(await publishedTape());
-  await runRevision({ uri: URI, fetchImpl: s2.fetchImpl, ask: answers(["", "", "", "", "n", "y"]), askHidden: async () => "app-pass", log: () => {}, saveBackup: () => {}, bundlePlayer: async () => "/* new player */" });
-  assert.deepEqual(s2.state.uploads, ["text/html"]);
+  assert.ok(!tile.resources["/mixtape.js"]);
+  // Run again with the same player: nothing to change.
+  const again = await runRevision({ uri: URI, fetchImpl: server.fetchImpl, ask: answers(["", "", "", ""]), askHidden: async () => assert.fail("no password needed"), log: () => {}, saveBackup: () => {}, bundlePlayer: async () => "/* new player */" });
+  assert.equal(again.changed, false);
 });

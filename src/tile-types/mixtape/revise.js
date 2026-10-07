@@ -4,11 +4,13 @@ import { TAPE_PATH, tapeJson, cleanText, cleanLabel, LIMITS } from "./tape.js";
 import { renderMixtapeHtml, mixtapeConfig } from "./runtime/template.js";
 import { RUNTIME_PATH } from "./runtime/paths.js";
 
-// Revising a published tape's words in place: its description, liner notes,
-// dedication and label text. The songs, their order and the player program are
-// left exactly as they are. The page is made again with the Foundry's current
-// page template (so it also gets fixes to the page's look), carrying the same
-// settings as before and the revised tape.
+// Revising a published tape in place: its description, liner notes,
+// dedication and label text. The songs and their order are left exactly as
+// they are. The page is made again with the Foundry's current page template
+// and player (so it also gets fixes to the page's look and the player),
+// carrying the same settings as before and the revised tape. Tapes made before
+// Oct 7 2026 loaded the player as a separate /mixtape.js; the new page has the
+// player built in, so that file is taken out of the tile.
 //
 // Used by scripts/revise-tape.mjs. Pure: no network, so the tests can run it.
 
@@ -30,13 +32,18 @@ export function configFromPage(html) {
  * page, tapeFile: the current "/" and "/tape.json" bytes.
  * edits: { description?, notes?, dedication?, label? }; a value of undefined
  *   leaves that part as it is, "" removes it.
- * player, runtime (optional): the tape's current /mixtape.js bytes, and the
- *   Foundry's current player text; given both and they differ, the player is
- *   replaced too.
+ * runtime: the Foundry's current player program (runtime/bundle.js).
  * Returns { manifest (without the new files' blob refs yet), files: [changed
  * files, each { path, bytes, contentType, cid }], changes: [readable lines] }.
  */
-export async function reviseTape({ manifest, page, tapeFile, edits = {}, player = null, runtime = null }) {
+/** The player built into a tape page (its last plain <script>), or null for an older page. */
+export function playerInPage(html) {
+  const m = /<script>([\s\S]*?)<\/script>\s*<\/body>/.exec(html);
+  return m ? m[1] : null;
+}
+
+export async function reviseTape({ manifest, page, tapeFile, edits = {}, runtime }) {
+  if (typeof runtime !== "string" || !runtime) throw new Error("The Foundry's current player is needed to remake the page.");
   if (!manifest || !manifest.resources || !manifest.resources["/"] || !manifest.resources[TAPE_PATH]) {
     throw new Error("This tile isn't a Mixtape tape (it has no /tape.json).");
   }
@@ -80,21 +87,20 @@ export async function reviseTape({ manifest, page, tapeFile, edits = {}, player 
     }
   }
 
-  // The page, made again with the current template: the same settings, the revised tape.
+  // The page, made again with the current template and player: the same settings, the revised tape.
   const newConfig = mixtapeConfig({ tape: next, artwork: config.artwork || null });
-  const newPage = renderMixtapeHtml({ title: manifest.name, config: newConfig });
+  const newPage = renderMixtapeHtml({ title: manifest.name, config: newConfig, runtime });
   const made = [];
+  const oldPlayer = playerInPage(html);
   if (newPage !== html) {
     made.push(makeFile("/", newPage));
     changes.push("Page (/): made again with the Foundry's current page template" + (changes.some((c) => !c.startsWith("Description")) ? ", with the changes above" : ""));
+    if (oldPlayer === null) changes.push("Player: now built into the page, so the tape draws sooner (the separate /mixtape.js is taken out)");
+    else if (oldPlayer !== runtime) changes.push("Player: updated to the Foundry's current version");
   }
+  if (nextManifest.resources[RUNTIME_PATH] && !newPage.includes(`src="${RUNTIME_PATH}"`)) delete nextManifest.resources[RUNTIME_PATH];
   const newTapeJson = tapeJson(next);
   if (newTapeJson !== new TextDecoder().decode(tapeFile)) made.push(makeFile(TAPE_PATH, newTapeJson));
-  if (typeof runtime === "string" && runtime && player && new TextDecoder().decode(player) !== runtime) {
-    if (!manifest.resources[RUNTIME_PATH]) throw new Error("This tape has no player file to update.");
-    made.push(makeFile(RUNTIME_PATH, runtime));
-    changes.push("Player (/mixtape.js): updated to the Foundry's current version");
-  }
   const files = [];
   for (const f of made) files.push({ ...f, cid: await rawCid(f.bytes) });
   return { manifest: nextManifest, files, changes, tape: next };

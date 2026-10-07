@@ -16,7 +16,7 @@ import { KITS } from "./kits.js";
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || "/";
 
-/** The player every tape carries (/mixtape.js), bundled by the Foundry's build (vite.config.js). */
+/** The player every tape carries (built into its page), bundled by the Foundry's build (vite.config.js). */
 async function loadRuntime() {
   const mod = await import("virtual:mixtape-runtime");
   return mod.default;

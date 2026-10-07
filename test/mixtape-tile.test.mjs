@@ -113,10 +113,10 @@ test("the player program bundles the same bytes every time and stays small", asy
   assert.ok(runtime.length < 40 * 1024, `mixtape.js is ${runtime.length} bytes`);
 });
 
-test("a tape tile has its page, player, tape.json, one file per song and card pictures", async () => {
+test("a tape tile has its page (player built in), tape.json, one file per song and card pictures", async () => {
   const tile = await makeTile();
   assert.deepEqual(tile.files.map((f) => f.path), [
-    "/", RUNTIME_PATH, TAPE_PATH,
+    "/", TAPE_PATH,
     "/tracks/a1.mp3", "/tracks/a2.mp3", "/tracks/a3.mp3", "/tracks/a4.mp3", "/tracks/b1.mp3",
     "/icon.png", "/banner.png",
   ]);
@@ -124,9 +124,19 @@ test("a tape tile has its page, player, tape.json, one file per song and card pi
   assert.equal(contentTypeFor(TAPE_PATH), "application/json");
   const html = pageOf(tile);
   assert.equal(readCspMeta(html), TILE_CSP);
-  assert.ok(html.includes(`<script src="${RUNTIME_PATH}"></script>`));
+  assert.ok(!html.includes(RUNTIME_PATH), "no separate player file");
+  assert.ok(html.includes(`<script>${runtime}</script>`), "the player is built into the page");
+  // Something shows before the player starts, in the tape's own colors.
+  assert.match(html, /<div id="mixtape" class="mt"[^>]*><header class="mt-head"><p class="mt-label">Loading mixtape…<\/p><\/header><\/div>/);
   assert.deepEqual(configOf(tile).tape, tapeOf(tile));
   assert.equal(configOf(tile).artwork, "/icon.png");
+});
+
+test("the page shows the tape's label colors before the player starts (hex colors only)", async () => {
+  const tile = await makeTile({ tape: { label: { text: "Red", colors: { paper: "#F3E8CC", ink: "#2b2340", stripe1: "#e2572c", stripe2: "#f2a93b" } } } });
+  assert.ok(pageOf(tile).includes('<div id="mixtape" class="mt" style="--label: #f3e8cc; --label-ink: #2b2340; --stripe1: #e2572c; --stripe2: #f2a93b; --accent: #f2a93b">'));
+  const plain = await makeTile({ tape: { label: { text: "Plain" } } });
+  assert.ok(pageOf(plain).includes('<div id="mixtape" class="mt"><header'));
 });
 
 test("silence is baked in after a song for pause and fade, never after straight or a side's last song", async () => {
@@ -219,6 +229,7 @@ test("text is cleaned: trimmed, limited, and safe inside the page", async () => 
   const tile = await makeTile({ tracks, name: "Tape </script> & <b>" });
   const html = pageOf(tile);
   assert.equal(html.match(/<\/script>/g).length, 2, "only the page's own two script tags close");
+  assert.ok(!/<\/script|<!--/i.test(runtime), "the player can sit inside the page");
   assert.ok(html.includes("<title>Tape &lt;/script&gt; &amp; &lt;b&gt;</title>"));
   const a1 = tapeOf(tile).sides[0].tracks[0];
   assert.equal(a1.title, "</script><script>alert(1)</script>"); // kept as plain text for players

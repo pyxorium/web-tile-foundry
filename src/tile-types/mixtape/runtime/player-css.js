@@ -54,6 +54,8 @@ export const PLAYER_CSS = `
 .mt-bar { flex: none; padding: 6px 10px 8px; border-top: 1px solid var(--line); background: var(--panel); }
 .mt-now { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.35em; }
 .mt-now[data-error] { color: #ff9b85; }
+.mt-now[data-stuck] { white-space: normal; }
+.mt-now .mt-again { margin-left: 4px; padding: 0 8px; border-radius: 999px; border: 1px solid currentColor; color: var(--ink); font-size: 12px; }
 .mt-ctrl { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .mt-btn { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; }
 .mt-btn svg { width: 18px; height: 18px; fill: currentColor; }

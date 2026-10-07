@@ -1,11 +1,18 @@
 import { TILE_CSP_META } from "../../../core/policy.js";
-import { RUNTIME_PATH } from "./paths.js";
 import { PLAYER_CSS } from "./player-css.js";
 
 // The Mixtape tile's page: the tape (the same object as /tape.json) as JSON,
-// the player's look, and one script tag for the player (/mixtape.js, the same
-// in every tile). The songs are separate files, each downloaded only when it
-// is played. No network: everything the tile needs is inside the tile.
+// the player's look, and the player program itself (runtime/bundle.js), built
+// into the page so the tape draws as soon as the page arrives, with no second
+// file to wait for. Until the player starts, the label strip (in the tape's own
+// colors) says "Loading mixtape…". The songs are separate files, each
+// downloaded only when it is played. No network: everything the tile needs is
+// inside the tile.
+//
+// (Tapes made before Oct 7 2026 load the player as a separate /mixtape.js; the
+// revise script brings them up to this page.)
+
+export const LOADING_TEXT = "Loading mixtape…";
 
 export const MAKE_URL = "https://foundry.thunderbird.cafe/";
 export const CONFIG_VERSION = 1;
@@ -26,7 +33,23 @@ export function mixtapeConfig({ tape, artwork = null }) {
   return { version: CONFIG_VERSION, makeUrl: MAKE_URL, artwork, tape };
 }
 
-export function renderMixtapeHtml({ title, config }) {
+/** The player program, safe to place inside a <script> element. */
+export function inlineScript(code) {
+  if (typeof code !== "string" || !code) throw new Error("The tape's player is missing.");
+  if (/<\/script|<!--/i.test(code)) throw new Error("The tape's player can't be built into the page (it contains </script or <!--).");
+  return code;
+}
+
+/** The tape's label colors as a style attribute value ("" when it has none); hex colors only. */
+function colorStyle(tape) {
+  const colors = (tape && tape.label && tape.label.colors) || {};
+  const HEX = /^#[0-9a-f]{6}$/i;
+  const pairs = [["--label", colors.paper], ["--label-ink", colors.ink], ["--stripe1", colors.stripe1], ["--stripe2", colors.stripe2], ["--accent", colors.stripe2]];
+  return pairs.filter(([, c]) => typeof c === "string" && HEX.test(c)).map(([v, c]) => `${v}: ${c}`).join("; ");
+}
+
+export function renderMixtapeHtml({ title, config, runtime }) {
+  const style = colorStyle(config && config.tape);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -43,9 +66,9 @@ ${PLAYER_CSS}
 </style>
 </head>
 <body>
-<div id="mixtape" class="mt"></div>
+<div id="mixtape" class="mt"${style ? ` style="${style}"` : ""}><header class="mt-head"><p class="mt-label">${LOADING_TEXT}</p></header></div>
 <script type="application/json" id="mixtape-config">${scriptJson(config)}</script>
-<script src="${RUNTIME_PATH}"></script>
+<script>${inlineScript(runtime)}</script>
 </body>
 </html>
 `;

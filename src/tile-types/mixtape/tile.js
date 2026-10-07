@@ -4,7 +4,6 @@ import { scanMp3, isTapeFormat, describeFormat, joinMp3, cutSilence } from "../.
 import { shapeFor, sameFades, fadesOf, TIMING } from "./transitions.js";
 import { makeTape, tapeJson, trackPath, TAPE_PATH } from "./tape.js";
 import { mixtapeConfig, renderMixtapeHtml } from "./runtime/template.js";
-import { RUNTIME_PATH } from "./runtime/paths.js";
 
 // Puts a Mixtape tile together from finished parts. Kept apart from the tile
 // type (index.js, stage 4) so the tests can run it in Node: the converted
@@ -21,7 +20,7 @@ import { RUNTIME_PATH } from "./runtime/paths.js";
 //   silence  a silent MP3 in the tape format, at least as long as the longest
 //            pause (makeSilence in src/core/audio/convert.js)
 //   recipe   the panel's choices for /foundry.json
-//   runtime  the text of /mixtape.js (see runtime/bundle.js)
+//   runtime  the player program (runtime/bundle.js), built into the page
 //   art      { icon, banner }: PNG bytes, or null while editing
 //   drawArt  or: async (tape) -> { icon, banner }, given the finished tape.json
 //            object (the card pictures show its label and side lengths)
@@ -31,7 +30,7 @@ import { RUNTIME_PATH } from "./runtime/paths.js";
 // sound the same in every player.
 
 export async function makeMixtapeTile({ name, description = "", tape = {}, sides = ["A"], tracks, silence = null, recipe = {}, runtime, art: givenArt = null, drawArt = null }) {
-  if (typeof runtime !== "string" || !runtime) throw new Error("The tape's player (/mixtape.js) is missing.");
+  if (typeof runtime !== "string" || !runtime) throw new Error("The tape's player is missing.");
   if (!Array.isArray(tracks) || !tracks.length) throw new Error("The tape has no songs.");
   const title = String(name || "").trim();
 
@@ -82,8 +81,8 @@ export async function makeMixtapeTile({ name, description = "", tape = {}, sides
   const tapeObj = makeTape({ ...tape, title, sides: tapeSides });
   const art = drawArt ? await drawArt(tapeObj) : givenArt;
   const config = mixtapeConfig({ tape: tapeObj, artwork: art ? "/icon.png" : null });
-  const html = renderMixtapeHtml({ title, config });
-  files.unshift(makeFile("/", html), makeFile(RUNTIME_PATH, runtime), makeFile(TAPE_PATH, tapeJson(tapeObj)));
+  const html = renderMixtapeHtml({ title, config, runtime });
+  files.unshift(makeFile("/", html), makeFile(TAPE_PATH, tapeJson(tapeObj)));
   if (art) files.push(makeFile("/icon.png", art.icon), makeFile("/banner.png", art.banner));
 
   return {
