@@ -213,3 +213,75 @@ test("with no new words, the script still brings an old tape's page and player u
   const again = await runRevision({ uri: URI, fetchImpl: server.fetchImpl, ask: answers(["", "", "", ""]), askHidden: async () => assert.fail("no password needed"), log: () => {}, saveBackup: () => {}, bundlePlayer: async () => "/* new player */" });
   assert.equal(again.changed, false);
 });
+
+test("an uploader's name listed as artist can be taken off a tape's songs, by script too", async () => {
+  const tile = await makeMixtapeTile({
+    name: "Wednesday Morning Mix",
+    tape: { label: { text: "Wednesday Morning" }, madeBy: { handle: "pyxorium.com" } },
+    sides: ["A", "B"],
+    tracks: [
+      { id: "1", title: "Travelin' Light", artist: "Nathan Cassell", album: "Widespread Panic at The Bottleneck 1992-07-28", side: "A", bytes: TONE },
+      { id: "2", title: "Hey Joe", artist: "Nathan Cassell", side: "B", bytes: TONE, transition: "straight" },
+      { id: "3", title: "Jam", artist: "Parlor Greens", side: "B", bytes: TONE },
+    ],
+    runtime: PLAYER,
+    art: { icon: new Uint8Array([1]), banner: new Uint8Array([2]) },
+  });
+  const page = tile.files.find((f) => f.path === "/").bytes;
+  const tapeFile = tile.files.find((f) => f.path === "/tape.json").bytes;
+  const manifest = buildManifest(tile, Object.fromEntries(tile.files.map((f) => [f.path, { $type: "blob", ref: { $link: "bafkreix" }, mimeType: f.contentType, size: f.bytes.length }])));
+  const { songArtists } = await import("../src/tile-types/mixtape/revise.js");
+  assert.deepEqual(songArtists(tile.tape), [{ name: "Nathan Cassell", count: 2 }, { name: "Parlor Greens", count: 1 }]);
+  const r = await reviseTape({ manifest, page, tapeFile, runtime: PLAYER, edits: { removeArtists: [" nathan  cassell"] } });
+  const tracks = r.tape.sides.flatMap((s) => s.tracks);
+  assert.deepEqual(tracks.map((t) => t.artist), [undefined, undefined, "Parlor Greens"]);
+  assert.equal(tracks[0].album, "Widespread Panic at The Bottleneck 1992-07-28", "the show stays");
+  assert.deepEqual(r.files.map((f) => f.path), ["/", "/tape.json"]);
+  assert.deepEqual(configFromPage(new TextDecoder().decode(r.files[0].bytes)).tape, r.tape, "the page plays the revised tape");
+  assert.ok(r.changes.includes(`Artist on "Travelin' Light": "Nathan Cassell" -> none`));
+
+  // The script asks after the four words, one name at a time.
+  const files = tile.files;
+  const blobs = new Map();
+  const refs = {};
+  for (const f of files) {
+    const cid = await rawCid(f.bytes);
+    blobs.set(cid, f.bytes);
+    refs[f.path] = { $type: "blob", ref: { $link: cid }, mimeType: f.contentType, size: f.bytes.length };
+  }
+  const record = await buildRecord(buildManifest(tile, refs), "2026-10-07T15:00:00.000Z");
+  const server = standIn({ record, blobs });
+  const out = [];
+  const res = await runRevision({
+    uri: URI, fetchImpl: server.fetchImpl,
+    ask: answers(["", "", "", "", "Nathan Cassel", "nathan cassell", "", "y"]),
+    askHidden: async () => "app-pass", log: (s) => out.push(s), saveBackup: () => {}, bundlePlayer: async () => PLAYER,
+  });
+  assert.equal(res.changed, true);
+  assert.ok(out.some((l) => l.includes('"Nathan Cassell" (2 songs)')));
+  assert.ok(out.some((l) => l.includes('No song lists "Nathan Cassel"')));
+  const tj = JSON.parse(new TextDecoder().decode(blobs.get(server.state.record.tile.resources["/tape.json"].src.ref.$link)));
+  assert.deepEqual(tj.sides.flatMap((s) => s.tracks).map((t) => t.artist), [undefined, undefined, "Parlor Greens"]);
+});
+
+test("given a handle, the script lists the account's tapes and revises the one picked", async () => {
+  const pub = await publishedTape();
+  const server = standIn(pub);
+  const fetchImpl = async (url, init) => {
+    const u = new URL(url);
+    if (u.host === "public.api.bsky.app") return new Response(JSON.stringify({ did: DID }), { status: 200 });
+    if (u.pathname.endsWith("com.atproto.repo.listRecords")) {
+      return new Response(JSON.stringify({ records: [
+        { uri: `at://${DID}/ing.dasl.masl/other`, value: { tile: { name: "A die", resources: { "/": {} } } } },
+        { uri: URI, value: server.state.record },
+      ] }), { status: 200 });
+    }
+    return server.fetchImpl(url, init);
+  };
+  const out = [];
+  const res = await runRevision({ uri: "@Pyxorium.com", fetchImpl, ask: answers(["1", "", "", "", "Hello", "y"]), askHidden: async () => "app-pass", log: (s) => out.push(s), saveBackup: () => {}, bundlePlayer: async () => PLAYER });
+  assert.ok(out.some((l) => l.includes("1. Parlor Greens Jam Cruise Set")), "only tapes are listed");
+  assert.ok(!out.some((l) => l.includes("A die")));
+  assert.equal(res.changed, true);
+  await assert.rejects(runRevision({ uri: "pyxorium.com", fetchImpl, ask: answers(["7"]), askHidden: async () => "", log: () => {}, saveBackup: () => {} }), /No tape chosen/);
+});

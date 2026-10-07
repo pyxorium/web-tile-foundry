@@ -1,5 +1,6 @@
 // Revise a published Mixtape tape in place: its description, liner notes,
-// dedication or label text. The page is also made again with the Foundry's
+// dedication or label text, and artist names on its songs (to take off an
+// uploader's name that older plyr.fm uploads list as the artist). The page is also made again with the Foundry's
 // current page template and player, so the tape gets the latest fixes (a tape
 // made before Oct 7 2026 gets its player built into the page, and its separate
 // /mixtape.js is taken out). The tape keeps its address (at://…), so links,
@@ -7,6 +8,8 @@
 //
 // Run from the web-tile-foundry folder:
 //   node scripts/revise-tape.mjs at://did:plc:…/ing.dasl.masl/<record key>
+// or, to pick from an account's tapes:
+//   node scripts/revise-tape.mjs pyxorium.com
 //
 // It shows the tape's current words, asks for new ones (Enter keeps each as
 // it is), shows exactly what will change, asks for the account's app password
@@ -20,7 +23,7 @@ import { resolve } from "node:path";
 import { resolveDidDocument, pdsFromDidDocument, handleFromDidDocument, fetchPublicBlob } from "../src/core/atproto.js";
 import { rawCid } from "../src/core/cid.js";
 import { buildRecord, parseMimeMismatch, TILE_COLLECTION } from "../src/core/publish.js";
-import { reviseTape } from "../src/tile-types/mixtape/revise.js";
+import { reviseTape, songArtists } from "../src/tile-types/mixtape/revise.js";
 import { TAPE_PATH } from "../src/tile-types/mixtape/tape.js";
 
 /** The Foundry's current tape player, bundled the same way the Foundry does. */
@@ -61,11 +64,46 @@ function unescapeLines(s) {
   return s.replace(/\\n/g, "\n");
 }
 
+const HANDLE = /^@?([a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+)$/i;
+
+/** An account's Mixtape tapes, newest first: [{ uri, name }]. */
+export async function listTapes(handle, fetchImpl = fetch) {
+  const h = HANDLE.exec(String(handle).trim());
+  if (!h) throw new Error("Give a tape's address (at://…) or an account's handle.");
+  const r = await getJson(fetchImpl, `https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(h[1].toLowerCase())}`);
+  const did = r && r.did;
+  if (!did) throw new Error(`Couldn't find @${h[1]}.`);
+  const pds = pdsFromDidDocument(await resolveDidDocument(did, fetchImpl));
+  const tapes = [];
+  let cursor = null;
+  for (let page = 0; page < 20; page++) {
+    const url = `${pds}/xrpc/com.atproto.repo.listRecords?repo=${encodeURIComponent(did)}&collection=${TILE_COLLECTION}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const j = await getJson(fetchImpl, url);
+    for (const rec of j.records || []) {
+      const tile = rec.value && rec.value.tile;
+      if (tile && tile.resources && tile.resources[TAPE_PATH]) tapes.push({ uri: rec.uri, name: tile.name || "(no name)" });
+    }
+    if (!j.cursor || !(j.records || []).length) break;
+    cursor = j.cursor;
+  }
+  return tapes;
+}
+
 /**
  * The whole revision. Everything outside (network, questions, files) is passed
  * in, so the tests can run it against a stand-in server.
  */
 export async function runRevision({ uri, fetchImpl = fetch, ask, askHidden, log = console.log, saveBackup, now = () => new Date(), bundlePlayer = bundleCurrentPlayer }) {
+  // A handle instead of an address: pick one of the account's tapes.
+  if (!/^at:\/\//.test(String(uri || "").trim())) {
+    const tapes = await listTapes(uri || "", fetchImpl);
+    if (!tapes.length) throw new Error("That account has no Mixtape tapes.");
+    log("\nTapes on this account:");
+    tapes.forEach((t, i) => log(`  ${i + 1}. ${t.name}  (${t.uri})`));
+    const n = Number((await ask("Which tape? Type its number: ")).trim());
+    if (!Number.isInteger(n) || n < 1 || n > tapes.length) throw new Error("No tape chosen; nothing was changed.");
+    uri = tapes[n - 1].uri;
+  }
   const { did, rkey } = parseUri(uri);
   const doc = await resolveDidDocument(did, fetchImpl);
   const pds = pdsFromDidDocument(doc);
@@ -99,6 +137,25 @@ export async function runRevision({ uri, fetchImpl = fetch, ask, askHidden, log 
     const answer = (await ask(`New ${label.toLowerCase()}: `)).trim();
     if (answer === "") continue;
     edits[key] = answer === "-" ? "" : key === "notes" ? unescapeLines(answer) : answer;
+  }
+
+  // Song artists: older plyr.fm uploads list the uploader's name as artist.
+  const artists = songArtists(tape);
+  if (artists.length) {
+    log("\nArtists on the songs:");
+    for (const a of artists) log(`  ${JSON.stringify(a.name)} (${a.count} song${a.count === 1 ? "" : "s"})`);
+    const remove = [];
+    // Until Enter, or every name on the tape has been taken off.
+    while (remove.length < artists.length) {
+      const answer = (await ask("Take an artist off the songs (type the name as shown, or press Enter to go on): ")).trim();
+      if (!answer) break;
+      if (!artists.some((a) => a.name.toLowerCase().replace(/\s+/g, " ") === answer.toLowerCase().replace(/\s+/g, " "))) {
+        log(`  No song lists ${JSON.stringify(answer)}; check the spelling.`);
+        continue;
+      }
+      if (!remove.some((r) => r.toLowerCase().replace(/\s+/g, " ") === answer.toLowerCase().replace(/\s+/g, " "))) remove.push(answer);
+    }
+    if (remove.length) edits.removeArtists = remove;
   }
 
   const runtime = await bundlePlayer();

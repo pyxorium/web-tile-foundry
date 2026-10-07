@@ -27,21 +27,39 @@ export function configFromPage(html) {
   }
 }
 
-/**
- * manifest: the record's current `tile` object.
- * page, tapeFile: the current "/" and "/tape.json" bytes.
- * edits: { description?, notes?, dedication?, label? }; a value of undefined
- *   leaves that part as it is, "" removes it.
- * runtime: the Foundry's current player program (runtime/bundle.js).
- * Returns { manifest (without the new files' blob refs yet), files: [changed
- * files, each { path, bytes, contentType, cid }], changes: [readable lines] }.
- */
+const nameKey = (s) => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+/** The artists named on a tape's songs, with how many songs each: [{ name, count }]. */
+export function songArtists(tape) {
+  const counts = new Map();
+  for (const side of (tape && tape.sides) || []) {
+    for (const t of side.tracks || []) {
+      if (typeof t.artist !== "string" || !t.artist.trim()) continue;
+      const k = nameKey(t.artist);
+      const c = counts.get(k) || { name: t.artist.trim(), count: 0 };
+      c.count++;
+      counts.set(k, c);
+    }
+  }
+  return [...counts.values()];
+}
+
 /** The player built into a tape page (its last plain <script>), or null for an older page. */
 export function playerInPage(html) {
   const m = /<script>([\s\S]*?)<\/script>\s*<\/body>/.exec(html);
   return m ? m[1] : null;
 }
 
+/**
+ * manifest: the record's current `tile` object.
+ * page, tapeFile: the current "/" and "/tape.json" bytes.
+ * edits: { description?, notes?, dedication?, label?, removeArtists? }; a value
+ *   of undefined leaves that part as it is, "" removes it. removeArtists: names
+ *   to take off the songs that list them as artist (any case and spacing).
+ * runtime: the Foundry's current player program (runtime/bundle.js).
+ * Returns { manifest (without the new files' blob refs yet), files: [changed
+ * files, each { path, bytes, contentType, cid }], changes: [readable lines] }.
+ */
 export async function reviseTape({ manifest, page, tapeFile, edits = {}, runtime }) {
   if (typeof runtime !== "string" || !runtime) throw new Error("The Foundry's current player is needed to remake the page.");
   if (!manifest || !manifest.resources || !manifest.resources["/"] || !manifest.resources[TAPE_PATH]) {
@@ -73,6 +91,18 @@ export async function reviseTape({ manifest, page, tapeFile, edits = {}, runtime
       if (lab) next.label = lab;
       else delete next.label;
       changes.push(`Label: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+    }
+  }
+
+  if (Array.isArray(edits.removeArtists) && edits.removeArtists.length) {
+    const drop = new Set(edits.removeArtists.map(nameKey).filter(Boolean));
+    for (const side of next.sides || []) {
+      for (const t of side.tracks || []) {
+        if (typeof t.artist === "string" && drop.has(nameKey(t.artist))) {
+          changes.push(`Artist on "${t.title}": ${JSON.stringify(t.artist)} -> none`);
+          delete t.artist;
+        }
+      }
     }
   }
 

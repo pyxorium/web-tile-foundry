@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { mixtape } from "../src/tile-types/mixtape/index.js";
-import { songFromRecord, groupShows, listPlyrSongs, stripTrackNumber, REASONS } from "../src/tile-types/mixtape/plyr.js";
+import { songFromRecord, groupShows, listPlyrSongs, ownerNames, stripTrackNumber, REASONS } from "../src/tile-types/mixtape/plyr.js";
 import { normalizeTracks, createWorkshop, trackFromSong, sideFor, SIDE_SECONDS } from "../src/tile-types/mixtape/workshop.js";
 import { SIDES, panelDefaults, addShowsToNotes, splitWords, tapeDetails, panelRecipe, applyPanelChange, showsOf } from "../src/tile-types/mixtape/panel.js";
 import { TIMING } from "../src/tile-types/mixtape/transitions.js";
@@ -92,6 +92,26 @@ test("a plyr.fm record becomes a song; songs without a file on the account are k
   assert.equal(band.artist, "Parlor Greens");
   assert.equal(stripTrackNumber("03. The Ripper"), "The Ripper");
   assert.equal(stripTrackNumber("1999"), "1999");
+});
+
+test("older plyr.fm uploads carry the uploader's display name as artist; that is left out too", async () => {
+  const withArtist = (artist) => ({ ...record("e", "Travelin' Light"), value: { ...record("e", "Travelin' Light").value, artist } });
+  const names = ["pyxorium.com", "Nathan Cassell"];
+  assert.equal(songFromRecord(withArtist("Nathan Cassell"), { owner: names }).artist, "");
+  assert.equal(songFromRecord(withArtist("  nathan   cassell "), { owner: names }).artist, "", "spacing and case don't matter");
+  assert.equal(songFromRecord(withArtist("@pyxorium.com"), { owner: names }).artist, "");
+  assert.equal(songFromRecord(withArtist("Widespread Panic"), { owner: names }).artist, "Widespread Panic");
+  assert.equal(songFromRecord(withArtist("Nathan Cassell")).artist, "Nathan Cassell", "no owner names: kept");
+  // The display name comes from the account's Bluesky profile; without one, the handle alone.
+  const seen = [];
+  const got = await ownerNames({ did: DID, pds: "https://pds.example", handle: "pyxorium.com", fetchImpl: async (url) => {
+    seen.push(new URL(url));
+    return { ok: true, json: async () => ({ value: { displayName: " Nathan Cassell " } }) };
+  } });
+  assert.deepEqual(got, ["pyxorium.com", "Nathan Cassell"]);
+  assert.equal(seen[0].searchParams.get("collection"), "app.bsky.actor.profile");
+  assert.equal(seen[0].searchParams.get("rkey"), "self");
+  assert.deepEqual(await ownerNames({ did: DID, pds: "https://pds.example", handle: "pyxorium.com", fetchImpl: async () => ({ ok: false, status: 404 }) }), ["pyxorium.com"]);
 });
 
 test("songs are grouped by show, newest show first, in track order", () => {

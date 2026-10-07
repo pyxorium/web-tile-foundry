@@ -19,7 +19,7 @@ const MAX_PAGES = 50; // 5000 songs
 const TIMEOUT_MS = 15000;
 
 export const REASONS = Object.freeze({
-  storage: "Only on plyr.fm's storage, which other sites can't read yet.",
+  storage: "Only on plyr.fm's storage, which other sites can't read. In plyr.fm, copy its audio to your PDS to use it here.",
   gated: "For supporters only.",
   noAudio: "No audio file in the record.",
 });
@@ -33,12 +33,45 @@ export function stripTrackNumber(title) {
 
 const CID = /^b[a-z2-7]{20,}$/;
 
+/** A name for comparing: no leading @, spaces squeezed, any case. */
+function nameKey(s) {
+  return String(s || "").trim().replace(/^@/, "").replace(/\s+/g, " ").toLowerCase();
+}
+
+function ownerNamesOf(owner) {
+  const list = Array.isArray(owner) ? owner : owner ? [owner] : [];
+  return new Set(list.map(nameKey).filter(Boolean));
+}
+
+/**
+ * The names plyr.fm may have put in an account's `artist` fields: its handle,
+ * and its display name from its Bluesky profile (read from the account's own
+ * server; left out if that can't be read).
+ */
+export async function ownerNames({ did, pds, handle = null, fetchImpl = fetch }) {
+  const names = handle ? [handle] : [];
+  try {
+    const url = new URL(`${pds}/xrpc/com.atproto.repo.getRecord`);
+    url.searchParams.set("repo", did);
+    url.searchParams.set("collection", "app.bsky.actor.profile");
+    url.searchParams.set("rkey", "self");
+    const j = await getJson(url.toString(), fetchImpl);
+    const name = j && j.value && typeof j.value.displayName === "string" ? j.value.displayName.trim() : "";
+    if (name) names.push(name);
+  } catch {
+    /* no profile, or it couldn't be read: the handle alone */
+  }
+  return names;
+}
+
 /**
  * One record as a song:
  *   { uri, cid, title, trackNumber, album, artist, seconds, createdAt,
  *     blob: { cid, size, mimeType } | null, usable, reason }
- * `owner` is the account's handle: plyr.fm puts the uploader's handle in
- * `artist`, which is not the performer, so it is left out then.
+ * `owner` is the account's handle, or a list of the account's names (handle
+ * and display name): plyr.fm puts the uploader in `artist` (newer uploads
+ * the handle, older ones the display name), which is not the performer, so
+ * it is left out when it matches one of them.
  */
 export function songFromRecord(rec, { owner = null } = {}) {
   const v = (rec && rec.value) || {};
@@ -57,7 +90,7 @@ export function songFromRecord(rec, { owner = null } = {}) {
     title: stripTrackNumber(rawTitle) || rawTitle || "Untitled",
     trackNumber: trackNumberOf(rawTitle),
     album: typeof v.album === "string" && v.album.trim() ? v.album.trim() : "",
-    artist: artist && (!owner || artist.toLowerCase() !== String(owner).toLowerCase()) ? artist : "",
+    artist: artist && !ownerNamesOf(owner).has(nameKey(artist)) ? artist : "",
     seconds: Number(v.duration) > 0 ? Number(v.duration) : 0,
     createdAt: typeof v.createdAt === "string" ? v.createdAt : "",
     blob,

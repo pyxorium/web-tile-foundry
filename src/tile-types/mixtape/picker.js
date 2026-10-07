@@ -2,7 +2,7 @@ import { fetchPublicBlob } from "../../core/atproto.js";
 import { rawCid } from "../../core/cid.js";
 import { formatDuration } from "../../core/contract.js";
 import { convertSong } from "../../core/audio/convert.js";
-import { listPlyrSongs, groupShows, REASONS } from "./plyr.js";
+import { listPlyrSongs, ownerNames, groupShows, REASONS } from "./plyr.js";
 import { createWorkshop, trackFromSong, sideFor } from "./workshop.js";
 import { sharedPool } from "./shared.js";
 
@@ -112,7 +112,9 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     shows.replaceChildren();
     rows = new Map();
     try {
-      const songs = await listPlyrSongs({ did: a.did, pds: a.pds, owner: a.handle });
+      const names = await ownerNames({ did: a.did, pds: a.pds, handle: a.handle });
+      if (mine !== loadTicket || disposed) return;
+      const songs = await listPlyrSongs({ did: a.did, pds: a.pds, owner: names });
       if (mine !== loadTicket || disposed) return;
       render(songs);
     } catch (err) {
