@@ -15,9 +15,13 @@
 // beyond the one baked into the audio.
 //
 // A slow download says so: after 10 seconds "Still loading <song>…", after 20
-// seconds a Try again button as well. Try again waits for the same download
-// unless it failed (or has been going for a minute), and only then starts a
-// new one. A side ends like a cassette side: "Turn the tape" offers the next
+// seconds a Try again button as well. In a tile, Try again on a download that
+// is still on its way restarts the tile (its frame reloads, and the song is
+// cued again): a request stuck in the host's loading machinery doesn't come
+// unstuck by asking again, but a fresh start does, like reloading the page.
+// Elsewhere (the Foundry's preview), and after a failed download, Try again
+// downloads the song again (a download still on its way is waited for unless
+// it has been going for a minute). A side ends like a cassette side: "Turn the tape" offers the next
 // one. The phone's lock screen and headset buttons work through Media
 // Session.
 //
@@ -87,12 +91,15 @@ const inSentence = (label) => label.replace(/^(Side|Tape)\b/, (w) => w.toLowerCa
  *   tape         the tape.json object
  *   getBlob      (path) -> Promise<Blob>: a song's whole file (default: fetch it from the tile)
  *   loadTimes    see LOAD_TIMES (for tests)
+ *   restart      ({ side, index }) -> void: start the tile afresh with that song
+ *                cued (the tile's page reloads itself), or null
+ *   resume       { side, index }: the song to cue at the start (after a restart), or null
  *   artwork      a picture path or URL for the lock screen, or null
  *   makeUrl      link shown small in the corner (the Foundry), or null
  *   mediaSession use the lock screen and headset controls (default true)
  * Returns { dispose(), state() }.
  */
-export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = null, makeUrl = null, mediaSession = true, loadTimes = LOAD_TIMES } = {}) {
+export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = null, makeUrl = null, mediaSession = true, loadTimes = LOAD_TIMES, restart = null, resume = null } = {}) {
   const sides = sidesOf(tape);
   const title = text(tape && tape.title) || "Mixtape";
   const tapeArtist = text(tape && tape.artist);
@@ -290,12 +297,20 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     loadTimers = [];
   }
 
-  // A message with a Try again button, to play song `c` from `at`.
+  // A message with a Try again button, to play song `c` from `at`. If its
+  // download is still on its way and the tile can restart, Try again restarts it.
   function offerAgain(msg, error, c, at) {
     say(msg, error);
     const again = el("button", "mt-again", "Try again");
     again.type = "button";
-    again.addEventListener("click", () => play(c, { at, again: true }));
+    again.addEventListener("click", () => {
+      const path = trackAt(c).path;
+      if (restart && loading.has(path) && !urls.has(path)) {
+        clearLoadTimers();
+        say("Starting the tape again…");
+        restart({ side: c.side, index: c.index });
+      } else play(c, { at, again: true });
+    });
     now.append(" ", again);
     now.setAttribute("data-stuck", "");
   }
@@ -580,6 +595,11 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
 
   showSide(0);
   updateButtons();
+  // After a restart: the song that was loading is cued (press play to start it).
+  if (resume && sides[resume.side] && sides[resume.side].tracks[resume.index]) {
+    cue({ side: resume.side, index: resume.index });
+    showSide(resume.side);
+  }
 
   return {
     state() {
