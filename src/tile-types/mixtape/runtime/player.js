@@ -105,11 +105,14 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
   else if (tapeArtist) subParts.push(tapeArtist);
   if (subParts.length) head.append(el("p", "mt-sub", subParts.join(" · ")));
   const dedication = text(tape && tape.dedication);
-  if (dedication) head.append(el("p", "mt-ded", dedication));
+  const dedLine = dedication ? el("p", "mt-ded", dedication) : null;
+  if (dedLine) head.append(dedLine);
   const notes = text(tape && tape.notes);
+  // The J-card, like the paper insert in a cassette case: dedication, liner
+  // notes and each side's songs. Every tape has one (the songs at least).
   let notesBtn = null;
-  if (notes) {
-    notesBtn = el("button", "mt-notes-btn", "Notes");
+  if (sides.length || notes || dedication) {
+    notesBtn = el("button", "mt-notes-btn", "J-card");
     notesBtn.type = "button";
     notesBtn.setAttribute("aria-expanded", "false");
     head.append(notesBtn);
@@ -133,16 +136,19 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
   const list = el("ol", "mt-list");
   body.append(list);
   let notesPanel = null;
-  if (notes) {
+  if (notesBtn) {
     notesPanel = el("section", "mt-notes");
     notesPanel.hidden = true;
-    notesPanel.append(el("h2", null, "Liner notes"), el("div", null, notes));
+    notesPanel.setAttribute("aria-label", "J-card");
+    if (dedication) notesPanel.append(el("p", "mt-jc-ded", dedication));
+    if (notes) notesPanel.append(el("h2", null, "Liner notes"), el("div", "mt-jc-notes", notes));
+    for (const s of sides) {
+      const line = el("p", "mt-jc-side");
+      line.append(el("strong", null, `${sideLabel(s, sides.length)}:`), document.createTextNode(" " + s.tracks.map((t) => text(t.title) || "Untitled").join(", ")));
+      notesPanel.append(line);
+    }
     body.append(notesPanel);
-    notesBtn.addEventListener("click", () => {
-      notesPanel.hidden = !notesPanel.hidden;
-      notesBtn.setAttribute("aria-expanded", String(!notesPanel.hidden));
-      notesBtn.textContent = notesPanel.hidden ? "Notes" : "Songs";
-    });
+    notesBtn.addEventListener("click", () => setCard(notesPanel.hidden));
   }
   root.append(body);
 
@@ -325,7 +331,8 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     sideOver = true;
     audio.removeAttribute("src");
     audio.load();
-    say(`End of ${inSentence(sideLabel(sides[cur.side], sides.length))}.`);
+    const more = sides.length > 1;
+    say(`End of ${inSentence(sideLabel(sides[cur.side], sides.length))}.${cardOpen() && more ? " Tap Tape to turn it over." : ""}`);
     renderList();
     updateButtons();
   }
@@ -411,13 +418,26 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     });
   }
 
+  // ---- the J-card ---------------------------------------------------------------------
+  // Taken out to read while the tape plays: the side buttons go away (put the
+  // card back before flipping the tape), and so does the label's dedication
+  // line (the card shows it in full), which also gives the card more room.
+  function setCard(open) {
+    if (!notesPanel) return;
+    notesPanel.hidden = !open;
+    notesBtn.setAttribute("aria-expanded", String(open));
+    notesBtn.textContent = open ? "Tape" : "J-card";
+    tabs.hidden = open;
+    if (dedLine) dedLine.hidden = open;
+  }
+  const cardOpen = () => !!notesPanel && !notesPanel.hidden;
+
   // ---- sides ----------------------------------------------------------------------
-  // A side button is like flipping the cassette: with nothing playing, the
-  // side's first song is cued (marked, and play starts it). While a song plays,
-  // the other side can be looked at without stopping the music.
+  // A side button is like flipping the cassette: the music stops and the
+  // side's first song is cued (marked; press play to start it). No
+  // auto-reverse. The side that's already in the player stays as it is.
   function chooseSide(k) {
-    const playing = !!cur && !audio.paused && !sideOver;
-    if (!playing && (!cur || cur.side !== k || sideOver)) cue({ side: k, index: 0 });
+    if (!cur || cur.side !== k || sideOver) cue({ side: k, index: 0 });
     showSide(k);
   }
 
@@ -440,7 +460,7 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
   function showSide(k) {
     shownSide = k;
     sideButtons.forEach((b, i) => b.setAttribute("aria-pressed", String(i === k)));
-    if (notesPanel && !notesPanel.hidden) notesBtn.click();
+    if (cardOpen()) setCard(false);
     renderList();
     list.scrollTop = 0;
   }
@@ -449,15 +469,6 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     const side = sides[shownSide];
     list.replaceChildren();
     if (!side) return;
-    // Looking at one side while the other plays: say so, with a way back.
-    if (cur && cur.side !== shownSide && !audio.paused && !sideOver) {
-      const back = el("button", "mt-elsewhere", `Now playing on ${inSentence(sideLabel(sides[cur.side], sides.length))} ›`);
-      back.type = "button";
-      back.addEventListener("click", () => showSide(cur.side));
-      const li = el("li");
-      li.append(back);
-      list.append(li);
-    }
     side.tracks.forEach((t, i) => {
       const li = el("li");
       const row = el("button", "mt-row");

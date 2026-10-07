@@ -40,15 +40,17 @@ export const PLAYER_CSS = `
 .mt-tt { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-ta { display: block; color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-d { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
-.mt-elsewhere { display: block; width: calc(100% - 16px); margin: 4px 8px 6px; padding: 6px 10px; border-radius: 6px;
-  border: 1px dashed var(--line); color: var(--dim); font-size: 12px; text-align: left; }
-.mt-elsewhere:hover { color: var(--ink); border-color: var(--accent); }
 .mt-end { margin: 6px 8px 10px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--line); color: var(--dim); text-align: center; }
 .mt-end button { margin-top: 6px; padding: 6px 14px; border-radius: 999px; background: var(--accent); color: var(--bg); font-weight: 600; }
 .mt-notes { position: absolute; inset: 0; padding: 10px 14px 14px; background: var(--bg); overflow-y: auto; white-space: pre-wrap;
   overflow-wrap: anywhere; color: var(--ink); }
 .mt-notes h2 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
 .mt-notes[hidden] { display: none; }
+.mt-sides[hidden], .mt-ded[hidden] { display: none; }
+.mt-notes p { margin: 0 0 8px; }
+.mt-jc-ded { font-style: italic; }
+.mt-jc-notes { margin-bottom: 12px; }
+.mt-jc-side strong { color: var(--accent); font-weight: 600; }
 .mt-bar { flex: none; padding: 6px 10px 8px; border-top: 1px solid var(--line); background: var(--panel); }
 .mt-now { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.35em; }
 .mt-now[data-error] { color: #ff9b85; }
