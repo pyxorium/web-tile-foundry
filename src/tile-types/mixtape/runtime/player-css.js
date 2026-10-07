@@ -1,7 +1,9 @@
 // The player's look. Everything is under .mt, so the same styles can run in
 // the tile's own page and in the Foundry's preview without touching anything
 // else. No web fonts (a tile can't fetch them); the label uses whatever
-// handwriting-style font the device has.
+// handwriting-style font the device has. Handwriting fonts have long tails
+// below the line (g, j, y), so the label is never clipped: it wraps instead
+// (labels are short, at most 40 characters).
 
 export const PLAYER_CSS = `
 .mt { --bg: #1b1822; --panel: #26212f; --line: #3a3346; --ink: #f4ede1; --dim: #b0a596; --accent: #f2a93b;
@@ -16,8 +18,8 @@ export const PLAYER_CSS = `
   position: relative; flex: none; }
 .mt-head::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 6px; border-radius: 0 0 6px 6px;
   background: linear-gradient(var(--stripe2) 0 50%, var(--stripe1) 50% 100%); }
-.mt-label { margin: 0 64px 2px 0; font: 22px/1.15 "Segoe Print", "Bradley Hand", "Comic Sans MS", "Chalkboard SE", cursive;
-  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mt-label { margin: 0 64px 4px 0; font: 22px/1.35 "Segoe Print", "Bradley Hand", "Comic Sans MS", "Chalkboard SE", cursive;
+  overflow-wrap: anywhere; }
 .mt-sub { margin: 0 64px 0 0; font-size: 12px; opacity: .78; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-ded { margin: 2px 0 4px; font-size: 12px; font-style: italic; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mt-notes-btn { position: absolute; top: 8px; right: 10px; font-size: 12px; padding: 3px 8px;
