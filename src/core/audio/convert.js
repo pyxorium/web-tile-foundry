@@ -57,6 +57,16 @@ export async function convertSong(bytes, { pool, fadeIn = 0, fadeOut = 0, onProg
   if (!pool) throw new Error("convertSong needs an encoder pool.");
   onProgress("decoding", 0);
   const pcm = await decode(bytes);
+  return convertPcm(pcm, { pool, fadeIn, fadeOut, onProgress, decode });
+}
+
+/**
+ * Converts samples already decoded (for example a clip cut from a song):
+ * pcm is { left, right, rate } (Float32Arrays, handed over to the encoder, so
+ * pass copies). Same options, checks and result as convertSong.
+ */
+export async function convertPcm(pcm, { pool, fadeIn = 0, fadeOut = 0, onProgress = () => {}, decode = decodeWithBrowser } = {}) {
+  if (!pool) throw new Error("convertPcm needs an encoder pool.");
   onProgress("encoding", 0);
   const { mp3, inputDb } = await pool.encode(
     { left: pcm.left, right: pcm.right, rate: pcm.rate, kbps: TAPE_FORMAT.kbps, fadeIn, fadeOut },

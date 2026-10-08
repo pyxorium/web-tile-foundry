@@ -73,9 +73,17 @@
 //                        picture fills on that page), the editor offers Fit / Fill and a
 //                        crop (drag, and zoom from 1 to zoomMax, default 2): crop is
 //                        { x, y, zoom }, x and y from 0 to 1 (see cropRect in pictures.js).
-//                        pageToggles: [{ key, label, help?, unavailable?(values, context) }]:
-//                        switches every page offers (stored as page[key] = true);
-//                        unavailable returns a sentence when the switch can't be used.
+//                        pageToggles: [{ key, label, help?, unavailable?(values, context),
+//                        panel?, problems?, bytes? }]: switches every page offers (stored
+//                        as page[key] = true); unavailable returns a sentence when the
+//                        switch can't be used. While a switch is on:
+//                          panel: { mount(element, { getPage, patchPage, values, context })
+//                            -> { update(page, values, context), dispose() } }, the type's
+//                            own tools shown under the switch (plain DOM); patchPage(change)
+//                            changes the page (always the latest one), getPage() reads it;
+//                          problems(page, spec, values) -> sentences that stop building;
+//                          bytes(page) -> how many bytes it adds (counted in the size meter).
+//                        sizeLabel, optional: what the size meter counts (default "Pictures").
 //             showIf(values): OPTIONAL; the input is shown (and checked) only when it returns true.
 //             Inputs with the same `group` are shown together under that group's title.
 //   groups    array    OPTIONAL: [{ id, title, collapsed? }] titles for grouped inputs;
@@ -276,6 +284,10 @@ function checkPagesInput(where, input) {
       throw new Error(`${name}: each page toggle needs its own key and a label.`);
     }
     if (t.unavailable !== undefined && typeof t.unavailable !== "function") throw new Error(`${name}: a page toggle's unavailable must be a function.`);
+    for (const f of ["problems", "bytes"]) {
+      if (t[f] !== undefined && typeof t[f] !== "function") throw new Error(`${name}: a page toggle's ${f} must be a function.`);
+    }
+    if (t.panel !== undefined && !(t.panel && typeof t.panel.mount === "function")) throw new Error(`${name}: a page toggle's panel needs a mount function.`);
   }
   if (input.zoomMax !== undefined && !(Number.isFinite(input.zoomMax) && input.zoomMax >= 1)) throw new Error(`${name}: zoomMax must be a number from 1.`);
 }
@@ -341,8 +353,22 @@ export function pageProblems(input, pages, values = {}) {
         out.push(`${name}: the picture's crop isn't valid. Choose Fit, then Fill again.`);
       }
     }
+    for (const t of input.pageToggles || []) {
+      if (p[t.key] && t.problems) for (const m of t.problems(p, spec, values) || []) out.push(m);
+    }
   });
   return out;
+}
+
+/** The bytes a pages input's value adds up to: pictures, plus whatever switched-on page toggles add. */
+export function pagesBytes(input, pages) {
+  let n = 0;
+  for (const p of Array.isArray(pages) ? pages : []) {
+    if (!p) continue;
+    if (p.picture && p.picture.bytes) n += p.picture.bytes.length;
+    for (const t of input.pageToggles || []) if (p[t.key] && t.bytes) n += Number(t.bytes(p)) || 0;
+  }
+  return n;
 }
 
 /**

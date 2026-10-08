@@ -1,5 +1,6 @@
 import { cropRect } from "../../../core/pictures.js";
 import { marksDefs, marksMarkup } from "../marks.js";
+import { SOUND_ROW } from "../sound.js";
 
 // The Zine Scene reader: the program and styles built into every zine tile's
 // page. Plain JavaScript (no bundler), kept as text so it can go straight into
@@ -15,13 +16,23 @@ import { marksDefs, marksMarkup } from "../marks.js";
 //
 // Config (JSON in #zine-config): { version, paper, look, title, handle, made,
 //   makeUrl, pages: [{ id, kind: "cover"|"page"|"back", label, shows,
-//   heading, subtitle, words, picture: { src, width, height, alt } | null }] }
+//   heading, subtitle, words, picture: { src, width, height, alt } | null,
+//   sound?: { src, title, details?, url?, seconds } }], sounds?: true }
+//
+// Loading (stage 3): pictures are fetched only as the reader nears their page:
+// first the pages being shown, then the pages either side, one file at a time.
+// Each file is asked for once and kept (tile hosts download every request in
+// full and keep nothing; see claude/mixtape-loading-fix.md). A sound is fetched
+// only when its play button is tapped, then plays on across page turns until it
+// ends (a small pill stops it from any page); one plays at a time.
 // In the Foundry's preview (config.preview), the page also listens to its parent
 // for { zine: "config", config } and { zine: "goto", id }.
 
 export const PAGE_SIZES = Object.freeze({ letter: { w: 330, h: 510 }, a4: { w: 330, h: 467 } });
-export const READER_NAV = 52;
-export const SPRITE_LANE_PX = 58; // the sprite's lane (same as SPRITE_LANE in pages.js) // the strip under the pages (arrows and page name)
+export const READER_NAV = 52; // the strip under the pages (arrows and page name)
+export const SPRITE_LANE_PX = 58; // the sprite's lane (same as SPRITE_LANE in pages.js)
+export const SOUND_ROW_PX = SOUND_ROW; // the sound band's row: 8 + 32 + 6 design px
+export const LOAD_TIMES = Object.freeze({ still: 10000, retry: 20000 }); // "Still loading…", then Try again
 export const WORDS_MIN_SCALE = 0.8; // long words shrink to fit, down to this much of the normal size
 
 /** Which layout the reader uses for a space (pure, for tests). */
@@ -183,6 +194,37 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 .zp.decorating .walker { pointer-events: none; }
 .marks .sel rect { fill: none; stroke: #2f5fb3; stroke-width: 1.5; stroke-dasharray: 4 3; }
 .marks .sel circle { fill: #fff; stroke: #2f5fb3; stroke-width: 2; cursor: nwse-resize; }
+
+/* A sound on the page (stage 3): a band in the page's own flow, last before the
+   back page's footer and above the sprite's lane, so it never covers words. */
+.zp .snd-row { position: relative; z-index: 3; flex: none; margin-top: auto; padding: 8px 0 6px; }
+.zp.bleed .snd-row + .foot { margin-top: 0; }
+.zp .sound { display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px 0 3px;
+  border-radius: 17px; background: color-mix(in srgb, var(--paper) 94%, transparent); border: 1px solid var(--line); font-size: 11px; line-height: 1.2; }
+.zp .sound button { font: inherit; cursor: pointer; }
+.zp .snd-play { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: var(--ink); color: var(--paper); font-size: 10px; line-height: 26px; text-align: center; }
+.zp .snd-play:focus-visible, .zp .sound a:focus-visible, .now button:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
+.zp .snd-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.zp .snd-title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zp .snd-details { color: var(--soft); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zp .snd-details.busy { color: var(--accent); }
+.zp .sound a { flex: none; font-size: 10px; color: var(--accent); text-decoration: none; }
+.zp .sound a:hover { text-decoration: underline; }
+.zp .snd-retry { flex: none; padding: 2px 7px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink); font-size: 10px; }
+.zp .snd-retry[hidden] { display: none; }
+[data-look="photocopy"] .zp .sound { background: var(--paper); border: 1.5px dashed var(--ink); }
+[data-look="photocopy"] .zp .sound a { color: var(--ink); text-decoration: underline; }
+[data-look="collage"] .zp .sound { background: var(--paper); border: 0; border-radius: 3px; box-shadow: 0 2px 6px rgba(40,25,5,.25); transform: rotate(-.6deg); }
+[data-look="collage"] .zp .snd-play { background: var(--accent); }
+[data-look="riso"] .zp .sound { border-color: var(--ink-b); }
+[data-look="riso"] .zp .snd-play { background: var(--ink-b); color: var(--ink); }
+.card .zp .snd-row { display: none; }
+/* What's playing: a pill that stops it from any page. */
+.now { position: absolute; top: 8px; right: 8px; z-index: 6; display: flex; align-items: center; gap: 7px; max-width: min(70%, 320px); padding: 4px 4px 4px 11px;
+  border-radius: 999px; background: rgba(27,26,23,.86); color: #fff; font-size: 12px; line-height: 1.2; }
+.now[hidden], .card .now { display: none; }
+.now span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now button { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: #fff; color: #1b1a17; font-size: 10px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .zp { transition: none; } }
 `;
 
@@ -229,9 +271,61 @@ export const READER_JS = String.raw`
     });
     return box;
   }
+  // Files: each asked for once (one at a time, the most wanted first) and kept
+  // for as long as the page is open, as blob: addresses. Kept across rebuilds.
+  var kept = {}, queue = [], fetching = false, clipAsks = {};
+  function getBytes(src) {
+    if (config.preview && src.indexOf("clip:") === 0) {
+      // In the Foundry's preview, sounds come from the Foundry (they're in memory there).
+      return new Promise(function (resolve, reject) {
+        clipAsks[src] = { resolve: resolve, reject: reject };
+        try { window.parent.postMessage({ zine: "clip", src: src }, "*"); } catch (e) { reject(e); }
+      });
+    }
+    return fetch(src).then(function (res) {
+      if (!res.ok) throw new Error("the host answered " + res.status);
+      return res.blob();
+    });
+  }
+  function pump() {
+    if (fetching || !queue.length) return;
+    fetching = true;
+    var job = queue.shift();
+    getBytes(job.src).then(function (blob) { return URL.createObjectURL(blob); }).then(job.resolve, job.reject).then(function () {
+      fetching = false;
+      pump();
+    });
+  }
+  function fileUrl(src, urgent) {
+    var have = kept[src];
+    if (have) {
+      // Already waiting in line: move it up if it's wanted now.
+      if (urgent && have.job) { var k = queue.indexOf(have.job); if (k > 0) { queue.splice(k, 1); queue.unshift(have.job); } }
+      return have.promise;
+    }
+    if (/^(data|blob):/.test(src)) { kept[src] = { promise: Promise.resolve(src) }; return kept[src].promise; }
+    var job = { src: src };
+    var promise = new Promise(function (resolve, reject) { job.resolve = resolve; job.reject = reject; });
+    var entry = { promise: promise, job: job };
+    kept[src] = entry;
+    promise.then(function () { entry.job = null; }, function () { if (kept[src] === entry) delete kept[src]; });
+    if (urgent) queue.unshift(job); else queue.push(job);
+    pump();
+    return promise;
+  }
+  // A page's pictures: fetched when the reader nears the page (wantPage).
+  function wantPage(i, urgent) {
+    var e = pageEls[i];
+    if (!e) return;
+    Array.prototype.forEach.call(e.querySelectorAll("img[data-src]"), function (img) {
+      var src = img.getAttribute("data-src");
+      img.removeAttribute("data-src");
+      fileUrl(src, urgent).then(function (url) { img.src = url; }, function () { img.src = src; });
+    });
+  }
   function image(pic, cls, alt) {
     var img = document.createElement("img");
-    img.src = pic.src;
+    img.setAttribute("data-src", pic.src);
     img.alt = alt;
     img.className = cls;
     if (pic.width && pic.height) { img.width = pic.width; img.height = pic.height; }
@@ -405,6 +499,147 @@ export const READER_JS = String.raw`
     requestAnimationFrame(tick);
   }
 
+  // Sounds (stage 3). One player for the whole zine: a clip plays on across
+  // page turns until it ends; tapping another stops the first. Download, then
+  // play (as the Mixtape does): "Still loading…" after 10 s, Try again after 20 s.
+  var STILL_MS = ${LOAD_TIMES.still}, RETRY_MS = ${LOAD_TIMES.retry};
+  var audio = null;
+  var playing = null; // { id, src, title, state: "loading" | "playing" | "failed", slow, error }
+  var soundTimers = [];
+  var nowEl = null;
+  var readyNote = {}; // page id -> true when a clip is downloaded but the browser wouldn't start it
+  function clock(sec) {
+    sec = Math.max(0, Math.round(sec || 0));
+    return Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2);
+  }
+  function soundBand(p) {
+    var s = p.sound;
+    var band = el("div", "sound");
+    band.setAttribute("data-sound", p.id);
+    var btn = el("button", "snd-play", "▶");
+    btn.type = "button";
+    var text = el("span", "snd-text");
+    text.appendChild(el("span", "snd-title", s.title));
+    text.appendChild(el("span", "snd-details", ""));
+    var retry = el("button", "snd-retry", "Try again");
+    retry.type = "button";
+    retry.hidden = true;
+    band.appendChild(btn); band.appendChild(text); band.appendChild(retry);
+    if (s.url) {
+      var a = el("a", null, "plyr.fm ↗");
+      a.href = s.url; a.target = "_blank"; a.rel = "noopener";
+      a.setAttribute("aria-label", "Hear all of “" + s.title + "” on plyr.fm (opens a new tab)");
+      band.appendChild(a);
+    }
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (playing && playing.id === p.id && playing.state !== "failed") stopSound();
+      else playSound(p);
+    });
+    retry.addEventListener("click", function (e) { e.stopPropagation(); retrySound(p); });
+    return band;
+  }
+  function clearSoundTimers() { soundTimers.forEach(clearTimeout); soundTimers = []; }
+  function playSound(p) {
+    stopSound(true);
+    var s = p.sound;
+    var me = { id: p.id, src: s.src, title: s.title, state: "loading", slow: 0 };
+    playing = me;
+    delete readyNote[p.id];
+    soundTimers = [
+      setTimeout(function () { if (playing === me && me.state === "loading") { me.slow = 1; drawSound(); } }, STILL_MS),
+      setTimeout(function () { if (playing === me && me.state === "loading") { me.slow = 2; drawSound(); } }, RETRY_MS),
+    ];
+    drawSound();
+    fileUrl(s.src, true).then(function (url) {
+      if (playing !== me) return;
+      clearSoundTimers();
+      if (!audio) {
+        audio = new Audio();
+        audio.preload = "auto";
+        audio.addEventListener("ended", function () { if (playing && playing.state === "playing") { playing = null; drawSound(); } });
+      }
+      audio.src = url;
+      me.state = "playing";
+      drawSound();
+      var started = audio.play();
+      if (started && started.catch) started.catch(function (err) {
+        if (playing !== me) return;
+        if (err && err.name === "NotAllowedError") {
+          // The browser wants a fresh tap: the clip is here now, so the next tap plays at once.
+          playing = null;
+          readyNote[me.id] = true;
+        } else {
+          me.state = "failed";
+          me.error = (err && err.message) || "it couldn't start";
+        }
+        drawSound();
+      });
+    }, function (err) {
+      if (playing !== me) return;
+      clearSoundTimers();
+      me.state = "failed";
+      me.error = (err && err.message) || "unknown problem";
+      drawSound();
+    });
+  }
+  function stopSound(quiet) {
+    if (audio) { try { audio.pause(); } catch (e) {} }
+    playing = null;
+    clearSoundTimers();
+    if (!quiet) drawSound();
+  }
+  function retrySound(p) {
+    var me = playing;
+    if (me && me.id === p.id && me.state === "loading" && !config.preview) {
+      // The download is still on its way (the host may be stuck): start the
+      // zine afresh on this page, as reloading the page would.
+      location.hash = "page=" + p.id;
+      location.reload();
+      return;
+    }
+    if (kept[p.sound.src] && !kept[p.sound.src].job) delete kept[p.sound.src];
+    playSound(p);
+  }
+  function makeNow() {
+    nowEl = el("div", "now");
+    nowEl.hidden = true;
+    nowEl.setAttribute("aria-live", "polite");
+    var label = el("span");
+    var stop = el("button", null, "■");
+    stop.type = "button";
+    stop.setAttribute("aria-label", "Stop the sound");
+    stop.addEventListener("click", function (e) { e.stopPropagation(); stopSound(); });
+    nowEl.appendChild(label); nowEl.appendChild(stop);
+    return nowEl;
+  }
+  function drawSound() {
+    Array.prototype.forEach.call(root.querySelectorAll(".sound"), function (band) {
+      var id = band.getAttribute("data-sound");
+      var page = config.pages.filter(function (p) { return p.id === id; })[0];
+      if (!page || !page.sound) return;
+      var mine = playing && playing.id === id ? playing : null;
+      var btn = band.querySelector(".snd-play"), det = band.querySelector(".snd-details"), retry = band.querySelector(".snd-retry");
+      var on = mine && mine.state !== "failed";
+      btn.textContent = on ? (mine.state === "loading" ? "…" : "■") : "▶";
+      btn.setAttribute("aria-label", (on ? "Stop " : "Play ") + "“" + page.sound.title + "”");
+      var busy = true, words;
+      if (mine && mine.state === "loading") words = mine.slow ? "Still loading…" : "Loading…";
+      else if (mine && mine.state === "failed") words = "Couldn't load it (" + mine.error + ")";
+      else if (mine) words = "Playing · " + clock(page.sound.seconds);
+      else if (readyNote[id]) words = "Ready: tap ▶ to play";
+      else { busy = false; words = (page.sound.details ? page.sound.details + " · " : "") + clock(page.sound.seconds); }
+      det.textContent = words;
+      det.classList.toggle("busy", busy);
+      retry.hidden = !(mine && (mine.state === "failed" || mine.slow === 2));
+    });
+    if (nowEl) {
+      var show = playing && playing.state !== "failed";
+      nowEl.hidden = !show;
+      if (show) nowEl.firstChild.textContent = "♪ " + (playing.state === "loading" ? "Loading " : "") + playing.title;
+    }
+  }
+
   function applyLook() {
     var html = document.documentElement;
     ["--paper", "--ink", "--soft", "--ink-b"].forEach(function (v) { html.style.removeProperty(v); });
@@ -468,6 +703,7 @@ export const READER_JS = String.raw`
       }
       // Credits, like the last page of a printed zine.
       if (config.sprite) link("Sprite from rpg.actor ↗", "https://rpg.actor/");
+      if (config.sounds) link("Songs from plyr.fm ↗", "https://plyr.fm/");
       if (config.makeUrl) link("Make your own zine ↗", config.makeUrl);
       if (links.firstChild) foot.appendChild(links);
       e.appendChild(foot);
@@ -513,14 +749,22 @@ export const READER_JS = String.raw`
     pageEls = config.pages.map(function (p, i) {
       var e = makePage(p, i);
       if (p.sprite && config.sprite) { e.classList.add("has-sprite"); makeWalker(e, i); }
+      if (p.sound) {
+        // The sound's row goes last in the page's flow, before the back page's footer.
+        var row = el("div", "snd-row");
+        row.appendChild(soundBand(p, i));
+        e.classList.add("has-sound");
+        e.insertBefore(row, e.querySelector(":scope > .foot"));
+      }
       e.style.width = size.w + "px";
       e.style.height = size.h + "px";
       e.style.setProperty("--ph", size.h + "px");
       deck.appendChild(e);
       if (p.marks) renderMarks(e, p.marks);
       // A picture takes its room only once it has loaded: fit the words again then.
+      // (Pictures arrive as their page comes near: see wantPage.)
       Array.prototype.forEach.call(e.querySelectorAll("img.la"), function (img) {
-        if (!img.complete) img.addEventListener("load", function () { fitWords(e); });
+        img.addEventListener("load", function () { fitWords(e); });
       });
       return e;
     });
@@ -529,11 +773,13 @@ export const READER_JS = String.raw`
     nextBtn = el("button", null, "›"); nextBtn.type = "button"; nextBtn.setAttribute("aria-label", "Next page");
     where = el("span", "where"); where.setAttribute("aria-live", "polite");
     nav.appendChild(prevBtn); nav.appendChild(where); nav.appendChild(nextBtn);
+    stage.appendChild(makeNow());
     root.appendChild(stage); root.appendChild(nav);
     prevBtn.addEventListener("click", function () { turn(-1); });
     nextBtn.addEventListener("click", function () { turn(1); });
     pageEls.forEach(fitWords);
     pageEls.forEach(fitQuote);
+    drawSound();
     if (config.preview && window.__zineAfterBuild) setTimeout(window.__zineAfterBuild, 0);
     layout();
     startWalkers();
@@ -608,7 +854,10 @@ export const READER_JS = String.raw`
         e.setAttribute("aria-hidden", "true");
       }
     });
-    var k = viewIndex(), total = views().length;
+    var k = viewIndex(), all = views(), total = all.length;
+    // Load what's shown first, then the pages either side (a small card loads only its cover).
+    v.forEach(function (i) { if (i != null) wantPage(i, true); });
+    if (mode !== "card") [k + 1, k - 1].forEach(function (n) { if (all[n]) all[n].forEach(function (i) { if (i != null) wantPage(i, false); }); });
     prevBtn.disabled = k === 0;
     nextBtn.disabled = k === total - 1;
     where.textContent = nameOf(v);
@@ -642,6 +891,8 @@ export const READER_JS = String.raw`
   window.addEventListener("resize", layout);
   document.addEventListener("keydown", function (e) {
     if (mode === "card" || window.__zineLock) return;
+    var t = e.target;
+    if ((e.key === " " || e.key === "Enter") && t && t.closest && t.closest("button, a")) return;
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { turn(1); e.preventDefault(); }
     else if (e.key === "ArrowLeft" || e.key === "PageUp") { turn(-1); e.preventDefault(); }
     else if (e.key === "Home") { current = 0; show(); }
@@ -676,10 +927,21 @@ export const READER_JS = String.raw`
         if (keep) goto(keep);
       } else if (e.data.zine === "goto") {
         goto(e.data.id);
+      } else if (e.data.zine === "clip" && clipAsks[e.data.src]) {
+        var ask = clipAsks[e.data.src];
+        delete clipAsks[e.data.src];
+        if (e.data.bytes) ask.resolve(new Blob([e.data.bytes], { type: "audio/mpeg" }));
+        else ask.reject(new Error(e.data.error || "the sound isn't ready"));
       }
     });
     try { window.parent.postMessage({ zine: "ready" }, "*"); } catch (e) {}
   }
   build();
+  // A restart (Try again on a stuck sound) reopens the page it was on.
+  var cue = /^#page=([A-Za-z0-9_-]+)$/.exec(location.hash || "");
+  if (cue) {
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    goto(cue[1]);
+  }
 })();
 `;

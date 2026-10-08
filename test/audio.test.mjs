@@ -15,7 +15,7 @@ import { buildTile } from "../src/core/build.js";
 import { TILE_CSP_META } from "../src/core/policy.js";
 import { scanMp3, joinMp3, cutSilence, isTapeFormat, TAPE_FORMAT } from "../src/core/audio/mp3.js";
 import { createEncoderPool, defaultPoolSize } from "../src/core/audio/pool.js";
-import { convertSong, makeSilence, rmsDb } from "../src/core/audio/convert.js";
+import { convertSong, convertPcm, makeSilence, rmsDb } from "../src/core/audio/convert.js";
 import { publishTile, isTooLarge, XrpcError } from "../src/core/publish.js";
 import { rawCid } from "../src/core/cid.js";
 
@@ -274,6 +274,18 @@ test("converting a song: the result is checked for format and loudness", async (
   // Fades reach the encoder (the faded song is quieter than the plain one).
   const faded = await convertSong(SOURCE, { pool, fadeIn: 1, fadeOut: 1, decode: make(0.3) });
   assert.ok(faded.inputDb < good.inputDb - 1);
+  pool.dispose();
+});
+
+test("converting a clip that's already decoded (Zine Scene's sounds)", async () => {
+  const log = { max: 0, made: 0, jobs: [], terminated: 0 };
+  const pool = createEncoderPool({ size: 1, createWorker: fakeWorkerFactory({ log }) });
+  const stages = [];
+  const clip = await convertPcm(sine(1.5, 330, 0.5), { pool, fadeIn: 0.3, fadeOut: 0.5, decode: async () => sine(1.5, 330, 0.45), onProgress: (s) => stages.push(s) });
+  assert.ok(isTapeFormat(scanMp3(clip.bytes)));
+  assert.ok(Math.abs(clip.seconds - 1.5) < 0.15);
+  assert.deepEqual([...new Set(stages)], ["encoding", "checking"]);
+  await assert.rejects(convertPcm(sine(1, 330, 0.5), { pool, decode: async () => sine(1, 330, 0.01) }), /much quieter/);
   pool.dispose();
 });
 

@@ -416,6 +416,32 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .crop-zoom input { width: 160px; accent-color: var(--accent); }
 .crop-help { margin: 0; }
 .page-toggle .field-help { margin: 4px 0 0; }
+.page-toggle + .page-toggle { margin-top: 10px; }
+/* Zine Scene: a page's sound (pick a plyr.fm song, cut up to a minute). */
+.snd-panel { margin-top: 8px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; background: var(--surface); }
+.snd-head { display: flex; gap: 8px; align-items: center; }
+.snd-pick { flex: 1 1 auto; min-width: 0; }
+.snd-note { margin: 6px 0 0; }
+.snd-status { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
+.snd-status.is-error, .snd-made.is-error { color: var(--danger); }
+.snd-editor[hidden] { display: none; }
+.snd-wave { position: relative; height: 72px; margin: 12px 8px 0; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.snd-wave canvas { display: block; }
+.snd-handle { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--accent); cursor: ew-resize; touch-action: none; }
+.snd-handle::before { content: ""; position: absolute; left: -10px; right: -10px; top: 0; bottom: 0; }
+.snd-knob { position: absolute; left: 50%; bottom: -9px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.snd-start .snd-knob { top: -9px; bottom: auto; }
+.snd-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.snd-handle.dragging .snd-knob { transform: scale(1.15); }
+.snd-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--gold); pointer-events: none; }
+.snd-playhead[hidden] { display: none; }
+.snd-times { margin: 14px 0 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.snd-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.snd-wave-help { display: block; margin: 6px 0 0; }
+.snd-made { margin: 8px 0 0; font-size: 14px; }
+.snd-made .btn { margin-left: 4px; }
+.snd-field { display: block; margin-top: 10px; }
+.snd-field .field-label { display: block; }
 /* Zine Scene: the decorating toolbar above the live preview. */
 .type-preview:has(> .zine-preview) { height: 640px; }
 .zine-preview { display: flex; flex-direction: column; }

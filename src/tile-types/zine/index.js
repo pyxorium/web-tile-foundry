@@ -4,6 +4,9 @@ import {
   emptyPages, defaultPaper, wordLimit, wordSize, madeLabel, fillFrame, FILL_ZOOM_MAX, usableSprite,
 } from "./pages.js";
 import { LOOK_OPTIONS, INK_OPTIONS, DEFAULT_LOOK, DEFAULT_INK } from "./looks.js";
+import { soundProblems, soundBytes } from "./sound.js";
+
+const BASE = (import.meta.env && import.meta.env.BASE_URL) || "/";
 
 // Tile type: Zine Scene.
 // A little zine, the classic 8-page mini-zine (cover, pages 1 to 6, back),
@@ -11,6 +14,8 @@ import { LOOK_OPTIONS, INK_OPTIONS, DEFAULT_LOOK, DEFAULT_INK } from "./looks.js
 // picture and words; the reader inside the tile shows the cover, one page at a
 // time, or a two-page spread, whichever suits the space the host gives.
 // Looks (stage 2): Clean, Photocopy, Collage and Riso (with six ink pairs).
+// Sounds (stage 3): a short clip from one of your plyr.fm songs on any page;
+// pictures and sounds load page by page as the zine is read.
 // Plan and decisions: claude/zine-maker-plan.md.
 
 // Opening a page in the editor turns the preview to it.
@@ -25,8 +30,21 @@ export const zine = {
   version: 1,
   title: "Zine Scene",
   summary: "Make a little zine: eight pages of pictures and words.",
-  maxBytes: 10 * 1024 * 1024,
-  credits: [["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, "."]],
+  maxBytes: 20 * 1024 * 1024,
+  credits: [
+    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, "."],
+    [
+      "MP3 encoding by ",
+      { text: "lamejs", href: "https://github.com/zhuker/lamejs" },
+      ", a port of ",
+      { text: "LAME", href: "https://lame.sourceforge.io/" },
+      ", unmodified under the ",
+      { text: "LGPL", href: "https://www.gnu.org/licenses/lgpl-3.0.html" },
+      " (",
+      { text: "details", href: `${BASE}vendor/lamejs/README.txt` },
+      ").",
+    ],
+  ],
   buildDelayMs: 400,
 
   inputs: [
@@ -70,6 +88,7 @@ export const zine = {
       kind: "pages",
       label: "Pages",
       help: "Pick a page to fill it in. Pictures are made smaller on your computer before they're added.",
+      sizeLabel: "Pictures and sounds",
       pages: PAGES,
       layouts: LAYOUTS,
       headingMax: HEADING_MAX,
@@ -92,8 +111,29 @@ export const zine = {
             return "Your account has no rpg.actor sprite yet. Make one at rpg.actor to add it here.";
           },
         },
+        {
+          key: "sound",
+          label: "Add a sound",
+          help: "Up to a minute of one of your plyr.fm songs, on a band near the bottom of the page. Readers tap to play it; it plays on as they turn the pages.",
+          panel: {
+            async mount(element, api) {
+              const { mountSoundPanel } = await import("./soundpanel.js");
+              return mountSoundPanel(element, api);
+            },
+          },
+          problems: (page, spec) => soundProblems(page, spec),
+          bytes: soundBytes,
+        },
       ],
       onSelect: (id) => selectListeners.forEach((fn) => fn(id)),
+    },
+    {
+      key: "soundRights",
+      kind: "toggle",
+      label: "These are my plyr.fm uploads, and I'm happy to publish clips of them in this zine.",
+      help: "A copy of each clip goes into the zine in your account, and stays there even if you later delete the song from plyr.fm.",
+      mustBeOn: "Confirm that the sounds are from your own plyr.fm uploads before publishing.",
+      showIf: (v) => (v.pages || []).some((p) => p && p.sound),
     },
     {
       key: "description",
@@ -114,6 +154,7 @@ export const zine = {
       look: DEFAULT_LOOK,
       ink: DEFAULT_INK,
       pages: emptyPages(),
+      soundRights: false,
       description: "",
       handle: context.handle || "",
       sprite: null,

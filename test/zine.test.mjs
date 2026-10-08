@@ -36,7 +36,7 @@ function sample() {
 test("the zine type follows the contract", () => {
   checkTileType(zine);
   assert.equal(zine.id, "zine");
-  assert.equal(zine.maxBytes, 10 * 1024 * 1024);
+  assert.equal(zine.maxBytes, 20 * 1024 * 1024);
 });
 
 test("pages: cover, 1 to 6, back; layouts show the right fields", () => {
@@ -193,8 +193,8 @@ test("the Foundry builds a zine (without card art while editing)", async () => {
 
 test("the size limit stops a zine that is too big", async () => {
   const v = sample();
-  v.pages[1].picture = { ...pic(), bytes: new Uint8Array(11 * 1024 * 1024) };
-  await assert.rejects(buildTile(zine, v, { final: false }), /up to 10/);
+  v.pages[1].picture = { ...pic(), bytes: new Uint8Array(21 * 1024 * 1024) };
+  await assert.rejects(buildTile(zine, v, { final: false }), /up to 20/);
 });
 
 test("preview config: data addresses and the preview flag", () => {

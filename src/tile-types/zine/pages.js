@@ -1,6 +1,7 @@
 import { lookOf, lookColors } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
+import { soundForReader, soundPath, SOUND_COST, QUOTE_SOUND_COST } from "./sound.js";
 export { cropRect } from "../../core/pictures.js";
 
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
@@ -92,7 +93,10 @@ export function wordLimit(spec, page, values = {}) {
   // words over a picture and a big quote keep theirs (measured).
   const fills = layout === "words" || layout === "both";
   const lane = fills && page && page.sprite && usableSprite(values.sprite) ? SPRITE_COST : 0;
-  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane);
+  // The sound band (stage 3) takes its room the same way, as soon as the switch
+  // is on; a big quote loses a little; words over a picture keep theirs (measured).
+  const band = page && page.sound ? (fills ? SOUND_COST : layout === "quote" ? QUOTE_SOUND_COST : 0) : 0;
+  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane - band);
 }
 
 /** Letter in the Americas where it's the usual paper, A4 elsewhere. */
@@ -173,13 +177,15 @@ export function cleanCrop(crop) {
  * cleaned. `src(page)` gives a picture's address (its tile path, or in the
  * Foundry preview a data: address). `paper` and `look` size filled pictures.
  */
-export function zinePages(pages, src = picturePath, { paper, look, sprite = false } = {}) {
+export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id) } = {}) {
   return PAGES.map((spec, i) => {
     const p = pages[i] || { id: spec.id };
     const shows = showsOf(spec, p);
     const out = { id: spec.id, kind: spec.kind, label: spec.label, shows: shows.slice() };
     if (spec.layouts) out.layout = p.layout;
     if (sprite && p.sprite) out.sprite = true;
+    const sound = soundForReader({ ...p, id: spec.id }, soundSrc);
+    if (sound) out.sound = sound;
     if (shows.includes("heading")) out.heading = cleanText(p.heading, HEADING_MAX).replace(/\n+/g, " ");
     if (shows.includes("subtitle")) out.subtitle = cleanText(p.subtitle, SUBTITLE_MAX).replace(/\n+/g, " ");
     if (shows.includes("words")) out.words = cleanText(p.words);
@@ -210,7 +216,7 @@ export function usesSprite(pages, sprite) {
   return usableSprite(sprite) && (pages || []).some((p) => p && p.sprite);
 }
 
-export function zineConfig({ title, handle, paper, look, ink, pages, made, src, sprite = null, spriteSrc = SPRITE_PATH, preview = false }) {
+export function zineConfig({ title, handle, paper, look, ink, pages, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, preview = false }) {
   const withSprite = usesSprite(pages, sprite);
   const config = {
     version: CONFIG_VERSION,
@@ -220,8 +226,10 @@ export function zineConfig({ title, handle, paper, look, ink, pages, made, src, 
     handle: String(handle || "").replace(/^@/, "").trim(),
     made: made || "",
     makeUrl: MAKE_URL,
-    pages: zinePages(pages, src, { paper, look, sprite: withSprite }),
+    pages: zinePages(pages, src, { paper, look, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}) }),
   };
+  // Sounds (stage 3): the back page credits plyr.fm.
+  if (config.pages.some((p) => p.sound)) config.sounds = true;
   if (withSprite) {
     const g = sprite.geometry;
     config.sprite = { src: spriteSrc, frameWidth: g.frameWidth, frameHeight: g.frameHeight, columns: g.columns, rows: g.rows };

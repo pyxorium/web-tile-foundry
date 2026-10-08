@@ -5,6 +5,17 @@ import { zineConfig, madeLabel, PAGES } from "./pages.js";
 import { STICKERS, PEN_SLOTS, MAX_MARKS, markColors, marksSvg } from "./marks.js";
 import { lookOf } from "./looks.js";
 
+// Sounds in the preview: the reader asks for a clip by this address and the
+// Foundry hands over its bytes (they're in memory here). The number changes
+// whenever the clip is made again, so the reader never plays an old cut.
+const clipNumbers = new WeakMap();
+let clipCount = 0;
+function clipSrc(page) {
+  const bytes = page.clip.bytes;
+  if (!clipNumbers.has(bytes)) clipNumbers.set(bytes, ++clipCount);
+  return `clip:${page.id}:${clipNumbers.get(bytes)}`;
+}
+
 // The Foundry's preview of a zine: the tile's own page and reader, in a
 // sandboxed frame like the real tile hosts, with the pictures handed in as
 // data: addresses (a frame can't read the Foundry's files). The frame is made
@@ -52,6 +63,7 @@ export function previewConfig(values) {
     src: pictureSrc,
     sprite: values.sprite || null,
     spriteSrc: values.sprite && values.sprite.bytes ? spriteSrc(values.sprite) : undefined,
+    soundSrc: clipSrc,
     preview: true,
   });
   // Decorating needs every sticker and the look's colours, even on a page with no marks yet.
@@ -122,6 +134,17 @@ export function mountZinePreview(element, { values, setValue, onSelect }) {
     } else if (m.zine === "marks" && deco.on && typeof m.id === "string") {
       saveMarks(m.id, Array.isArray(m.marks) ? m.marks : []);
       drawBar();
+    } else if (m.zine === "clip" && typeof m.src === "string") {
+      // The reader wants a sound's bytes.
+      const [, id, n] = m.src.split(":");
+      const page = (latest.pages || []).find((p) => p && p.id === id);
+      const bytes = page && page.clip && page.clip.bytes;
+      if (bytes && String(clipNumbers.get(bytes)) === n) {
+        const copy = bytes.slice().buffer;
+        frame.contentWindow.postMessage({ zine: "clip", src: m.src, bytes: copy }, "*", [copy]);
+      } else {
+        send({ zine: "clip", src: m.src, error: "this sound has changed since" });
+      }
     } else if (m.zine === "selected") {
       deco.selected = Boolean(m.has);
       drawBar();

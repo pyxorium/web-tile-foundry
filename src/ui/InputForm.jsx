@@ -3,7 +3,7 @@ import { spriteFromBytes } from "../core/sprite-source.js";
 import { formatSize } from "../core/fileset.js";
 import { DEBUG } from "./debug.js";
 import { cropRect, clampCrop } from "../core/pictures.js";
-import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout } from "../core/contract.js";
+import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout, pagesBytes } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
 // (see INPUT_KINDS in src/core/contract.js).
@@ -600,6 +600,35 @@ function PictureThumb({ picture }) {
   return url ? <img className="page-thumb" src={url} alt="" /> : <span className="page-thumb" />;
 }
 
+// A page switch's own tools (see pageToggles' panel in src/core/contract.js),
+// mounted as plain DOM under the switch while it is on. Mounted once per page;
+// later changes reach it through update().
+function TogglePanel({ panel, getPage, patchPage, page, values, context }) {
+  const boxRef = useRef(null);
+  const handleRef = useRef(null);
+  const latest = useRef({ page, values, context });
+  latest.current = { page, values, context };
+  useEffect(() => {
+    let disposed = false;
+    Promise.resolve(panel.mount(boxRef.current, { getPage, patchPage, values: latest.current.values, context: latest.current.context })).then((h) => {
+      if (disposed) { if (h && h.dispose) h.dispose(); return; }
+      handleRef.current = h;
+      const l = latest.current;
+      if (h && h.update) h.update(l.page, l.values, l.context);
+    });
+    return () => {
+      disposed = true;
+      if (handleRef.current && handleRef.current.dispose) handleRef.current.dispose();
+      handleRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panel]);
+  useEffect(() => {
+    if (handleRef.current && handleRef.current.update) handleRef.current.update(page, values, context);
+  }, [page, values, context]);
+  return <div ref={boxRef} className="page-toggle-panel" />;
+}
+
 function PagesInput({ input, value, onChange, values, type, context }) {
   const pages = Array.isArray(value) ? value : [];
   const [openId, setOpenId] = useState(input.pages[0].id);
@@ -650,7 +679,7 @@ function PagesInput({ input, value, onChange, values, type, context }) {
     }
   }
 
-  const pictureBytes = pages.reduce((n, p) => n + (p.picture && p.picture.bytes ? p.picture.bytes.length : 0), 0);
+  const pictureBytes = pagesBytes(input, pages);
   const limit = type && type.maxBytes;
   const has = (p) => p && (p.picture || (p.heading || "").trim() || (p.words || "").trim() || (p.subtitle || "").trim() || (input.pageToggles || []).some((t) => p[t.key]) || (Array.isArray(p.marks) && p.marks.length > 0));
   const fullness = input.wordLimit ? pageFullness(input, spec, page, values) : null;
@@ -699,6 +728,22 @@ function PagesInput({ input, value, onChange, values, type, context }) {
                 <span>{t.label}</span>
               </label>
               {(why || t.help) && <p className="field-help">{why || t.help}</p>}
+              {t.panel && page[t.key] && !why && (
+                <TogglePanel
+                  key={`${spec.id}-${t.key}`}
+                  panel={t.panel}
+                  page={page}
+                  values={values}
+                  context={context}
+                  getPage={() => latest.current.find((p) => p.id === spec.id)}
+                  patchPage={(change) => {
+                    const now = latest.current.find((p) => p.id === spec.id);
+                    if (!now) return;
+                    const c = typeof change === "function" ? change(now) : change;
+                    if (c) patch(now.id, c);
+                  }}
+                />
+              )}
             </div>
           );
         })}
@@ -781,7 +826,7 @@ function PagesInput({ input, value, onChange, values, type, context }) {
         </div>
       </div>
       <p className="page-size">
-        Pictures: {formatSize(pictureBytes)}{limit ? ` of ${formatSize(limit)}` : ""}
+        {input.sizeLabel || "Pictures"}: {formatSize(pictureBytes)}{limit ? ` of ${formatSize(limit)}` : ""}
         {limit ? (
           <span className="track-side-meter" aria-hidden="true">
             <span style={{ width: `${Math.min(100, (pictureBytes / limit) * 100)}%` }} className={pictureBytes > limit ? "over" : ""} />
