@@ -442,6 +442,18 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .snd-made .btn { margin-left: 4px; }
 .snd-field { display: block; margin-top: 10px; }
 .snd-field .field-label { display: block; }
+/* Zine Scene: the "Your tile" panel on an "A tile" page (pick one of your published tiles). */
+.page-piece { margin-top: 10px; }
+.tile-panel { margin-top: 6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; background: var(--surface); }
+.tile-card { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; }
+.tile-card[hidden] { display: none; }
+.tile-thumb { flex: none; width: 112px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; background: var(--line); }
+.tile-thumb[hidden] { display: none; }
+.tile-about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile-name { overflow-wrap: anywhere; }
+.tile-made { margin: 4px 0 0; }
+.tile-made .btn { margin-left: 4px; }
+.tile-help { margin: 8px 0 0; }
 /* Zine Scene: the decorating toolbar above the live preview. */
 .type-preview:has(> .zine-preview) { height: 640px; }
 .zine-preview { display: flex; flex-direction: column; }

@@ -31,6 +31,8 @@ export const mixtape = {
   version: 1,
   title: "Mixtape C60",
   summary: "Your plyr.fm songs on a cassette, Side A and Side B.",
+  // On a Zine Scene page a tape shows as its J-card, with a link to the real tape.
+  zinePage: "tape",
   maxBytes: 50 * 1024 * 1024,
 
   credits: [

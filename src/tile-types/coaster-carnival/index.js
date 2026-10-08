@@ -51,6 +51,8 @@ export const coasterCarnival = {
   version: 1,
   title: "Coaster Carnival",
   summary: "A roller coaster to ride, with your rpg.actor sprite in the front row.",
+  // Published tiles of this type can be copied onto a Zine Scene page and run there.
+  zinePage: "live",
   credits: [["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, "."]],
 
   inputs: [

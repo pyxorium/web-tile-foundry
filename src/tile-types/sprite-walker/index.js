@@ -19,6 +19,8 @@ export const spriteWalker = {
   version: 1,
   title: "Sprite Walker",
   summary: "Your rpg.actor sprite, out for a walk.",
+  // Published tiles of this type can be copied onto a Zine Scene page and run there.
+  zinePage: "live",
   credits: [["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, "."]],
 
   inputs: [

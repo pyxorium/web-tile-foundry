@@ -2,6 +2,7 @@ import { lookOf, lookColors } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
 import { soundForReader, soundPath, SOUND_COST, QUOTE_SOUND_COST } from "./sound.js";
+import { tileForReader } from "./piece.js";
 export { cropRect } from "../../core/pictures.js";
 
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
@@ -27,6 +28,9 @@ export const LAYOUTS = Object.freeze([
   // and a few words on a band near the bottom; and one short line set large.
   { value: "overlay", label: "Words over picture", shows: ["picture", "heading", "words"], fill: "always" },
   { value: "quote", label: "Big quote", shows: ["words", "subtitle"], labels: { words: "Quote", subtitle: "Who said it (optional)" } },
+  // Stage 4: one of the creator's own published tiles, live on the page (tap to
+  // start), with an optional heading and words below (see piece.js).
+  { value: "tile", label: "A tile", shows: ["piece", "heading", "words"], labels: { piece: "Your tile", words: "Words (optional)" } },
 ]);
 
 export const PAGES = Object.freeze([
@@ -60,15 +64,21 @@ export function wordSize(text) {
 // (which also has its footer). "both" is picture and words, measured with a
 // tall picture (the most room a picture takes).
 // "overlay" (words over picture) is the band's room; "quote" is the most a big
-// quote holds at its smallest size (it has no heading).
+// quote holds at its smallest size (it has no heading). "tile" is the words under
+// a tile (its box takes half the page; measured in all looks, with and without
+// the sprite's lane and the sound band, Oct 8). "tile" is the words under
+// a tile (its box takes half the page; measured in all looks, with and without
+// the sprite's lane and the sound band, Oct 8).
 export const WORD_LIMITS = Object.freeze({
   letter: {
     words: { page: [1380, 1230], back: [1230, 990] }, both: { page: [560, 450], back: [450, 250] },
     overlay: { page: [300, 220], back: [240, 160] }, quote: { page: [180, 180], back: [180, 180] },
+    tile: { page: [560, 380], back: [420, 230] },
   },
   a4: {
     words: { page: [1230, 1090], back: [1090, 890] }, both: { page: [540, 390], back: [350, 160] },
     overlay: { page: [280, 200], back: [220, 140] }, quote: { page: [180, 180], back: [180, 180] },
+    tile: { page: [510, 320], back: [320, 180] },
   },
 });
 
@@ -91,7 +101,7 @@ export function wordLimit(spec, page, values = {}) {
   const heading = page && String(page.heading || "").trim() ? 1 : 0;
   // The sprite's lane takes room from words that fill the page; the band of
   // words over a picture and a big quote keep theirs (measured).
-  const fills = layout === "words" || layout === "both";
+  const fills = layout === "words" || layout === "both" || layout === "tile";
   const lane = fills && page && page.sprite && usableSprite(values.sprite) ? SPRITE_COST : 0;
   // The sound band (stage 3) takes its room the same way, as soon as the switch
   // is on; a big quote loses a little; words over a picture keep theirs (measured).
@@ -177,7 +187,7 @@ export function cleanCrop(crop) {
  * cleaned. `src(page)` gives a picture's address (its tile path, or in the
  * Foundry preview a data: address). `paper` and `look` size filled pictures.
  */
-export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id) } = {}) {
+export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id), tileSrc = null } = {}) {
   return PAGES.map((spec, i) => {
     const p = pages[i] || { id: spec.id };
     const shows = showsOf(spec, p);
@@ -189,6 +199,10 @@ export function zinePages(pages, src = picturePath, { paper, look, sprite = fals
     if (shows.includes("heading")) out.heading = cleanText(p.heading, HEADING_MAX).replace(/\n+/g, " ");
     if (shows.includes("subtitle")) out.subtitle = cleanText(p.subtitle, SUBTITLE_MAX).replace(/\n+/g, " ");
     if (shows.includes("words")) out.words = cleanText(p.words);
+    if (shows.includes("piece")) {
+      const tile = tileForReader(p, spec.id, tileSrc ? (path) => tileSrc(spec.id, path) : undefined);
+      if (tile) out.tile = tile;
+    }
     const marks = cleanMarks(p.marks, PAGE_SIZES[paper] || PAGE_SIZES.letter);
     if (marks.length) out.marks = marks;
     out.picture = null;
@@ -216,7 +230,7 @@ export function usesSprite(pages, sprite) {
   return usableSprite(sprite) && (pages || []).some((p) => p && p.sprite);
 }
 
-export function zineConfig({ title, handle, paper, look, ink, pages, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, preview = false }) {
+export function zineConfig({ title, handle, paper, look, ink, pages, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, tileSrc, preview = false }) {
   const withSprite = usesSprite(pages, sprite);
   const config = {
     version: CONFIG_VERSION,
@@ -226,7 +240,7 @@ export function zineConfig({ title, handle, paper, look, ink, pages, made, src, 
     handle: String(handle || "").replace(/^@/, "").trim(),
     made: made || "",
     makeUrl: MAKE_URL,
-    pages: zinePages(pages, src, { paper, look, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}) }),
+    pages: zinePages(pages, src, { paper, look, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}), ...(tileSrc ? { tileSrc } : {}) }),
   };
   // Sounds (stage 3): the back page credits plyr.fm.
   if (config.pages.some((p) => p.sound)) config.sounds = true;

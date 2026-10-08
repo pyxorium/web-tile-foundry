@@ -681,7 +681,7 @@ function PagesInput({ input, value, onChange, values, type, context }) {
 
   const pictureBytes = pagesBytes(input, pages);
   const limit = type && type.maxBytes;
-  const has = (p) => p && (p.picture || (p.heading || "").trim() || (p.words || "").trim() || (p.subtitle || "").trim() || (input.pageToggles || []).some((t) => p[t.key]) || (Array.isArray(p.marks) && p.marks.length > 0));
+  const has = (p) => p && (p.picture || (p.heading || "").trim() || (p.words || "").trim() || (p.subtitle || "").trim() || (input.pageToggles || []).some((t) => p[t.key]) || (Array.isArray(p.marks) && p.marks.length > 0) || (p.piece && p.piece.uri));
   const fullness = input.wordLimit ? pageFullness(input, spec, page, values) : null;
   const words = page.words || "";
 
@@ -748,6 +748,25 @@ function PagesInput({ input, value, onChange, values, type, context }) {
           );
         })}
 
+        {shows.includes("piece") && input.piece && (
+          <div className="field page-piece">
+            <span className="field-label">{labelFor("piece", "Piece")}</span>
+            <TogglePanel
+              key={`${spec.id}-piece`}
+              panel={input.piece.panel}
+              page={page}
+              values={values}
+              context={context}
+              getPage={() => latest.current.find((p) => p.id === spec.id)}
+              patchPage={(change) => {
+                const now = latest.current.find((p) => p.id === spec.id);
+                if (!now) return;
+                const c = typeof change === "function" ? change(now) : change;
+                if (c) patch(now.id, c);
+              }}
+            />
+          </div>
+        )}
         {shows.includes("picture") && (
           <div className="page-picture">
             {page.picture ? <PictureThumb picture={page.picture} /> : <span className="page-thumb page-thumb-empty">No picture</span>}

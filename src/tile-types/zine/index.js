@@ -5,6 +5,7 @@ import {
 } from "./pages.js";
 import { LOOK_OPTIONS, INK_OPTIONS, DEFAULT_LOOK, DEFAULT_INK } from "./looks.js";
 import { soundProblems, soundBytes } from "./sound.js";
+import { pieceProblems, pieceBytes } from "./piece.js";
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || "/";
 
@@ -88,7 +89,18 @@ export const zine = {
       kind: "pages",
       label: "Pages",
       help: "Pick a page to fill it in. Pictures are made smaller on your computer before they're added.",
-      sizeLabel: "Pictures and sounds",
+      sizeLabel: "Pictures, sounds and tiles",
+      // "A tile" pages: one of your published tiles, copied in and run on the page.
+      piece: {
+        panel: {
+          async mount(element, api) {
+            const { mountTilePanel } = await import("./tilepanel.js");
+            return mountTilePanel(element, api);
+          },
+        },
+        problems: (page, spec) => pieceProblems(page, spec),
+        bytes: pieceBytes,
+      },
       pages: PAGES,
       layouts: LAYOUTS,
       headingMax: HEADING_MAX,

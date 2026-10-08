@@ -1,2 +1,2 @@
 export const FOUNDRY_NAME = "Web Tile Foundry";
-export const FOUNDRY_VERSION = "0.11.1";
+export const FOUNDRY_VERSION = "0.12.0";

@@ -17,7 +17,14 @@ import { SOUND_ROW } from "../sound.js";
 // Config (JSON in #zine-config): { version, paper, look, title, handle, made,
 //   makeUrl, pages: [{ id, kind: "cover"|"page"|"back", label, shows,
 //   heading, subtitle, words, picture: { src, width, height, alt } | null,
-//   sound?: { src, title, details?, url?, seconds } }], sounds?: true }
+//   sound?: { src, title, details?, url?, seconds },
+//   tile?: { name, by, url?, page, refs: [{ ref, src }], poster? } }], sounds?: true }
+//
+// Tiles on a page (stage 4, layout "tile"): one of the creator's own tiles, its
+// files copied into the zine. Its banner shows with a play button; a tap fetches
+// its files through the same queue as pictures and hands them to a frame as
+// blob: copies of its own (way C of the stage 4 host test: the nested frame needs
+// no service worker). It stops (the frame is removed) when the reader leaves the page.
 //
 // Loading (stage 3): pictures are fetched only as the reader nears their page:
 // first the pages being shown, then the pages either side, one file at a time.
@@ -225,6 +232,32 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 .now { position: absolute; top: 8px; right: 8px; z-index: 6; display: flex; align-items: center; gap: 7px; max-width: min(70%, 320px); padding: 4px 4px 4px 11px;
   border-radius: 999px; background: rgba(27,26,23,.86); color: #fff; font-size: 12px; line-height: 1.2; }
 .now[hidden], .card .now { display: none; }
+/* A tile on the page (stage 4): its banner and a play button, then the tile itself. */
+.zp.tile-page .tilebox { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 0 0 8px; }
+.zp.tile-page.has-words .tilebox { flex: 0 0 auto; height: calc(var(--ph) * 0.5); }
+.zp .tileframe { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #111; border: 1px solid var(--line); border-radius: 4px; }
+.zp .tileframe img.poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.zp .tileframe iframe { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%; border: 0; background: #111; }
+.zp .tile-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px; }
+.zp .tileframe[data-state="idle"], .zp .tileframe[data-state="failed"] { cursor: pointer; }
+.zp .tile-play { flex: none; min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); font: 600 11px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
+.zp .tile-play:disabled { opacity: .75; cursor: default; }
+.zp .tile-play[hidden], .zp .tile-note[hidden], .zp .tile-again[hidden] { display: none; }
+.zp .tile-note { color: var(--accent); }
+.zp .tile-again { flex: none; min-height: 24px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--ink); font-size: 10.5px; cursor: pointer; }
+.zp .tile-play:focus-visible, .zp .tile-again:focus-visible, .zp .tcap a:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
+[data-look="riso"] .zp .tile-play { background: var(--ink-b); color: var(--ink); }
+[data-look="collage"] .zp .tile-play { background: var(--accent); }
+.zp .tcap { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 28px; margin: 6px 0 0; font-size: 10.5px; line-height: 1.3; color: var(--soft); }
+.zp .tcap b { color: var(--ink); font-weight: 700; overflow-wrap: anywhere; }
+.zp .tcap a { margin-left: auto; color: var(--accent); text-decoration: none; }
+.zp .tcap a:hover { text-decoration: underline; }
+[data-look="photocopy"] .zp .tileframe { border: 1.5px dashed var(--ink); border-radius: 0; }
+[data-look="photocopy"] .zp .tcap a { color: var(--ink); text-decoration: underline; }
+[data-look="collage"] .zp .tileframe { border: 6px solid #fff; border-radius: 2px; box-shadow: 0 2px 8px rgba(40,25,5,.3); }
+[data-look="collage"] .zp .tilebox::before { content: ""; position: absolute; z-index: 3; top: -7px; left: 50%; width: 64px; height: 16px; margin-left: -32px; background: rgba(240,228,190,.78); transform: rotate(-3deg); pointer-events: none; }
+[data-look="riso"] .zp .tileframe { border: 2px solid var(--ink-b); }
+.card .tilebox { visibility: hidden; }
 /* A slow or failed picture on the pages shown: a quiet note with Try again. */
 .loadnote { position: absolute; top: 8px; left: 8px; z-index: 6; display: flex; align-items: center; gap: 8px; max-width: min(70%, 320px); padding: 4px 4px 4px 11px;
   border-radius: 999px; background: rgba(27,26,23,.78); color: #fff; font-size: 12px; line-height: 1.2; }
@@ -288,11 +321,11 @@ export const READER_JS = String.raw`
   var STILL_MS = ${LOAD_TIMES.still}, RETRY_MS = ${LOAD_TIMES.retry};
   var shownNow = []; // the pages being shown (indices)
   function getBytes(src) {
-    if (config.preview && src.indexOf("clip:") === 0) {
-      // In the Foundry's preview, sounds come from the Foundry (they're in memory there).
+    if (config.preview && /^(clip|piece):/.test(src)) {
+      // In the Foundry's preview, sounds and tile files come from the Foundry (they're in memory there).
       return new Promise(function (resolve, reject) {
         clipAsks[src] = { resolve: resolve, reject: reject };
-        try { window.parent.postMessage({ zine: "clip", src: src }, "*"); } catch (e) { reject(e); }
+        try { window.parent.postMessage({ zine: src.slice(0, src.indexOf(":")), src: src }, "*"); } catch (e) { reject(e); }
       });
     }
     return fetch(src).then(function (res) {
@@ -760,6 +793,12 @@ export const READER_JS = String.raw`
         if (hasWords) band.appendChild(wordsBlock(page.words));
         e.appendChild(band);
       }
+    } else if (page.layout === "tile") {
+      // A tile: the creator's own tile, live on the page once tapped.
+      e.classList.add("tile-page");
+      if (heading) e.appendChild(el("h2", null, page.heading));
+      e.appendChild(tileBox(page));
+      if (hasWords) { e.classList.add("has-words"); e.appendChild(wordsBlock(page.words)); }
     } else if (page.layout === "quote") {
       // Big quote: the words set large (shrunk to fit if long), who said it below.
       e.classList.add("quote");
@@ -796,6 +835,169 @@ export const READER_JS = String.raw`
     return e;
   }
 
+  // Tiles on a page (stage 4). One running frame per page; it stops when the page goes.
+  var tilesOn = {}; // page id -> { frame, urls, timers, state, slow, error }
+  // The tile's controls sit in the caption line under its frame (never on the
+  // tile, whose own gear is top right): Play, then Loading / Still loading / Try
+  // again. The banner itself also starts it. No Stop: turning the page stops it.
+  function tileBox(p) {
+    var t = p.tile;
+    var box = el("div", "tilebox");
+    var frame = el("div", "tileframe");
+    box.appendChild(frame);
+    if (!t) { frame.appendChild(el("span", "tile-empty", "Your tile goes here")); return box; }
+    frame.setAttribute("data-tile", p.id);
+    frame.setAttribute("data-state", tilesOn[p.id] ? tilesOn[p.id].state : "idle");
+    if (t.poster) frame.appendChild(image({ src: t.poster }, "poster", ""));
+    frame.addEventListener("click", function (e) {
+      var me = tilesOn[p.id];
+      if (me && me.state !== "failed") return; // running or on its way
+      e.stopPropagation();
+      startTile(p);
+    });
+    var cap = el("div", "tcap");
+    cap.setAttribute("data-cap", p.id);
+    var play = el("button", "tile-play", "▶ Play");
+    play.type = "button";
+    play.setAttribute("aria-label", "Play “" + t.name + "”");
+    play.addEventListener("click", function (e) { e.stopPropagation(); startTile(p); });
+    var note = el("span", "tile-note");
+    note.setAttribute("aria-live", "polite");
+    note.hidden = true;
+    var again = el("button", "tile-again", "Try again");
+    again.type = "button";
+    again.hidden = true;
+    again.addEventListener("click", function (e) { e.stopPropagation(); retryTile(p); });
+    cap.appendChild(play);
+    cap.appendChild(el("b", null, t.name));
+    // The maker shows only when it isn't the zine's own author (today, never).
+    if (t.by && t.by !== "@" + config.handle) cap.appendChild(el("span", "tile-by", "by " + t.by));
+    cap.appendChild(note);
+    cap.appendChild(again);
+    if (t.url) {
+      var a = el("a", null, "Open it ↗");
+      a.href = t.url; a.target = "_blank"; a.rel = "noopener";
+      a.setAttribute("aria-label", "Open “" + t.name + "” on its own page (opens a new tab)");
+      cap.appendChild(a);
+    }
+    box.appendChild(cap);
+    return box;
+  }
+  function tilePage(id) { return config.pages.filter(function (q) { return q.id === id; })[0]; }
+  function drawTile(id) {
+    var frame = root.querySelector('.tileframe[data-tile="' + id + '"]');
+    var cap = root.querySelector('.tcap[data-cap="' + id + '"]');
+    if (!frame || !cap) return;
+    var me = tilesOn[id];
+    var state = me ? me.state : "idle";
+    frame.setAttribute("data-state", state);
+    var play = cap.querySelector(".tile-play"), note = cap.querySelector(".tile-note"), again = cap.querySelector(".tile-again");
+    play.textContent = state === "loading" ? "… Loading" : "▶ Play";
+    play.disabled = state === "loading";
+    play.hidden = state === "running" || state === "failed";
+    var words = "";
+    if (state === "loading" && me.slow) words = "Still loading…";
+    else if (state === "failed") words = "Couldn't load it (" + me.error + ")";
+    note.textContent = words;
+    note.hidden = !words;
+    again.hidden = !(me && (state === "failed" || me.slow === 2));
+  }
+  function swapRefs(html, map) {
+    Object.keys(map).forEach(function (ref) {
+      html = html.split('"' + ref + '"').join('"' + map[ref] + '"').split("'" + ref + "'").join("'" + map[ref] + "'");
+    });
+    return html;
+  }
+  // In a sealed frame (the Foundry's own preview, origin "null") a frame can't be
+  // opened at a blob: address, so the tile's page gets its files written into it:
+  // scripts inline, everything else as data: addresses (way D of the host test).
+  var SEALED = location.origin === "null";
+  var END_TAG = "<" + "/script";
+  function textOfUrl(u) { return fetch(u).then(function (res) { return res.text(); }); }
+  function dataOfUrl(u) {
+    return fetch(u).then(function (res) { return res.blob(); }).then(function (b) {
+      return new Promise(function (ok, no) { var r = new FileReader(); r.onload = function () { ok(r.result); }; r.onerror = no; r.readAsDataURL(b); });
+    });
+  }
+  function inlinePage(html, refs, map) {
+    return Promise.all(refs.map(function (r) {
+      var u = map[r.ref];
+      if (/\.js$/i.test(r.ref)) return textOfUrl(u).then(function (js) { return { ref: r.ref, js: js.split(END_TAG).join("<\\/script") }; });
+      return dataOfUrl(u).then(function (d) { return { ref: r.ref, data: d }; });
+    })).then(function (parts) {
+      var data = {};
+      parts.forEach(function (x) {
+        if (x.js != null) {
+          html = html.split('<script src="' + x.ref + '">' + END_TAG + ">").join("<script>" + x.js + END_TAG + ">")
+                     .split("<script src='" + x.ref + "'>" + END_TAG + ">").join("<script>" + x.js + END_TAG + ">");
+        } else data[x.ref] = x.data;
+      });
+      return swapRefs(html, data);
+    });
+  }
+  function startTile(p) {
+    var t = p.tile;
+    stopTile(p.id, true);
+    var me = { state: "loading", slow: 0, urls: [], frame: null };
+    tilesOn[p.id] = me;
+    me.timers = [
+      setTimeout(function () { if (tilesOn[p.id] === me && me.state === "loading") { me.slow = 1; drawTile(p.id); } }, STILL_MS),
+      setTimeout(function () { if (tilesOn[p.id] === me && me.state === "loading") { me.slow = 2; drawTile(p.id); } }, RETRY_MS),
+    ];
+    drawTile(p.id);
+    var map = {};
+    // The tile's files come through the zine's queue (kept, each asked for once),
+    // then go to the tile's frame as its own blob: copies.
+    Promise.all(t.refs.map(function (r) { return fileUrl(r.src, true).then(function (u) { map[r.ref] = u; }); }))
+      .then(function () { return fileUrl(t.page, true); })
+      .then(textOfUrl)
+      .then(function (html) { return SEALED ? inlinePage(html, t.refs, map).then(function (h) { return { srcdoc: h }; }) : { html: html }; })
+      .then(function (made) {
+        if (tilesOn[p.id] !== me) return;
+        var box = root.querySelector('.tileframe[data-tile="' + p.id + '"]');
+        if (!box) { stopTile(p.id, true); return; }
+        var f = document.createElement("iframe");
+        f.title = t.name;
+        if (made.srcdoc != null) {
+          f.srcdoc = made.srcdoc;
+        } else {
+          var u = URL.createObjectURL(new Blob([swapRefs(made.html, map)], { type: "text/html" }));
+          me.urls.push(u);
+          f.src = u;
+        }
+        box.appendChild(f);
+        me.frame = f;
+        me.state = "running";
+        me.timers.forEach(clearTimeout);
+        drawTile(p.id);
+      }, function (err) {
+        if (tilesOn[p.id] !== me) return;
+        me.timers.forEach(clearTimeout);
+        me.state = "failed";
+        me.error = (err && err.message) || "unknown problem";
+        drawTile(p.id);
+      });
+  }
+  function stopTile(id, quiet) {
+    var me = tilesOn[id];
+    if (!me) return;
+    delete tilesOn[id];
+    (me.timers || []).forEach(clearTimeout);
+    if (me.frame) me.frame.remove();
+    me.urls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+    if (!quiet) drawTile(id);
+  }
+  function retryTile(p) {
+    var me = tilesOn[p.id];
+    // Still downloading (the host may be stuck): start the zine afresh on this page.
+    if (me && me.state === "loading" && !config.preview) return restart(p.id);
+    startTile(p);
+  }
+  function stopTilesOffPage() {
+    var ids = shownNow.filter(function (i) { return i != null; }).map(function (i) { return config.pages[i].id; });
+    Object.keys(tilesOn).forEach(function (id) { if (ids.indexOf(id) < 0) stopTile(id); });
+  }
+
   // A big quote starts large and shrinks until it fits (never below 18px).
   function fitQuote(pageEl) {
     var box = pageEl.querySelector(".quote-box"), q = pageEl.querySelector(".big");
@@ -822,6 +1024,7 @@ export const READER_JS = String.raw`
   }
 
   function build() {
+    Object.keys(tilesOn).forEach(function (id) { stopTile(id, true); });
     root.textContent = "";
     applyLook();
     size = SIZES[config.paper] || SIZES.letter;
@@ -927,6 +1130,7 @@ export const READER_JS = String.raw`
   function show() {
     var v = views()[viewIndex()];
     shownNow = v.slice();
+    stopTilesOffPage();
     var cols = mode === "spread" ? 2 : 1;
     pageEls.forEach(function (e, i) {
       var slot = v.indexOf(i);
@@ -1013,11 +1217,11 @@ export const READER_JS = String.raw`
         if (keep) goto(keep);
       } else if (e.data.zine === "goto") {
         goto(e.data.id);
-      } else if (e.data.zine === "clip" && clipAsks[e.data.src]) {
+      } else if ((e.data.zine === "clip" || e.data.zine === "piece") && clipAsks[e.data.src]) {
         var ask = clipAsks[e.data.src];
         delete clipAsks[e.data.src];
-        if (e.data.bytes) ask.resolve(new Blob([e.data.bytes], { type: "audio/mpeg" }));
-        else ask.reject(new Error(e.data.error || "the sound isn't ready"));
+        if (e.data.bytes) ask.resolve(new Blob([e.data.bytes], { type: e.data.type || (e.data.zine === "clip" ? "audio/mpeg" : "") }));
+        else ask.reject(new Error(e.data.error || (e.data.zine === "clip" ? "the sound isn't ready" : "the tile isn't ready")));
       }
     });
     try { window.parent.postMessage({ zine: "ready" }, "*"); } catch (e) {}

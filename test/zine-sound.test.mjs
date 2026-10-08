@@ -51,7 +51,7 @@ test("the zine type still follows the contract, with a 20 MB limit and the lamej
   const credits = JSON.stringify(zine.credits);
   assert.ok(credits.includes("lamejs") && credits.includes("LGPL") && credits.includes("plyr.fm") && credits.includes("rpg.actor"));
   assert.ok(soundToggle && soundToggle.panel && typeof soundToggle.panel.mount === "function");
-  assert.equal(pagesInput.sizeLabel, "Pictures and sounds");
+  assert.equal(pagesInput.sizeLabel, "Pictures, sounds and tiles");
 });
 
 test("the contract checks page switches' panels, problems and sizes", () => {

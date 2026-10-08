@@ -16,6 +16,21 @@ function clipSrc(page) {
   return `clip:${page.id}:${clipNumbers.get(bytes)}`;
 }
 
+// Tiles in the preview (stage 4): the reader asks for a tile's files by
+// "piece:<page id>:<n><path>" and the Foundry hands over their bytes. The number
+// changes when the page's tile is copied again, so nothing old is reused.
+const tileNumbers = new WeakMap();
+let tileCount = 0;
+function tileSrc(pages) {
+  return (pageId, path) => {
+    const page = (pages || []).find((p) => p && p.id === pageId);
+    const files = page && page.piece && page.piece.files;
+    if (!files) return `piece:${pageId}:0${path}`;
+    if (!tileNumbers.has(files)) tileNumbers.set(files, ++tileCount);
+    return `piece:${pageId}:${tileNumbers.get(files)}${path}`;
+  };
+}
+
 // The Foundry's preview of a zine: the tile's own page and reader, in a
 // sandboxed frame like the real tile hosts, with the pictures handed in as
 // data: addresses (a frame can't read the Foundry's files). The frame is made
@@ -64,6 +79,7 @@ export function previewConfig(values) {
     sprite: values.sprite || null,
     spriteSrc: values.sprite && values.sprite.bytes ? spriteSrc(values.sprite) : undefined,
     soundSrc: clipSrc,
+    tileSrc: tileSrc(values.pages),
     preview: true,
   });
   // Decorating needs every sticker and the look's colours, even on a page with no marks yet.
@@ -144,6 +160,18 @@ export function mountZinePreview(element, { values, setValue, onSelect }) {
         frame.contentWindow.postMessage({ zine: "clip", src: m.src, bytes: copy }, "*", [copy]);
       } else {
         send({ zine: "clip", src: m.src, error: "this sound has changed since" });
+      }
+    } else if (m.zine === "piece" && typeof m.src === "string") {
+      // The reader wants one of a tile's files.
+      const match = /^piece:([A-Za-z0-9_-]+):(\d+)(\/.*)$/.exec(m.src);
+      const page = match && (latest.pages || []).find((p) => p && p.id === match[1]);
+      const files = page && page.piece && page.piece.files;
+      const file = files && String(tileNumbers.get(files)) === match[2] && files.find((f) => f.path === match[3]);
+      if (file) {
+        const copy = file.bytes.slice().buffer;
+        frame.contentWindow.postMessage({ zine: "piece", src: m.src, bytes: copy, type: file.contentType || "" }, "*", [copy]);
+      } else {
+        send({ zine: "piece", src: m.src, error: "this tile has changed since" });
       }
     } else if (m.zine === "selected") {
       deco.selected = Boolean(m.has);

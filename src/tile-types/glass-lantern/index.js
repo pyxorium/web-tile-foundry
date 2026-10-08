@@ -40,6 +40,8 @@ export const glassLantern = {
   version: 1,
   title: "Glass Lantern",
   summary: "A stained glass die, lit from inside, to turn and roll.",
+  // Published tiles of this type can be copied onto a Zine Scene page and run there.
+  zinePage: "live",
 
   inputs: [
     {

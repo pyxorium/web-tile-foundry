@@ -431,8 +431,10 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
   const bottom = y + h - (page.lane ? 26 + 58 : 26) * u; // a sprite keeps a lane at the bottom
   const hasWords = Boolean(page.words);
   if (bitmap) {
-    const maxH = hasWords ? h * (style.look === "collage" ? 0.4 : 0.48) : bottom - cy;
-    const placed = drawPicture(g, bitmap, { x: x + pad, y: cy, w: inner, h: maxH, top: hasWords }, u, style, TILTS[1], pic);
+    // A tile (stage 4) shows its own banner in its own colors, whatever the look.
+    const tile = page.layout === "tile";
+    const maxH = hasWords ? h * (tile ? 0.5 : style.look === "collage" ? 0.4 : 0.48) : bottom - cy;
+    const placed = drawPicture(g, bitmap, { x: x + pad, y: cy, w: inner, h: maxH, top: hasWords }, u, tile ? { ...style, look: "clean" } : style, tile ? 0 : TILTS[1], pic);
     cy = placed.y + placed.h + 10 * u;
   }
   if (hasWords) {
@@ -457,7 +459,8 @@ export async function drawZineArt(values) {
   const title = cleanText(values.name, TITLE_MAX).replace(/\n+/g, " ");
   const handle = String(values.handle || "").replace(/^@/, "");
   const coverPic = await bitmapOf(pages[0].picture && raw[0] && raw[0].picture);
-  const firstPic = await bitmapOf(pages[1].picture && raw[1] && raw[1].picture);
+  const tileBanner = pages[1].tile && raw[1] && raw[1].piece && (raw[1].piece.files || []).find((f) => f.path === "/banner.png");
+  const firstPic = tileBanner ? await bitmapOf({ bytes: tileBanner.bytes, contentType: "image/png" }) : await bitmapOf(pages[1].picture && raw[1] && raw[1].picture);
   const cover = { title, subtitle: pages[0].subtitle, handle, bitmap: coverPic, pic: pages[0].picture };
   const raw0 = raw[0] || {}, raw1 = raw[1] || {};
   const sprite = values.sprite && values.sprite.geometry && values.sprite.bytes ? values.sprite : null;

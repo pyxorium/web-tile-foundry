@@ -84,6 +84,10 @@
 //                          problems(page, spec, values) -> sentences that stop building;
 //                          bytes(page) -> how many bytes it adds (counted in the size meter).
 //                        sizeLabel, optional: what the size meter counts (default "Pictures").
+//                        piece: { panel, problems?, bytes? }, needed when a layout (or a
+//                        page's fields) shows "piece": something the type manages itself
+//                        and keeps in page.piece (Zine Scene: one of the creator's tiles).
+//                        panel, problems and bytes work as for page toggles (above).
 //             showIf(values): OPTIONAL; the input is shown (and checked) only when it returns true.
 //             Inputs with the same `group` are shown together under that group's title.
 //   groups    array    OPTIONAL: [{ id, title, collapsed? }] titles for grouped inputs;
@@ -103,6 +107,9 @@
 //                      the inputs have problems. With needsResult: true, update is
 //                      also called after each new build; other types ignore it.
 //                      `setValue(key, value)` changes a value as if the user had.
+//   zinePage           OPTIONAL: whether a published tile of this type can go on a
+//                      Zine Scene page: "live" (copied in and run on the page) or
+//                      "tape" (shown as a J-card with a link). Omitted: it can't.
 //   credits            OPTIONAL: thanks shown with the type's panel, e.g. for
 //                      outside work the type uses. A list of credits, each a list of
 //                      parts: a string, or { text, href } for a link.
@@ -148,7 +155,9 @@ export function maxBytesFor(type) {
 export const INPUT_KINDS = Object.freeze(["sprite", "choice", "text", "palette", "brush", "range", "seed", "toggle", "action", "tracks", "pages"]);
 
 /** What a page in a "pages" input can show. */
-export const PAGE_FIELDS = Object.freeze(["picture", "heading", "words", "subtitle"]);
+export const PAGE_FIELDS = Object.freeze(["picture", "heading", "words", "subtitle", "piece"]);
+/** How a published tile of a type can go on a Zine Scene page (a type's zinePage). */
+export const ZINE_PAGE_KINDS = Object.freeze(["live", "tape"]);
 /** Picture types a "pages" input keeps (see src/core/pictures.js). */
 export const PAGE_PICTURE_TYPES = Object.freeze(["image/webp", "image/jpeg"]);
 
@@ -231,6 +240,9 @@ export function checkTileType(type) {
       throw new Error(`${where}: credits must be a list of credits, each a list of strings and { text, href } links.`);
     }
   }
+  if (type.zinePage !== undefined && !ZINE_PAGE_KINDS.includes(type.zinePage)) {
+    throw new Error(`${where}: zinePage must be one of ${ZINE_PAGE_KINDS.join(", ")}.`);
+  }
   if (type.maxBytes !== undefined && !(Number.isInteger(type.maxBytes) && type.maxBytes > 0 && type.maxBytes <= MAX_TILE_BYTES_CAP)) {
     throw new Error(`${where}: maxBytes must be a whole number of bytes from 1 to ${MAX_TILE_BYTES_CAP}.`);
   }
@@ -290,6 +302,14 @@ function checkPagesInput(where, input) {
     if (t.panel !== undefined && !(t.panel && typeof t.panel.mount === "function")) throw new Error(`${name}: a page toggle's panel needs a mount function.`);
   }
   if (input.zoomMax !== undefined && !(Number.isFinite(input.zoomMax) && input.zoomMax >= 1)) throw new Error(`${name}: zoomMax must be a number from 1.`);
+  const usesPiece = layouts.some((l) => l.shows.includes("piece")) || input.pages.some((p) => !p.layouts && p.fields.includes("piece"));
+  if (usesPiece || input.piece !== undefined) {
+    const pc = input.piece;
+    if (!(pc && pc.panel && typeof pc.panel.mount === "function")) throw new Error(`${name}: a layout shows "piece", so the input needs piece: { panel } with a mount function.`);
+    for (const f of ["problems", "bytes"]) {
+      if (pc[f] !== undefined && typeof pc[f] !== "function") throw new Error(`${name}: piece ${f} must be a function.`);
+    }
+  }
 }
 
 /** The layout a page uses ({ value, label, shows, ... }), or null for a page without layouts. */
@@ -356,6 +376,9 @@ export function pageProblems(input, pages, values = {}) {
     for (const t of input.pageToggles || []) {
       if (p[t.key] && t.problems) for (const m of t.problems(p, spec, values) || []) out.push(m);
     }
+    if (shows.includes("piece") && input.piece && input.piece.problems) {
+      for (const m of input.piece.problems(p, spec, values) || []) out.push(m);
+    }
   });
   return out;
 }
@@ -363,11 +386,14 @@ export function pageProblems(input, pages, values = {}) {
 /** The bytes a pages input's value adds up to: pictures, plus whatever switched-on page toggles add. */
 export function pagesBytes(input, pages) {
   let n = 0;
-  for (const p of Array.isArray(pages) ? pages : []) {
-    if (!p) continue;
-    if (p.picture && p.picture.bytes) n += p.picture.bytes.length;
+  (Array.isArray(pages) ? pages : []).forEach((p, i) => {
+    if (!p) return;
+    const spec = input.pages[i];
+    const shows = spec ? pageShows(input, spec, p) : [];
+    if (p.picture && p.picture.bytes && (!spec || shows.includes("picture"))) n += p.picture.bytes.length;
+    if (shows.includes("piece") && input.piece && input.piece.bytes) n += Number(input.piece.bytes(p)) || 0;
     for (const t of input.pageToggles || []) if (p[t.key] && t.bytes) n += Number(t.bytes(p)) || 0;
-  }
+  });
   return n;
 }
 

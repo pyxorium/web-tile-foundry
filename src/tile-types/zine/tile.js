@@ -3,6 +3,7 @@ import { renderZineHtml } from "./runtime/template.js";
 import { lookOf, inkOf } from "./looks.js";
 import { zineConfig, zinePages, picturePath, showsOf, usesSprite, SPRITE_PATH, PAGES, TITLE_MAX, DESCRIPTION_MAX, cleanText } from "./pages.js";
 import { soundReady, soundPath, soundRecipe } from "./sound.js";
+import { pieceFiles, pieceRecipe } from "./piece.js";
 
 // Puts a zine tile together from the creator's pages. Kept apart from the tile
 // type (index.js) so the tests can run it in Node: the card pictures (`art`)
@@ -10,6 +11,7 @@ import { soundReady, soundPath, soundRecipe } from "./sound.js";
 //
 // Files: "/" (the page with the reader and the zine), one file per picture
 // (/pictures/<page id>.webp or .jpg), one per sound (/sounds/<page id>.mp3),
+// a page's tile under /tiles/<page id>/ (its files exactly as published),
 // /icon.png and /banner.png when `art` is given.
 
 /** The card description when the creator leaves it empty. */
@@ -44,6 +46,7 @@ export function zineRecipe({ paper, look, ink, pages, sprite = null }) {
         if (z.picture.fill) { out.picture.fill = true; out.picture.crop = z.picture.crop; }
       }
       if (z.sound) out.sound = soundRecipe({ ...byId.get(z.id), id: z.id });
+      if (z.tile) out.tile = pieceRecipe(byId.get(z.id), z.id);
       return out;
     }),
   };
@@ -67,6 +70,7 @@ export function makeZineTile({ name, description = "", handle = "", paper = "let
     const p = pages[i];
     if (p && p.picture && showsOf(spec, p).includes("picture")) files.push(makeFile(picturePath({ ...p, id: spec.id }), p.picture.bytes));
     if (soundReady(p)) files.push(makeFile(soundPath(spec.id), p.clip.bytes));
+    if (showsOf(spec, p).includes("piece")) for (const f of pieceFiles(p, spec.id)) files.push(makeFile(f.path, f.bytes));
   });
   if (art) files.push(makeFile("/icon.png", art.icon), makeFile("/banner.png", art.banner));
   const desc = cleanText(description, DESCRIPTION_MAX).replace(/\n+/g, " ") || defaultDescription(title, handle);
