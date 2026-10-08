@@ -50,6 +50,32 @@
 //                        arrive). Songs are converted by the type (src/core/audio/),
 //                        which updates their status. When the creator picks a "Then",
 //                        the song also gets transitionChosen: true.
+//               pages    a fixed set of pages (a little book), each with a picture
+//                        and words. Options: pages: [{ id, label, short?, fields?,
+//                        layouts? }] in reading order. A page with layouts: true
+//                        uses the input's `layouts` ([{ value, label, shows, labels?, fill? }],
+//                        shows a list of "picture", "heading", "words"; labels, optional,
+//                        renames fields for that layout, e.g. { words: "Quote" }; fill:
+//                        "always" means its picture always fills, so no Fit / Fill choice); otherwise
+//                        `fields` lists what it shows ("picture", "heading",
+//                        "words", "subtitle"). headingMax, subtitleMax (characters);
+//                        wordLimit(page, value, values) -> how much room the words
+//                        on that page may take (as the type lays it out), measured
+//                        by wordSize(text) (default: the number of characters).
+//                        onSelect(id), optional: called when the creator opens a page
+//                        in the editor (a preview can turn to it).
+//                        The value is a list, one entry per page, in the same order:
+//                          { id, layout?, heading?, subtitle?, words?, picture? }
+//                        picture: { bytes (Uint8Array), contentType, width, height, alt?,
+//                                   fill?, crop? }
+//                        made small in the browser (src/core/pictures.js).
+//                        With pictureFrame(page, value, values) -> { w, h } (the shape a
+//                        picture fills on that page), the editor offers Fit / Fill and a
+//                        crop (drag, and zoom from 1 to zoomMax, default 2): crop is
+//                        { x, y, zoom }, x and y from 0 to 1 (see cropRect in pictures.js).
+//                        pageToggles: [{ key, label, help?, unavailable?(values, context) }]:
+//                        switches every page offers (stored as page[key] = true);
+//                        unavailable returns a sentence when the switch can't be used.
 //             showIf(values): OPTIONAL; the input is shown (and checked) only when it returns true.
 //             Inputs with the same `group` are shown together under that group's title.
 //   groups    array    OPTIONAL: [{ id, title, collapsed? }] titles for grouped inputs;
@@ -111,7 +137,12 @@ export function maxBytesFor(type) {
   return type && type.maxBytes != null ? type.maxBytes : DEFAULT_MAX_TILE_BYTES;
 }
 
-export const INPUT_KINDS = Object.freeze(["sprite", "choice", "text", "palette", "brush", "range", "seed", "toggle", "action", "tracks"]);
+export const INPUT_KINDS = Object.freeze(["sprite", "choice", "text", "palette", "brush", "range", "seed", "toggle", "action", "tracks", "pages"]);
+
+/** What a page in a "pages" input can show. */
+export const PAGE_FIELDS = Object.freeze(["picture", "heading", "words", "subtitle"]);
+/** Picture types a "pages" input keeps (see src/core/pictures.js). */
+export const PAGE_PICTURE_TYPES = Object.freeze(["image/webp", "image/jpeg"]);
 
 /** How a song leads into the next one (tracks input): straight on, a short pause, or fade out and in with a pause. */
 export const TRANSITIONS = Object.freeze(["straight", "pause", "fade"]);
@@ -172,6 +203,7 @@ export function checkTileType(type) {
         throw new Error(`${where}: tracks input "${input.key}": picker needs mount(element, options).`);
       }
     }
+    if (input.kind === "pages") checkPagesInput(where, input);
     if (input.showIf !== undefined && typeof input.showIf !== "function") {
       throw new Error(`${where}: showIf on "${input.key}" must be a function.`);
     }
@@ -210,6 +242,107 @@ export function checkTileType(type) {
     throw new Error(`${where}: a "swatches" input needs optionPreview(key, value, inputs).`);
   }
   return type;
+}
+
+function checkPagesInput(where, input) {
+  const name = `${where}: pages input "${input.key}"`;
+  if (!Array.isArray(input.pages) || !input.pages.length) throw new Error(`${name} needs pages.`);
+  const ids = new Set();
+  const layouts = input.layouts || [];
+  for (const l of layouts) {
+    if (!l || typeof l.value !== "string" || !Array.isArray(l.shows) || !l.shows.every((f) => PAGE_FIELDS.includes(f))) {
+      throw new Error(`${name}: each layout needs a value and shows (a list of ${PAGE_FIELDS.join(", ")}).`);
+    }
+    if (l.labels !== undefined && !(l.labels && typeof l.labels === "object" && Object.entries(l.labels).every(([k, v]) => PAGE_FIELDS.includes(k) && typeof v === "string" && v))) {
+      throw new Error(`${name}: layout "${l.value}": labels must name fields (${PAGE_FIELDS.join(", ")}) with text.`);
+    }
+    if (l.fill !== undefined && l.fill !== "always") throw new Error(`${name}: layout "${l.value}": fill can only be "always".`);
+  }
+  for (const page of input.pages) {
+    if (!page || typeof page.id !== "string" || !page.id || ids.has(page.id)) throw new Error(`${name}: every page needs its own id.`);
+    ids.add(page.id);
+    if (page.layouts) {
+      if (!layouts.length) throw new Error(`${name}: page "${page.id}" uses layouts, but the input has none.`);
+    } else if (!Array.isArray(page.fields) || !page.fields.length || !page.fields.every((f) => PAGE_FIELDS.includes(f))) {
+      throw new Error(`${name}: page "${page.id}" needs fields (some of ${PAGE_FIELDS.join(", ")}) or layouts: true.`);
+    }
+  }
+  if (input.wordLimit !== undefined && typeof input.wordLimit !== "function") throw new Error(`${name}: wordLimit must be a function.`);
+  if (input.wordSize !== undefined && typeof input.wordSize !== "function") throw new Error(`${name}: wordSize must be a function.`);
+  if (input.onSelect !== undefined && typeof input.onSelect !== "function") throw new Error(`${name}: onSelect must be a function.`);
+  if (input.pictureFrame !== undefined && typeof input.pictureFrame !== "function") throw new Error(`${name}: pictureFrame must be a function.`);
+  for (const t of input.pageToggles || []) {
+    if (!t || typeof t.key !== "string" || !t.key || typeof t.label !== "string" || PAGE_FIELDS.includes(t.key) || ["id", "layout"].includes(t.key)) {
+      throw new Error(`${name}: each page toggle needs its own key and a label.`);
+    }
+    if (t.unavailable !== undefined && typeof t.unavailable !== "function") throw new Error(`${name}: a page toggle's unavailable must be a function.`);
+  }
+  if (input.zoomMax !== undefined && !(Number.isFinite(input.zoomMax) && input.zoomMax >= 1)) throw new Error(`${name}: zoomMax must be a number from 1.`);
+}
+
+/** The layout a page uses ({ value, label, shows, ... }), or null for a page without layouts. */
+export function pageLayout(input, page, value) {
+  if (!page.layouts) return null;
+  const layouts = input.layouts || [];
+  return layouts.find((l) => l.value === (value && value.layout)) || layouts[0];
+}
+
+/** What one page of a "pages" input shows, given its value (its layout). */
+export function pageShows(input, page, value) {
+  if (!page.layouts) return page.fields;
+  const layouts = input.layouts || [];
+  const layout = layouts.find((l) => l.value === (value && value.layout)) || layouts[0];
+  return layout.shows;
+}
+
+/** How full a page's words make it, in percent (0 when it has no limit). */
+export function pageFullness(input, spec, page, values = {}) {
+  if (!input.wordLimit) return 0;
+  const limit = input.wordLimit(spec, page, values);
+  const words = typeof (page && page.words) === "string" ? page.words : "";
+  const size = input.wordSize ? input.wordSize(words) : words.length;
+  if (!words) return 0;
+  return limit > 0 ? Math.ceil((size / limit) * 100) : 999;
+}
+
+/** Problems with a "pages" input's value, as plain sentences (empty when all is well). */
+export function pageProblems(input, pages, values = {}) {
+  if (!Array.isArray(pages) || pages.length !== input.pages.length) return ["The pages are missing."];
+  const out = [];
+  input.pages.forEach((spec, i) => {
+    const p = pages[i];
+    const name = spec.label || spec.id;
+    if (!p || p.id !== spec.id) {
+      out.push(`${name} is out of place.`);
+      return;
+    }
+    if (spec.layouts && !(input.layouts || []).some((l) => l.value === p.layout)) out.push(`${name} has an unknown layout.`);
+    const shows = pageShows(input, spec, p);
+    const text = (k) => (typeof p[k] === "string" ? p[k] : "");
+    if (shows.includes("heading") && input.headingMax && text("heading").length > input.headingMax) {
+      out.push(`${name}: the heading is longer than ${input.headingMax} characters.`);
+    }
+    if (shows.includes("subtitle") && input.subtitleMax && text("subtitle").length > input.subtitleMax) {
+      out.push(`${name}: the short line is longer than ${input.subtitleMax} characters.`);
+    }
+    if (shows.includes("words") && input.wordLimit) {
+      const pct = pageFullness(input, spec, p, values);
+      if (pct > 100) out.push(`Too many words for ${name.toLowerCase().startsWith("page") ? name.toLowerCase() : "the " + name.toLowerCase()} (about ${pct}% of the room on it). Shorten them${pageShows(input, spec, p).includes("picture") ? ", or pick a layout without a picture" : ""}.`);
+    }
+    const pic = p.picture;
+    if (shows.includes("picture") && pic) {
+      const ok = pic.bytes instanceof Uint8Array && pic.bytes.length > 0 && PAGE_PICTURE_TYPES.includes(pic.contentType)
+        && Number.isInteger(pic.width) && pic.width > 0 && Number.isInteger(pic.height) && pic.height > 0;
+      if (!ok) out.push(`${name}: the picture isn't ready. Choose it again.`);
+      const c = pic.crop;
+      const inRange = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi;
+      if ((pic.fill !== undefined && typeof pic.fill !== "boolean")
+        || (c !== undefined && c !== null && !(inRange(c.x, 0, 1) && inRange(c.y, 0, 1) && inRange(c.zoom, 1, input.zoomMax || 2)))) {
+        out.push(`${name}: the picture's crop isn't valid. Choose Fit, then Fill again.`);
+      }
+    }
+  });
+  return out;
 }
 
 /**
@@ -257,6 +390,9 @@ export function checkInputs(type, values) {
     }
     if (input.kind === "tracks") {
       for (const message of trackProblems(input, v)) problems.push({ key: input.key, message });
+    }
+    if (input.kind === "pages") {
+      for (const message of pageProblems(input, v, values)) problems.push({ key: input.key, message });
     }
   }
   return problems;

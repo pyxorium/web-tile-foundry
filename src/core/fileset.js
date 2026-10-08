@@ -13,6 +13,10 @@ export const CONTENT_TYPES = Object.freeze({
   ".glb": "model/gltf-binary",
   ".js": "text/javascript",
   ".mp3": "audio/mpeg",
+  ".webp": "image/webp",
+  ".jpg": "image/jpeg",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
 });
 
 const encoder = new TextEncoder();

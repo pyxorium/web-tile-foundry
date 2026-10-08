@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { spriteFromBytes } from "../core/sprite-source.js";
 import { formatSize } from "../core/fileset.js";
 import { DEBUG } from "./debug.js";
-import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX } from "../core/contract.js";
+import { cropRect, clampCrop } from "../core/pictures.js";
+import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
 // (see INPUT_KINDS in src/core/contract.js).
@@ -510,7 +511,289 @@ function TracksInput({ input, value, onChange, context }) {
   );
 }
 
+// Choosing what stays in when a picture fills its space: the frame's shape over
+// the picture; drag (or the arrow keys) to move it, the slider to zoom.
+const CROP_BOX = 240;
+function CropEditor({ picture, frame, zoomMax = 2, onChange, label }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    const u = URL.createObjectURL(new Blob([picture.bytes], { type: picture.contentType }));
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [picture.bytes, picture.contentType]);
+  const scale = Math.min(CROP_BOX / frame.w, CROP_BOX / frame.h);
+  const boxW = Math.round(frame.w * scale), boxH = Math.round(frame.h * scale);
+  const crop = { x: 0.5, y: 0.5, zoom: 1, ...(picture.crop || {}) };
+  const rect = cropRect(picture.width, picture.height, boxW, boxH, crop.x, crop.y, crop.zoom);
+  // Many small moves arrive while dragging; send at most one change per frame.
+  const pending = useRef(null);
+  const latest = useRef(crop);
+  latest.current = crop;
+  function commit(next) {
+    const clamped = clampCrop(picture.width, picture.height, boxW, boxH, next);
+    latest.current = clamped;
+    if (pending.current) { pending.current.value = clamped; return; }
+    pending.current = { value: clamped };
+    requestAnimationFrame(() => { const v = pending.current.value; pending.current = null; onChange(v); });
+  }
+  const drag = useRef(null);
+  function down(e) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, start: latest.current, w: rect.w, h: rect.h };
+  }
+  function move(e) {
+    const d = drag.current;
+    if (!d) return;
+    commit({ ...d.start, x: d.start.x - (e.clientX - d.x) / d.w, y: d.start.y - (e.clientY - d.y) / d.h });
+  }
+  function up() { drag.current = null; }
+  function key(e) {
+    const step = e.shiftKey ? 0.1 : 0.02;
+    const by = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+    if (!by) return;
+    e.preventDefault();
+    const c = latest.current;
+    commit({ ...c, x: c.x + by[0], y: c.y + by[1] });
+  }
+  return (
+    <div className="crop">
+      <div
+        className="crop-box"
+        style={{ width: boxW, height: boxH }}
+        tabIndex={0}
+        role="application"
+        aria-label={`${label}: drag the picture, or use the arrow keys, to choose what stays in`}
+        onPointerDown={down}
+        onPointerMove={move}
+        onPointerUp={up}
+        onPointerCancel={up}
+        onKeyDown={key}
+      >
+        {url && <img src={url} alt="" draggable={false} style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }} />}
+      </div>
+      <label className="crop-zoom">
+        <span>Zoom</span>
+        <input
+          type="range"
+          min="1"
+          max={zoomMax}
+          step="0.05"
+          value={crop.zoom}
+          onChange={(e) => commit({ ...latest.current, zoom: Number(e.target.value) })}
+        />
+      </label>
+      <p className="field-help crop-help">Drag to choose what stays in{frame.bleed ? "; the picture covers the whole page" : ""}.</p>
+    </div>
+  );
+}
+
+// A little book's pages (see "pages" in src/core/contract.js): a strip of page
+// buttons, and the open page's layout, picture, heading and words. Pictures are
+// made small in the browser before they're kept (src/core/pictures.js).
+function PictureThumb({ picture }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    const u = URL.createObjectURL(new Blob([picture.bytes], { type: picture.contentType }));
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [picture.bytes, picture.contentType]);
+  return url ? <img className="page-thumb" src={url} alt="" /> : <span className="page-thumb" />;
+}
+
+function PagesInput({ input, value, onChange, values, type, context }) {
+  const pages = Array.isArray(value) ? value : [];
+  const [openId, setOpenId] = useState(input.pages[0].id);
+  const [busy, setBusy] = useState({}); // page id -> true while its picture is being made small
+  const [pictureError, setPictureError] = useState({});
+  const fileRef = useRef(null);
+  // Pictures finish after other edits, so changes build on the latest pages.
+  const latest = useRef(pages);
+  latest.current = pages;
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+
+  const spec = input.pages.find((p) => p.id === openId) || input.pages[0];
+  const index = input.pages.indexOf(spec);
+  const page = pages[index] || { id: spec.id };
+  const shows = pageShows(input, spec, page);
+  const layout = pageLayout(input, spec, page);
+  const labelFor = (field, fallback) => (layout && layout.labels && layout.labels[field]) || fallback;
+  const alwaysFill = Boolean(layout && layout.fill === "always");
+
+  function open(id) {
+    setOpenId(id);
+    if (input.onSelect) input.onSelect(id);
+  }
+  function patch(id, change) {
+    const next = latest.current.map((p) => (p.id === id ? { ...p, ...change } : p));
+    latest.current = next;
+    onChange(next);
+  }
+  async function choose(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    const id = spec.id;
+    setPictureError((x) => ({ ...x, [id]: null }));
+    setBusy((x) => ({ ...x, [id]: true }));
+    try {
+      const { shrinkPicture } = await import("../core/pictures.js");
+      const made = await shrinkPicture(file);
+      const old = latest.current.find((p) => p.id === id);
+      // A new picture keeps the description and Fit / Fill; its crop starts centred.
+      const before = (old && old.picture) || {};
+      patch(id, { picture: { ...made, alt: before.alt || "", ...(before.fill ? { fill: true } : {}) } });
+    } catch (err) {
+      setPictureError((x) => ({ ...x, [id]: err.message || String(err) }));
+    } finally {
+      setBusy((x) => ({ ...x, [id]: false }));
+    }
+  }
+
+  const pictureBytes = pages.reduce((n, p) => n + (p.picture && p.picture.bytes ? p.picture.bytes.length : 0), 0);
+  const limit = type && type.maxBytes;
+  const has = (p) => p && (p.picture || (p.heading || "").trim() || (p.words || "").trim() || (p.subtitle || "").trim() || (input.pageToggles || []).some((t) => p[t.key]) || (Array.isArray(p.marks) && p.marks.length > 0));
+  const fullness = input.wordLimit ? pageFullness(input, spec, page, values) : null;
+  const words = page.words || "";
+
+  return (
+    <fieldset className="field pages">
+      <legend className="field-label">{input.label}</legend>
+      {input.help && <p className="field-help">{input.help}</p>}
+      <div className="page-strip" role="tablist" aria-label="Pages">
+        {input.pages.map((p, i) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={p.id === spec.id}
+            className={`page-tab ${p.id === spec.id ? "on" : ""} ${has(pages[i]) ? "filled" : ""}`}
+            onClick={() => open(p.id)}
+            title={p.label}
+          >
+            {p.short || p.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="page-editor" role="tabpanel" aria-label={spec.label}>
+        <p className="page-editor-title">{spec.label}</p>
+        {spec.layouts && (
+          <div className="segmented page-layouts">
+            {input.layouts.map((l) => (
+              <label key={l.value} className={page.layout === l.value ? "on" : ""}>
+                <input type="radio" name={`${input.key}-${spec.id}-layout`} checked={page.layout === l.value} onChange={() => patch(spec.id, { layout: l.value })} />
+                {l.label}
+              </label>
+            ))}
+          </div>
+        )}
+        {spec.note && <p className="field-help">{spec.note}</p>}
+        {(input.pageToggles || []).map((t) => {
+          const why = t.unavailable ? t.unavailable(values, context || {}) : null;
+          return (
+            <div key={t.key} className="page-toggle">
+              <label className="toggle">
+                <input type="checkbox" role="switch" disabled={Boolean(why)} checked={Boolean(page[t.key]) && !why} onChange={(e) => patch(spec.id, { [t.key]: e.target.checked })} />
+                <span className="toggle-track" aria-hidden="true" />
+                <span>{t.label}</span>
+              </label>
+              {(why || t.help) && <p className="field-help">{why || t.help}</p>}
+            </div>
+          );
+        })}
+
+        {shows.includes("picture") && (
+          <div className="page-picture">
+            {page.picture ? <PictureThumb picture={page.picture} /> : <span className="page-thumb page-thumb-empty">No picture</span>}
+            <div className="page-picture-tools">
+              <button type="button" className="btn btn-quiet btn-small" disabled={busy[spec.id]} onClick={() => fileRef.current && fileRef.current.click()}>
+                {busy[spec.id] ? "Making it small…" : page.picture ? "Change picture" : "Choose picture"}
+              </button>
+              {page.picture && (
+                <button type="button" className="btn btn-quiet btn-small" onClick={() => patch(spec.id, { picture: null })}>Remove</button>
+              )}
+              {page.picture && <span className="page-picture-size">{formatSize(page.picture.bytes.length)}</span>}
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.heic,.heif" hidden onChange={choose} />
+            </div>
+            {pictureError[spec.id] && <p className="field-error">{pictureError[spec.id]}</p>}
+            {page.picture && input.pictureFrame && !alwaysFill && (
+              <div className="segmented page-fill">
+                {[[false, "Fit"], [true, "Fill"]].map(([fill, text]) => (
+                  <label key={text} className={Boolean(page.picture.fill) === fill ? "on" : ""}>
+                    <input type="radio" name={`${input.key}-${spec.id}-fill`} checked={Boolean(page.picture.fill) === fill} onChange={() => patch(spec.id, { picture: { ...page.picture, fill } })} />
+                    {text}
+                  </label>
+                ))}
+              </div>
+            )}
+            {page.picture && (page.picture.fill || alwaysFill) && input.pictureFrame && input.pictureFrame(spec, page, values) && (
+              <CropEditor
+                picture={page.picture}
+                frame={input.pictureFrame(spec, page, values)}
+                zoomMax={input.zoomMax || 2}
+                label={spec.label}
+                onChange={(crop) => {
+                  const now = latest.current.find((p) => p.id === spec.id);
+                  if (now && now.picture) patch(spec.id, { picture: { ...now.picture, crop } });
+                }}
+              />
+            )}
+            {page.picture && (
+              <input
+                className="text page-alt"
+                value={page.picture.alt || ""}
+                maxLength={200}
+                placeholder="Describe the picture (optional, for screen readers)"
+                aria-label="Describe the picture"
+                onChange={(e) => patch(spec.id, { picture: { ...page.picture, alt: e.target.value } })}
+              />
+            )}
+          </div>
+        )}
+
+        {shows.includes("subtitle") && (
+          <div className="field page-text">
+            <label className="field-label" htmlFor={`${input.key}-subtitle`}>{labelFor("subtitle", "Short line (optional)")}</label>
+            <input id={`${input.key}-subtitle`} className="text" value={page.subtitle || ""} maxLength={input.subtitleMax} onChange={(e) => patch(spec.id, { subtitle: e.target.value })} />
+          </div>
+        )}
+        {shows.includes("heading") && (
+          <div className="field page-text">
+            <label className="field-label" htmlFor={`${input.key}-heading`}>{labelFor("heading", "Heading (optional)")}</label>
+            <input id={`${input.key}-heading`} className="text" value={page.heading || ""} maxLength={input.headingMax} onChange={(e) => patch(spec.id, { heading: e.target.value })} />
+          </div>
+        )}
+        {shows.includes("words") && (
+          <div className="field page-text">
+            <label className="field-label" htmlFor={`${input.key}-words`}>{labelFor("words", "Words")}</label>
+            <textarea id={`${input.key}-words`} className="text" rows={6} value={words} onChange={(e) => patch(spec.id, { words: e.target.value })} />
+            {fullness != null && (
+              <span className={`counter ${fullness > 100 ? "over" : ""}`}>
+                {fullness > 100 ? `Too many words (${fullness}%)` : `${fullness}% of the page`}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="page-nav">
+          <button type="button" className="btn btn-quiet btn-small" disabled={index === 0} onClick={() => open(input.pages[index - 1].id)}>← {index > 0 ? input.pages[index - 1].label : ""}</button>
+          <button type="button" className="btn btn-quiet btn-small" disabled={index === input.pages.length - 1} onClick={() => open(input.pages[index + 1].id)}>{index < input.pages.length - 1 ? input.pages[index + 1].label : ""} →</button>
+        </div>
+      </div>
+      <p className="page-size">
+        Pictures: {formatSize(pictureBytes)}{limit ? ` of ${formatSize(limit)}` : ""}
+        {limit ? (
+          <span className="track-side-meter" aria-hidden="true">
+            <span style={{ width: `${Math.min(100, (pictureBytes / limit) * 100)}%` }} className={pictureBytes > limit ? "over" : ""} />
+          </span>
+        ) : null}
+      </p>
+    </fieldset>
+  );
+}
+
 const KIND_COMPONENTS = {
+  pages: PagesInput,
   tracks: TracksInput,
   action: ActionInput,
   sprite: SpriteInput,
@@ -527,10 +810,12 @@ export function InputForm({ type, values, onChange, problems, context }) {
   function field(input) {
     const Component = KIND_COMPONENTS[input.kind];
     const problem = problems.find((p) => p.key === input.key);
+    // A book's pages can have several problems at once (one per page): show them all.
+    const shown = input.kind === "pages" ? problems.filter((p) => p.key === input.key) : problem ? [problem] : [];
     return (
       <div key={input.key}>
         <Component input={input} value={values[input.key]} onChange={(v) => onChange(input.key, v)} type={type} values={values} context={context} />
-        {problem && input.kind !== "sprite" && <p className="field-error">{problem.message}</p>}
+        {input.kind !== "sprite" && shown.map((p, i) => <p key={i} className="field-error">{p.message}</p>)}
       </div>
     );
   }

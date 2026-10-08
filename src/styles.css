@@ -378,3 +378,61 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .type-credits { margin-top: 16px; font-size: 13px; color: var(--ink-2); }
 .type-credits p { margin: 0; }
 .publish-blockers { margin: 0; padding-left: 20px; color: var(--danger); }
+
+/* Pages of a little book (the "pages" input kind, e.g. Zine Scene). */
+.pages { display: grid; gap: 10px; }
+.page-strip { display: flex; flex-wrap: wrap; gap: 6px; }
+.page-tab {
+  min-width: 40px; height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; position: relative;
+}
+.page-tab.filled::after { content: ""; position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+.page-tab.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.page-tab:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.page-editor { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface); display: grid; gap: 10px; }
+.page-editor-title { margin: 0; font-weight: 700; }
+.page-layouts { margin: 0; }
+.page-picture { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; }
+.page-picture .field-error, .page-picture .page-alt { grid-column: 1 / -1; }
+.page-thumb { width: 72px; height: 72px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2, #f1ede6); display: grid; place-items: center; font-size: 11px; color: var(--ink-2); text-align: center; }
+.page-picture-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.page-picture-size { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.page-text { position: relative; margin: 0; }
+.page-text textarea { resize: vertical; min-height: 120px; }
+.counter.over { color: var(--danger); font-weight: 700; }
+.page-nav { display: flex; justify-content: space-between; gap: 8px; }
+.page-size { margin: 0; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.type-preview:has(> .zine-preview) { height: 560px; background: #e9e6df; }
+@media (max-width: 760px) { .type-preview:has(> .zine-preview) { height: 520px; } }
+.zine-preview { position: absolute; inset: 0; }
+.zine-preview iframe { width: 100%; height: 100%; border: 0; display: block; }
+.page-fill { grid-column: 1 / -1; }
+.crop { grid-column: 1 / -1; display: grid; gap: 8px; justify-items: start; }
+.crop-box { position: relative; overflow: hidden; border-radius: 4px; background: var(--surface-2); cursor: grab; touch-action: none; outline-offset: 3px; box-shadow: 0 0 0 1px var(--line); }
+.crop-box:active { cursor: grabbing; }
+.crop-box:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.crop-box img { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.crop-zoom { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.crop-zoom input { width: 160px; accent-color: var(--accent); }
+.crop-help { margin: 0; }
+.page-toggle .field-help { margin: 4px 0 0; }
+/* Zine Scene: the decorating toolbar above the live preview. */
+.type-preview:has(> .zine-preview) { height: 640px; }
+.zine-preview { display: flex; flex-direction: column; }
+.zine-preview iframe { flex: 1 1 auto; min-height: 0; height: auto; }
+.zine-tools { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; background: var(--surface); border-bottom: 1px solid var(--line); color: var(--ink); }
+.zine-tools .zt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
+.zt-btn { font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.zt-btn:disabled { opacity: .45; cursor: default; }
+.zt-btn.on, .zt-btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); font-weight: 600; }
+.zt-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
+.zt-main { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.zt-seg { display: inline-flex; gap: 4px; margin-right: auto; }
+.zt-sticker { padding: 2px; width: 36px; height: 36px; display: grid; place-items: center; }
+.zt-sticker img { width: 30px; height: 30px; }
+.zt-pen { display: inline-flex; align-items: center; gap: 6px; }
+.zt-pen span { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); }
+.zt-small { font-size: 12px; padding: 4px 8px; }
+.zt-hint { font-size: 12px; color: var(--ink-2); }
+.zt-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.zt-help { margin: 0; width: 100%; }
