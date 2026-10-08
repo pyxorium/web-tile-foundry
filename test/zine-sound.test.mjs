@@ -220,6 +220,23 @@ test("the reader loads files once, page by page, and plays sounds", () => {
   assert.ok(!/(src|href)=["']https?:/i.test(html));
 });
 
+test("slow downloads: 4 and 8 seconds, a note for pictures, a restart on this page, and a keep-alive", () => {
+  assert.deepEqual({ ...LOAD_TIMES }, { still: 4000, retry: 8000, keepAlive: 20000 });
+  assert.doesNotThrow(() => new Function(READER_JS));
+  // Each download is timed from its own start (files come one at a time).
+  assert.ok(READER_JS.includes("var w = job.watch = { slow: 0 };"));
+  assert.ok(READER_JS.includes('"Still loading pictures…"') && READER_JS.includes('"Some pictures couldn\'t load."'));
+  assert.ok(READER_JS.includes('img.setAttribute("data-want", src)'));
+  assert.ok(!READER_JS.includes("function () { img.src = src; }"), "no second download behind the queue's back");
+  // Try again: a failed picture is asked for again; a stuck one restarts the zine on this page.
+  assert.ok(READER_JS.includes("function restart(pageId)") && READER_JS.includes('location.hash = "page=" + pageId;'));
+  assert.ok(READER_JS.includes("return restart(config.pages[first].id)") && READER_JS.includes("restart(p.id);"));
+  // Keep-alive: a message to the tile's own service worker, only while shown, never in the Foundry preview.
+  assert.ok(READER_JS.includes('c.postMessage({ action: "tiles-keepalive" })'));
+  assert.ok(READER_JS.includes(`setInterval(nudge, ${LOAD_TIMES.keepAlive})`) && READER_JS.includes('document.visibilityState !== "hidden"'));
+  assert.ok(READER_CSS.includes(".loadnote {") && READER_CSS.includes(".card .loadnote { display: none; }"));
+});
+
 test("the panel's helpers: waveform peaks and times", () => {
   const n = 44100;
   const left = new Float32Array(n), right = new Float32Array(n);

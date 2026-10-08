@@ -32,7 +32,9 @@ export const PAGE_SIZES = Object.freeze({ letter: { w: 330, h: 510 }, a4: { w: 3
 export const READER_NAV = 52; // the strip under the pages (arrows and page name)
 export const SPRITE_LANE_PX = 58; // the sprite's lane (same as SPRITE_LANE in pages.js)
 export const SOUND_ROW_PX = SOUND_ROW; // the sound band's row: 8 + 32 + 6 design px
-export const LOAD_TIMES = Object.freeze({ still: 10000, retry: 20000 }); // "Still loading…", then Try again
+// "Still loading…", then Try again (pictures and sounds are small, so sooner than
+// the Mixtape's 10 and 20 s); and how often the zine nudges its loader awake.
+export const LOAD_TIMES = Object.freeze({ still: 4000, retry: 8000, keepAlive: 20000 });
 export const WORDS_MIN_SCALE = 0.8; // long words shrink to fit, down to this much of the normal size
 
 /** Which layout the reader uses for a space (pure, for tests). */
@@ -223,6 +225,13 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 .now { position: absolute; top: 8px; right: 8px; z-index: 6; display: flex; align-items: center; gap: 7px; max-width: min(70%, 320px); padding: 4px 4px 4px 11px;
   border-radius: 999px; background: rgba(27,26,23,.86); color: #fff; font-size: 12px; line-height: 1.2; }
 .now[hidden], .card .now { display: none; }
+/* A slow or failed picture on the pages shown: a quiet note with Try again. */
+.loadnote { position: absolute; top: 8px; left: 8px; z-index: 6; display: flex; align-items: center; gap: 8px; max-width: min(70%, 320px); padding: 4px 4px 4px 11px;
+  border-radius: 999px; background: rgba(27,26,23,.78); color: #fff; font-size: 12px; line-height: 1.2; }
+.loadnote[hidden], .card .loadnote { display: none; }
+.loadnote button { flex: none; padding: 3px 9px; border: 0; border-radius: 999px; background: #fff; color: #1b1a17; font-size: 11px; cursor: pointer; }
+.loadnote button[hidden] { display: none; }
+.loadnote button:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
 .now span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now button { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: #fff; color: #1b1a17; font-size: 10px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .zp { transition: none; } }
@@ -274,6 +283,10 @@ export const READER_JS = String.raw`
   // Files: each asked for once (one at a time, the most wanted first) and kept
   // for as long as the page is open, as blob: addresses. Kept across rebuilds.
   var kept = {}, queue = [], fetching = false, clipAsks = {};
+  // How long before a download is called slow: "Still loading…", then Try again.
+  // The clock starts when that file's own download starts (files come one at a time).
+  var STILL_MS = ${LOAD_TIMES.still}, RETRY_MS = ${LOAD_TIMES.retry};
+  var shownNow = []; // the pages being shown (indices)
   function getBytes(src) {
     if (config.preview && src.indexOf("clip:") === 0) {
       // In the Foundry's preview, sounds come from the Foundry (they're in memory there).
@@ -291,8 +304,16 @@ export const READER_JS = String.raw`
     if (fetching || !queue.length) return;
     fetching = true;
     var job = queue.shift();
+    var w = job.watch = { slow: 0 };
+    w.timers = [
+      setTimeout(function () { w.slow = 1; drawLoadNote(); }, STILL_MS),
+      setTimeout(function () { w.slow = 2; drawLoadNote(); }, RETRY_MS),
+    ];
     getBytes(job.src).then(function (blob) { return URL.createObjectURL(blob); }).then(job.resolve, job.reject).then(function () {
+      w.timers.forEach(clearTimeout);
+      w.slow = 0;
       fetching = false;
+      drawLoadNote();
       pump();
     });
   }
@@ -320,8 +341,72 @@ export const READER_JS = String.raw`
     Array.prototype.forEach.call(e.querySelectorAll("img[data-src]"), function (img) {
       var src = img.getAttribute("data-src");
       img.removeAttribute("data-src");
-      fileUrl(src, urgent).then(function (url) { img.src = url; }, function () { img.src = src; });
+      img.setAttribute("data-want", src); // wanted, not here yet
+      fileUrl(src, urgent).then(function (url) {
+        img.src = url;
+        img.removeAttribute("data-want");
+        drawLoadNote();
+      }, function () {
+        img.setAttribute("data-failed", "1");
+        drawLoadNote();
+      });
     });
+  }
+  // A quiet note when a picture on the pages being shown is slow or failed:
+  // "Still loading pictures…" after 4 s, Try again after 8 s.
+  var loadEl = null;
+  function makeLoadNote() {
+    loadEl = el("div", "loadnote");
+    loadEl.hidden = true;
+    loadEl.setAttribute("aria-live", "polite");
+    var words = el("span");
+    var again = el("button", null, "Try again");
+    again.type = "button";
+    again.addEventListener("click", function (e) { e.stopPropagation(); retryPictures(); });
+    loadEl.appendChild(words); loadEl.appendChild(again);
+    return loadEl;
+  }
+  function waitingPictures() {
+    var out = [];
+    shownNow.forEach(function (i) {
+      var e = pageEls[i];
+      if (e) Array.prototype.forEach.call(e.querySelectorAll("img[data-want]"), function (img) { out.push(img); });
+    });
+    return out;
+  }
+  function drawLoadNote() {
+    if (!loadEl) return;
+    var level = 0, failed = false;
+    if (mode !== "card") waitingPictures().forEach(function (img) {
+      if (img.getAttribute("data-failed")) { failed = true; return; }
+      var en = kept[img.getAttribute("data-want")];
+      var w = en && en.job && en.job.watch;
+      if (w && w.slow > level) level = w.slow;
+    });
+    loadEl.hidden = !(failed || level);
+    loadEl.firstChild.textContent = failed ? "Some pictures couldn't load." : "Still loading pictures…";
+    loadEl.lastChild.hidden = !(failed || level >= 2);
+  }
+  function retryPictures() {
+    var stuck = false;
+    waitingPictures().forEach(function (img) {
+      if (img.getAttribute("data-failed")) {
+        // Ask again: back in line, at the front.
+        img.removeAttribute("data-failed");
+        img.setAttribute("data-src", img.getAttribute("data-want"));
+        img.removeAttribute("data-want");
+      } else stuck = true;
+    });
+    // A download still on its way (the host may be stuck): start afresh on this page.
+    var first = shownNow.filter(function (i) { return i != null; })[0];
+    if (stuck && !config.preview && first != null) return restart(config.pages[first].id);
+    shownNow.forEach(function (i) { if (i != null) wantPage(i, true); });
+    drawLoadNote();
+  }
+  // Starting the zine afresh (Try again on a stuck download): it reopens on this page.
+  function restart(pageId) {
+    location.hash = "page=" + pageId;
+    location.reload();
   }
   function image(pic, cls, alt) {
     var img = document.createElement("img");
@@ -501,8 +586,7 @@ export const READER_JS = String.raw`
 
   // Sounds (stage 3). One player for the whole zine: a clip plays on across
   // page turns until it ends; tapping another stops the first. Download, then
-  // play (as the Mixtape does): "Still loading…" after 10 s, Try again after 20 s.
-  var STILL_MS = ${LOAD_TIMES.still}, RETRY_MS = ${LOAD_TIMES.retry};
+  // play (as the Mixtape does): "Still loading…" after 4 s, Try again after 8 s.
   var audio = null;
   var playing = null; // { id, src, title, state: "loading" | "playing" | "failed", slow, error }
   var soundTimers = [];
@@ -594,8 +678,7 @@ export const READER_JS = String.raw`
     if (me && me.id === p.id && me.state === "loading" && !config.preview) {
       // The download is still on its way (the host may be stuck): start the
       // zine afresh on this page, as reloading the page would.
-      location.hash = "page=" + p.id;
-      location.reload();
+      restart(p.id);
       return;
     }
     if (kept[p.sound.src] && !kept[p.sound.src].job) delete kept[p.sound.src];
@@ -774,6 +857,7 @@ export const READER_JS = String.raw`
     where = el("span", "where"); where.setAttribute("aria-live", "polite");
     nav.appendChild(prevBtn); nav.appendChild(where); nav.appendChild(nextBtn);
     stage.appendChild(makeNow());
+    stage.appendChild(makeLoadNote());
     root.appendChild(stage); root.appendChild(nav);
     prevBtn.addEventListener("click", function () { turn(-1); });
     nextBtn.addEventListener("click", function () { turn(1); });
@@ -842,6 +926,7 @@ export const READER_JS = String.raw`
 
   function show() {
     var v = views()[viewIndex()];
+    shownNow = v.slice();
     var cols = mode === "spread" ? 2 : 1;
     pageEls.forEach(function (e, i) {
       var slot = v.indexOf(i);
@@ -858,6 +943,7 @@ export const READER_JS = String.raw`
     // Load what's shown first, then the pages either side (a small card loads only its cover).
     v.forEach(function (i) { if (i != null) wantPage(i, true); });
     if (mode !== "card") [k + 1, k - 1].forEach(function (n) { if (all[n]) all[n].forEach(function (i) { if (i != null) wantPage(i, false); }); });
+    drawLoadNote();
     prevBtn.disabled = k === 0;
     nextBtn.disabled = k === total - 1;
     where.textContent = nameOf(v);
@@ -936,8 +1022,22 @@ export const READER_JS = String.raw`
     });
     try { window.parent.postMessage({ zine: "ready" }, "*"); } catch (e) {}
   }
+  // Keep-alive: the tile's files come through a service worker that the browser
+  // stops after a quiet spell, and a restarted worker can forget which tile it
+  // serves (claude/tile-loading-findings.md). While the zine is on screen, a tiny
+  // message every 20 s keeps it awake. No download; hosts without a worker ignore it.
+  if (!config.preview) {
+    var nudge = function () {
+      try {
+        var c = navigator.serviceWorker && navigator.serviceWorker.controller;
+        if (c && document.visibilityState !== "hidden") c.postMessage({ action: "tiles-keepalive" });
+      } catch (e) {}
+    };
+    setInterval(nudge, ${LOAD_TIMES.keepAlive});
+    document.addEventListener("visibilitychange", nudge);
+  }
   build();
-  // A restart (Try again on a stuck sound) reopens the page it was on.
+  // A restart (Try again on a stuck download) reopens the page it was on.
   var cue = /^#page=([A-Za-z0-9_-]+)$/.exec(location.hash || "");
   if (cue) {
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
