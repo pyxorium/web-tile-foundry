@@ -4,6 +4,7 @@ import { formatSize } from "../core/fileset.js";
 import { DEBUG } from "./debug.js";
 import { cropRect, clampCrop } from "../core/pictures.js";
 import { PictureMenu, AppPictureGrid } from "./AppPictures.jsx";
+import { planGalleryFill, leftOver, describePages } from "../core/gallery-fill.js";
 import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout, pagesBytes } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
@@ -645,12 +646,14 @@ function TogglePanel({ panel, getPage, patchPage, page, values, context }) {
   return <div ref={boxRef} className="page-toggle-panel" />;
 }
 
-function PagesInput({ input, value, onChange, values, type, context }) {
+function PagesInput({ input, value, onChange, values, type, context, setValue }) {
   const pages = Array.isArray(value) ? value : [];
   const [openId, setOpenId] = useState(input.pages[0].id);
   const [busy, setBusy] = useState({}); // page id -> true while its picture is being made small
   const [pictureError, setPictureError] = useState({});
   const [browsing, setBrowsing] = useState(null); // { page, app } while an app's pictures are shown
+  const [filling, setFilling] = useState(null); // { done, total, from } while a gallery fills pages
+  const [fillNote, setFillNote] = useState(null); // { text, error } after a gallery filled pages
   const fileRef = useRef(null);
   // Pictures finish after other edits, so changes build on the latest pages.
   const latest = useRef(pages);
@@ -742,6 +745,56 @@ function PagesInput({ input, value, onChange, values, type, context }) {
   }
   const apps = Array.isArray(input.pictureSources) ? input.pictureSources : [];
 
+  // A whole gallery onto the pages (stage 5, part 3): plan which page gets which
+  // photo, then add them one at a time (downloaded, checked, made small).
+  async function fillFromGallery(items, { mode, title }) {
+    setBrowsing(null);
+    setFillNote(null);
+    if (!items.length || !input.galleryPage) return;
+    const specs = input.pages;
+    const plan = planGalleryFill(specs, latest.current, items.length, mode, (p) => !has(p));
+    if (!plan.length) return;
+    if (mode === "replace") {
+      const fresh = specs.map((spec) => (input.blankPage ? input.blankPage(spec) : { id: spec.id }));
+      latest.current = fresh;
+      onChange(fresh);
+    }
+    // The zine's title becomes the gallery's, while it is still the starting title.
+    if (title && setValue && type && type.defaults) {
+      const start = type.defaults({ handle: values.handle }).name;
+      const nameInput = type.inputs.find((i) => i.key === "name");
+      if (values.name === start) setValue("name", nameInput && nameInput.maxLength ? title.slice(0, nameInput.maxLength) : title);
+    }
+    const failed = [];
+    const done = [];
+    const [{ fetchAppPicture }, { shrinkPicture }] = await Promise.all([import("../core/app-pictures.js"), import("../core/pictures.js")]);
+    for (let k = 0; k < plan.length; k++) {
+      const { pageId, index } = plan[k];
+      const item = items[index];
+      setFilling({ done: k, total: plan.length, from: title });
+      try {
+        const made = await shrinkPicture(await fetchAppPicture(item));
+        const spec = specs.find((x) => x.id === pageId);
+        const alt = item.alt || "";
+        patch(pageId, {
+          ...input.galleryPage(spec, item),
+          picture: { ...made, alt, ...(alt ? { autoAlt: alt } : {}), source: { app: item.app, uri: item.uri, cid: item.cid } },
+        });
+        done.push(pageId);
+      } catch (err) {
+        failed.push(`${item.alt || `photo ${index + 1}`} (${(err && err.message) || err})`);
+      }
+    }
+    setFilling(null);
+    const extra = leftOver(plan, items.length);
+    const parts = [];
+    if (done.length) parts.push(`Filled ${describePages(done, specs)}${title ? ` from ${title}` : ""}.`);
+    if (extra) parts.push(`${extra} photo${extra === 1 ? " was" : "s were"} left over.`);
+    if (failed.length) parts.push(`Couldn't add ${failed.join("; ")}. Use Choose picture on those pages to try again.`);
+    setFillNote({ text: parts.join(" "), error: failed.length > 0 });
+  }
+  const galleryOk = Boolean(input.galleryPage);
+
   const pictureBytes = pagesBytes(input, pages);
   const limit = type && type.maxBytes;
   const has = (p) => p && (p.picture || (p.heading || "").trim() || (p.words || "").trim() || (p.subtitle || "").trim() || (input.pageToggles || []).some((t) => p[t.key]) || (Array.isArray(p.marks) && p.marks.length > 0) || (p.piece && p.piece.uri));
@@ -768,6 +821,12 @@ function PagesInput({ input, value, onChange, values, type, context }) {
         ))}
       </div>
 
+      {(filling || fillNote) && (
+        <p className={`gallery-status ${fillNote && fillNote.error ? "is-error" : ""}`} aria-live="polite">
+          {filling ? `Adding photo ${filling.done + 1} of ${filling.total}${filling.from ? ` from ${filling.from}` : ""}…` : fillNote.text}
+          {!filling && <button type="button" className="link-button" onClick={() => setFillNote(null)}>OK</button>}
+        </p>
+      )}
       <div className="page-editor" role="tabpanel" aria-label={spec.label}>
         <p className="page-editor-title">{spec.label}</p>
         {spec.layouts && (
@@ -855,7 +914,14 @@ function PagesInput({ input, value, onChange, values, type, context }) {
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.heic,.heif" hidden onChange={choose} />
             </div>
             {browsing && browsing.page === spec.id && (
-              <AppPictureGrid app={browsing.app} context={context} usedOn={usedOn} onChoose={chooseFromApp} onClose={() => setBrowsing(null)} />
+              <AppPictureGrid
+                app={browsing.app}
+                context={context}
+                usedOn={usedOn}
+                onChoose={chooseFromApp}
+                onClose={() => setBrowsing(null)}
+                gallery={galleryOk && browsing.app === "grain" ? { emptyCount: input.pages.filter((sp, i) => !has(pages[i])).length, pageCount: input.pages.length, onFill: fillFromGallery } : null}
+              />
             )}
             {pictureError[spec.id] && <p className="field-error">{pictureError[spec.id]}</p>}
             {page.picture && input.pictureFrame && !alwaysFill && (
@@ -958,7 +1024,7 @@ export function InputForm({ type, values, onChange, problems, context, only = nu
     const shown = input.kind === "pages" ? problems.filter((p) => p.key === input.key) : problem ? [problem] : [];
     return (
       <div key={input.key}>
-        <Component input={input} value={values[input.key]} onChange={(v) => onChange(input.key, v)} type={type} values={values} context={context} {...extra} />
+        <Component input={input} value={values[input.key]} onChange={(v) => onChange(input.key, v)} type={type} values={values} context={context} setValue={onChange} {...extra} />
         {input.kind !== "sprite" && shown.map((p, i) => <p key={i} className="field-error">{p.message}</p>)}
       </div>
     );

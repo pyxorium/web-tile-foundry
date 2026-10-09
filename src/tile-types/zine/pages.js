@@ -1,4 +1,5 @@
 import { APP_PICTURE_SOURCES } from "../../core/app-pictures.js";
+import { describePages } from "../../core/gallery-fill.js";
 import { lookOf, lookColors } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
@@ -258,25 +259,15 @@ export function usesSprite(pages, sprite) {
   return usableSprite(sprite) && (pages || []).some((p) => p && p.sprite);
 }
 
-/** How a page is named in the credits: "the cover", "page 2", "the back". */
-function creditPlace(spec) {
-  return spec.kind === "cover" ? "the cover" : spec.kind === "back" ? "the back" : spec.label.toLowerCase();
-}
-
-/** "the cover", "the cover and page 2", "page 1, page 3 and the back". */
-function andList(items) {
-  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
 /**
  * The zine's credits: [{ what, app, href, pages }], one per app something came
  * from, in a fixed order (sprite, songs, then the apps), with the pages it's on
- * ("the cover and page 2"; the sheet says "On the cover and page 2").
+ * ("the cover, pages 1 to 5 and the back", as describePages in src/core/gallery-fill.js words it).
  * `shown` are the pages as the reader gets them (zinePages).
  */
 export function zineCredits(pages, shown, withSprite) {
   const out = [];
-  const where = (fn) => andList(PAGES.filter((spec, i) => fn(shown[i] || {}, (pages && pages[i]) || {})).map(creditPlace));
+  const where = (fn) => describePages(PAGES.filter((spec, i) => fn(shown[i] || {}, (pages && pages[i]) || {})).map((spec) => spec.id), PAGES);
   const add = (what, app, href, fn) => {
     const at = where(fn);
     if (at) out.push({ what, app, href, pages: at });

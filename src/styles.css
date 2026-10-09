@@ -576,3 +576,21 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .book-row-used { font-size: 11.5px; color: var(--accent); }
 .book-card .tile-thumb.book-thumb { width: 48px; height: 72px; aspect-ratio: auto; object-fit: cover; }
 .book-card .tile-about .btn { align-self: flex-start; width: auto; }
+/* A whole Grain gallery onto the pages (Zine Scene stage 5, part 3) */
+.link-button { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+.link-button:disabled { color: var(--ink-2); cursor: default; text-decoration: none; }
+.link-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; border-radius: 3px; }
+.app-pictures-group-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
+.app-pictures-count { font-weight: 400; }
+.app-pictures-group.picking { border: 1px solid var(--accent); border-radius: 10px; padding: 8px; background: var(--surface); }
+.app-thumb.picking img { opacity: .55; transition: opacity .12s; }
+.app-thumb.picking.ticked { outline: 3px solid var(--accent); outline-offset: -3px; }
+.app-thumb.picking.ticked img { opacity: 1; }
+.app-thumb-tick { position: absolute; top: 4px; right: 4px; z-index: 1; width: 20px; height: 20px; border-radius: 5px; border: 2px solid #fff; background: rgba(20, 18, 40, 0.45); color: #fff; font-size: 13px; line-height: 16px; font-weight: 700; text-align: center; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+.app-thumb.ticked .app-thumb-tick { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.gallery-bar { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.gallery-count { margin: 0; font-weight: 600; }
+.gallery-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gallery-actions .link-button { margin-left: auto; }
+.gallery-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); font-size: 14px; }
+.gallery-status.is-error { background: color-mix(in srgb, var(--danger, #b3261e) 10%, var(--surface)); }

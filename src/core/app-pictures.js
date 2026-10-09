@@ -135,7 +135,7 @@ export function groupGrain(photos, galleries, items) {
       placed.add(p.uri);
       list.push(gSensitive && !p.sensitive ? { ...p, sensitive: true } : p);
     }
-    groups.push({ key: g.uri, title: cleanAlt((g.value && g.value.title) || "") || "Untitled gallery", sensitive: gSensitive, items: list });
+    groups.push({ key: g.uri, gallery: g.uri, title: cleanAlt((g.value && g.value.title) || "") || "Untitled gallery", sensitive: gSensitive, items: list });
   }
   const loose = photos.filter((p) => !placed.has(p.uri)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (loose.length) groups.push({ key: "loose", title: groups.length ? "Other photos" : "Your photos", sensitive: false, items: loose });

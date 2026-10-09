@@ -23,7 +23,7 @@ function picturesOf(app, accounts) {
       const failed = [];
       for (const r of results) {
         if (r.error) { failed.push(nameOf(r.a)); continue; }
-        for (const g of r.groups) groups.push({ ...g, key: `${r.a.did}|${g.key}`, title: many ? `${g.title} · ${nameOf(r.a)}` : g.title });
+        for (const g of r.groups) groups.push({ ...g, key: `${r.a.did}|${g.key}`, name: g.title, title: many ? `${g.title} · ${nameOf(r.a)}` : g.title });
       }
       if (!groups.length && failed.length === results.length && failed.length) throw new Error(`couldn't read ${failed.join(", ")}`);
       return { groups, failed };
@@ -163,18 +163,21 @@ export function PictureMenu({ apps, context, label, disabled, onComputer, onApp 
   );
 }
 
-function Thumb({ item, used, onPick }) {
+function Thumb({ item, used, onPick, ticked = null }) {
   const [failed, setFailed] = useState(false);
   const src = APP_PICTURE_SOURCES[item.app];
   const name = item.alt || `Untitled ${src.noun}`;
+  const picking = ticked !== null;
   return (
     <button
       type="button"
-      className={`app-thumb ${item.sensitive ? "sensitive" : ""}`}
+      className={`app-thumb ${item.sensitive ? "sensitive" : ""} ${picking ? "picking" : ""} ${ticked ? "ticked" : ""}`}
       onClick={() => onPick(item)}
       title={name}
+      {...(picking ? { role: "checkbox", "aria-checked": ticked } : {})}
       aria-label={`${name}${item.sensitive ? " (marked sensitive)" : ""}${used ? ` (already on ${used})` : ""}`}
     >
+      {picking && <span className="app-thumb-tick" aria-hidden="true">{ticked ? "✓" : ""}</span>}
       {failed ? <span className="app-thumb-fail">Couldn't load</span> : <img src={pictureBlobUrl(item)} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />}
       {item.sensitive && <span className="app-thumb-flag">Marked sensitive</span>}
       {used && <span className="app-thumb-used">On {used}</span>}
@@ -187,12 +190,14 @@ function Thumb({ item, used, onPick }) {
  * already has that picture. onChoose(item) is called once a sensitive picture
  * has been confirmed.
  */
-export function AppPictureGrid({ app, context, usedOn, onChoose, onClose }) {
+export function AppPictureGrid({ app, context, usedOn, onChoose, onClose, gallery = null }) {
   const src = APP_PICTURE_SOURCES[app];
   const accounts = myAccounts(context);
   const [state, setState] = useState({ status: "loading" });
   const [asking, setAsking] = useState(null); // a sensitive item waiting for "Use it"
   const [round, setRound] = useState(0);
+  // "Use this whole gallery" (stage 5, part 3): { key, picked: Set of uris, replacing: bool }
+  const [picking, setPicking] = useState(null);
 
   useEffect(() => {
     if (accounts.state !== "ok") return undefined;
@@ -211,6 +216,35 @@ export function AppPictureGrid({ app, context, usedOn, onChoose, onClose }) {
     onChoose(item);
   }
 
+  // Picking from a whole gallery: every photo starts ticked, except ones marked sensitive.
+  function startPicking(g) {
+    setAsking(null);
+    setPicking({ key: g.key, picked: new Set(g.items.filter((i) => !i.sensitive).map((i) => i.uri)), replacing: false });
+  }
+  function setTicked(item, on) {
+    setPicking((p) => {
+      if (!p) return p;
+      const picked = new Set(p.picked);
+      if (on) picked.add(item.uri); else picked.delete(item.uri);
+      return { ...p, picked };
+    });
+  }
+  function toggle(item) {
+    if (!picking) return;
+    const on = !picking.picked.has(item.uri);
+    if (on && item.sensitive) { setAsking({ ...item, tick: true }); return; }
+    setTicked(item, on);
+  }
+  const pickGroup = picking && state.status === "ok" ? state.groups.find((g) => g.key === picking.key) : null;
+  const pickedItems = pickGroup ? pickGroup.items.filter((i) => picking.picked.has(i.uri)) : [];
+  function fill(mode) {
+    const items = pickedItems;
+    const title = pickGroup ? pickGroup.name || pickGroup.title : "";
+    setPicking(null);
+    gallery.onFill(items, { mode, title });
+  }
+  const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
   const count = state.status === "ok" ? state.groups.reduce((n, g) => n + g.items.length, 0) : 0;
   return (
     <div className="app-pictures" role="region" aria-label={`Your ${src.app} ${src.noun}s`}>
@@ -228,19 +262,67 @@ export function AppPictureGrid({ app, context, usedOn, onChoose, onClose }) {
             This {src.noun} is marked sensitive on {src.app}. Zines don't hide pictures, so it will show openly to everyone who reads your zine.
           </p>
           <div className="app-pictures-ask-buttons">
-            <button type="button" className="btn btn-small" onClick={() => { const it = asking; setAsking(null); onChoose(it); }}>Use it</button>
+            <button type="button" className="btn btn-small" onClick={() => { const it = asking; setAsking(null); if (it.tick) setTicked(it, true); else onChoose(it); }}>Use it</button>
             <button type="button" className="btn btn-quiet btn-small" onClick={() => setAsking(null)}>Cancel</button>
           </div>
         </div>
       )}
-      {state.status === "ok" && state.groups.map((g) => (
-        <div key={g.key} className="app-pictures-group">
-          <p className="app-pictures-group-title">{g.title}</p>
-          <div className="app-pictures-grid">
-            {g.items.map((item) => <Thumb key={`${g.key}|${item.uri}`} item={item} used={usedOn(item.uri)} onPick={pick} />)}
+      {state.status === "ok" && state.groups.map((g) => {
+        const here = picking && picking.key === g.key;
+        if (picking && !here) return null; // while picking, only that gallery shows
+        return (
+          <div key={g.key} className={`app-pictures-group ${here ? "picking" : ""}`}>
+            <div className="app-pictures-group-head">
+              <p className="app-pictures-group-title">{g.title}{g.gallery ? <span className="app-pictures-count"> · {plural(g.items.length, src.noun)}</span> : null}</p>
+              {gallery && g.gallery && !picking && (
+                <button type="button" className="link-button" onClick={() => startPicking(g)}>Use this whole gallery</button>
+              )}
+            </div>
+            {here && <p className="field-help">Untick any {src.noun}s you don't want, then fill your pages.</p>}
+            <div className="app-pictures-grid">
+              {g.items.map((item) => (
+                <Thumb
+                  key={`${g.key}|${item.uri}`}
+                  item={item}
+                  used={usedOn(item.uri)}
+                  onPick={here ? toggle : pick}
+                  ticked={here ? picking.picked.has(item.uri) : null}
+                />
+              ))}
+            </div>
+            {here && (() => {
+              const n = pickedItems.length;
+              const empty = gallery.emptyCount;
+              const fillN = Math.min(n, empty);
+              const over = n - fillN;
+              const total = gallery.pageCount;
+              const replaceOver = Math.max(0, n - total);
+              return (
+                <div className="gallery-bar">
+                  <p className="gallery-count" aria-live="polite">{n} picked · {plural(empty, "empty page")}</p>
+                  {picking.replacing ? (
+                    <div className="app-pictures-ask" role="alertdialog" aria-label="Replace all pages">
+                      <p>This replaces all {total} pages, including their words, sounds, tiles and stickers.{replaceOver ? ` ${plural(replaceOver, src.noun)} won't fit and will be left out.` : ""}</p>
+                      <div className="app-pictures-ask-buttons">
+                        <button type="button" className="btn btn-small" disabled={!n} onClick={() => fill("replace")}>Replace all pages</button>
+                        <button type="button" className="btn btn-quiet btn-small" onClick={() => setPicking((p) => ({ ...p, replacing: false }))}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="gallery-actions">
+                      <button type="button" className="btn btn-small" disabled={!fillN} onClick={() => fill("fill")}>
+                        {fillN ? `Fill ${plural(fillN, "page")}${over ? ` (${plural(over, src.noun)} left over)` : ""}` : empty ? `Pick ${src.noun}s to fill your pages` : "No empty pages"}
+                      </button>
+                      <button type="button" className="btn btn-quiet btn-small" onClick={() => setPicking(null)}>Cancel</button>
+                      <button type="button" className="link-button" disabled={!n} onClick={() => setPicking((p) => ({ ...p, replacing: true }))}>Replace all pages instead</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
-        </div>
-      ))}
+        );
+      })}
       {state.status === "ok" && state.failed && state.failed.length > 0 && (
         <p className="field-help">Couldn't read {state.failed.join(", ")} just now; Refresh to try again.</p>
       )}

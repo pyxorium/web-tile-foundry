@@ -108,7 +108,7 @@ test("books: a book page in the zine (reader, files, recipe, credits, review sum
   });
   assert.equal(config.pages[1].words, "Shevek's journey made me rethink what freedom costs.");
   assert.deepEqual(config.pages[3].book, { title: "Neuromancer", authors: "William Gibson", status: "Reading now" }); // drawn cover
-  assert.deepEqual(config.credits, [{ what: "Books", app: "Bookhive", href: "https://bookhive.buzz/", pages: "page 1 and page 3" }]);
+  assert.deepEqual(config.credits, [{ what: "Books", app: "Bookhive", href: "https://bookhive.buzz/", pages: "pages 1 and 3" }]);
   const tile = makeZineTile({ name: "Books", handle: "pyxorium.com", pages });
   assert.deepEqual(tile.files.filter((f) => f.path.startsWith("/books/")).map((f) => f.path), ["/books/p1.jpg"]);
   const recipe = zineRecipe({ paper: "letter", look: "clean", pages });

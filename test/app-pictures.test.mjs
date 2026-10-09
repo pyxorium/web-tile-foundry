@@ -162,3 +162,36 @@ test("app pictures: sources and the pages input option are checked", () => {
   const bad = { ...zine, inputs: zine.inputs.map((i) => (i.kind === "pages" ? { ...i, pictureSources: ["flickr"] } : i)) };
   assert.throws(() => checkTileType(bad), /pictureSources/);
 });
+
+test("gallery fill: which page gets which photo, and the note afterwards", async () => {
+  const { planGalleryFill, leftOver, describePages } = await import("../src/core/gallery-fill.js");
+  const { PAGES } = await import("../src/tile-types/zine/pages.js");
+  const empty = (p) => !p || !p.picture;
+  const none = PAGES.map(() => null);
+  // An empty zine with 8 photos, either way: cover first, back last.
+  const all = planGalleryFill(PAGES, none, 8, "fill", empty);
+  assert.deepEqual(all.map((x) => [x.pageId, x.index]), PAGES.map((p, i) => [p.id, i]));
+  assert.deepEqual(planGalleryFill(PAGES, none, 8, "replace", empty), all);
+  // The cover already filled: 8 picked go to pages 1 to 6 and the back, 1 left over.
+  const coverDone = PAGES.map((p, i) => (i === 0 ? { picture: {} } : null));
+  const plan = planGalleryFill(PAGES, coverDone, 8, "fill", empty);
+  assert.deepEqual(plan.map((x) => x.pageId), ["p1", "p2", "p3", "p4", "p5", "p6", "back"]);
+  assert.equal(leftOver(plan, 8), 1);
+  assert.equal(describePages(plan.map((x) => x.pageId), PAGES), "pages 1 to 6 and the back");
+  // Replace with fewer photos: first on the cover, last on the back, the rest from page 1.
+  const three = planGalleryFill(PAGES, coverDone, 3, "replace", empty);
+  assert.deepEqual(three.map((x) => [x.pageId, x.index]), [["cover", 0], ["p1", 1], ["back", 2]]);
+  assert.deepEqual(planGalleryFill(PAGES, none, 1, "replace", empty), [{ pageId: "cover", index: 0 }]);
+  // Replace with more than fit: the middle photos past page 6 are left out.
+  const twelve = planGalleryFill(PAGES, none, 12, "replace", empty);
+  assert.equal(twelve.length, 8);
+  assert.deepEqual(twelve[7], { pageId: "back", index: 11 });
+  assert.equal(describePages(["cover", "p2", "p3", "p5"], PAGES), "the cover and pages 2, 3 and 5");
+  assert.equal(describePages(["cover", "p1", "p2", "p3", "back"], PAGES), "the cover, pages 1 to 3 and the back");
+  assert.equal(describePages(["p4"], PAGES), "page 4");
+  // The zine's own rules for those pages.
+  const pagesInput = zine.inputs.find((i) => i.kind === "pages");
+  assert.deepEqual(pagesInput.galleryPage(PAGES[0], { alt: "Clear Creek" }), {});
+  assert.deepEqual(pagesInput.galleryPage(PAGES[3], { alt: "Lookout Mountain" }), { layout: "both", heading: "Lookout Mountain", words: "" });
+  assert.equal(pagesInput.blankPage(PAGES[2]).layout, "both");
+});

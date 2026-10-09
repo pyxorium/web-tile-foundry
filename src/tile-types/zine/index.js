@@ -131,6 +131,10 @@ export const zine = {
       // The shape a picture fills on a page (edge to edge on the cover and on picture-only pages).
       // Stage 5: pictures can also come from your Grain photos and PinkSea drawings.
       pictureSources: ["grain", "pinksea"],
+      // Stage 5, part 3: a whole Grain gallery onto the pages. Each photo's page
+      // is "Picture and words", with the photo's alt text as its heading.
+      galleryPage: (spec, item) => (spec.kind === "cover" ? {} : { layout: "both", heading: String(item.alt || "").slice(0, HEADING_MAX), words: "" }),
+      blankPage: (spec) => emptyPages().find((p) => p.id === spec.id) || { id: spec.id },
       pictureFrame: (spec, page, values) => fillFrame(spec, { ...page, picture: { ...(page.picture || {}), fill: true } }, values),
       zoomMax: FILL_ZOOM_MAX,
       pageToggles: [

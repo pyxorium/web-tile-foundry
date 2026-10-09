@@ -75,6 +75,10 @@
 //                        "pinksea"). "Choose picture" then opens a menu; a picture from an
 //                        app keeps source { app, uri, cid } (its record), and autoAlt (the
 //                        description that came with it, while unchanged).
+//                        galleryPage(spec, item) -> page fields, optional: lets a whole
+//                        gallery fill the pages (the Grain grid's "Use this whole
+//                        gallery"); the page gets these fields plus the photo as its
+//                        picture. blankPage(spec) -> an empty page, for "Replace all pages".
 //                        With pictureFrame(page, value, values) -> { w, h } (the shape a
 //                        picture fills on that page), the editor offers Fit / Fill and a
 //                        crop (drag, and zoom from 1 to zoomMax, default 2): crop is
@@ -307,6 +311,9 @@ function checkPagesInput(where, input) {
   if (input.wordSize !== undefined && typeof input.wordSize !== "function") throw new Error(`${name}: wordSize must be a function.`);
   if (input.onSelect !== undefined && typeof input.onSelect !== "function") throw new Error(`${name}: onSelect must be a function.`);
   if (input.pictureFrame !== undefined && typeof input.pictureFrame !== "function") throw new Error(`${name}: pictureFrame must be a function.`);
+  for (const f of ["galleryPage", "blankPage"]) {
+    if (input[f] !== undefined && typeof input[f] !== "function") throw new Error(`${name}: ${f} must be a function.`);
+  }
   if (input.pictureSources !== undefined && !(Array.isArray(input.pictureSources) && input.pictureSources.every((a) => Object.prototype.hasOwnProperty.call(APP_PICTURE_SOURCES, a)))) {
     throw new Error(`${name}: pictureSources must list apps from ${Object.keys(APP_PICTURE_SOURCES).join(", ")}.`);
   }
