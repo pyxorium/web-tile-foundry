@@ -104,8 +104,22 @@ function forgetRestoredSession() {
  * Bytes are sent as-is with `contentType`; anything else as JSON.
  * Returns the parsed reply, or throws an XrpcError with the server's error name.
  */
-export async function xrpc(nsid, { method = "GET", params, body, contentType } = {}) {
-  if (!currentSession) throw new Error("You're not signed in.");
+export function xrpc(nsid, options) {
+  if (!currentSession) return Promise.reject(new Error("You're not signed in."));
+  return callWith(currentSession, nsid, options);
+}
+
+/**
+ * xrpc, held to one account: calls made with it keep going to that account even
+ * if the creator switches accounts meanwhile (a publish that's under way).
+ */
+export function xrpcFor(did) {
+  const session = currentSession;
+  if (!session || session.sub !== did) throw new Error("That account isn't the one signed in now.");
+  return (nsid, options) => callWith(session, nsid, options);
+}
+
+async function callWith(session, nsid, { method = "GET", params, body, contentType } = {}) {
   let path = `/xrpc/${nsid}`;
   if (params) path += `?${new URLSearchParams(params)}`;
   const init = { method, headers: {} };
@@ -118,7 +132,7 @@ export async function xrpc(nsid, { method = "GET", params, body, contentType } =
       init.headers["content-type"] = "application/json";
     }
   }
-  const res = await currentSession.fetchHandler(path, init);
+  const res = await session.fetchHandler(path, init);
   const text = await res.text();
   let data = null;
   try {
@@ -189,4 +203,67 @@ export async function signOut(did) {
   } finally {
     forgetRestoredSession();
   }
+}
+
+// ---- More than one account (claude/web-tile-foundry-progress.md, multi-account) ----
+//
+// The sign-in library keeps a sign-in for every account that has signed in on
+// this browser, and remembers which one is in use. Adding an account signs in
+// through a small window, so the tile being made on this page is kept;
+// switching uses the stored sign-in, with no trip to the account's server.
+
+/** The name of the sign-in window, opened by openSignInWindow and reused by the library. */
+export const SIGNIN_WINDOW = "foundry-signin";
+
+/**
+ * Opens the (empty) sign-in window. Call it straight from the click or form
+ * submit, before anything is awaited, or the browser blocks it. Returns the
+ * window, or null when the browser blocked it.
+ */
+export function openSignInWindow() {
+  try {
+    return window.open("about:blank", SIGNIN_WINDOW, "width=600,height=720,menubar=no,toolbar=no") || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether this page is the sign-in window, done: its account went back to the page that opened it. */
+export function finishedInWindow(err) {
+  return Boolean(err && err.code === "LOGIN_CONTINUED_IN_PARENT_WINDOW");
+}
+
+function use(session) {
+  currentSession = session;
+  restorePromise = Promise.resolve({ did: session.sub, state: null });
+  return { did: session.sub };
+}
+
+async function withFreshStorage(run) {
+  try {
+    return await run(await getClient());
+  } catch (err) {
+    if (!isStorageError(err)) throw err;
+    console.warn("[sign-in] Storage connection closed; trying once more with a fresh one.", err);
+    await resetClient();
+    return run(await getClient());
+  }
+}
+
+/**
+ * Signs in to another account in the sign-in window (already opened with
+ * openSignInWindow), and makes it the one in use. Resolves with { did } when
+ * the window reports back; `signal` cancels the wait.
+ */
+export async function addAccount(handle, { signal } = {}) {
+  const clean = handle.trim().replace(/^@/, "");
+  if (typeof indexedDB === "undefined" || indexedDB === null) throw new Error(NO_STORAGE_MESSAGE);
+  const session = await withFreshStorage((client) => client.signIn(clean, { display: "popup", popupName: SIGNIN_WINDOW, signal }));
+  return use(session);
+}
+
+/** Makes another account that signed in on this browser the one in use. */
+export async function switchAccount(did) {
+  const session = await withFreshStorage((client) => client.restore(did));
+  return use(session);
 }

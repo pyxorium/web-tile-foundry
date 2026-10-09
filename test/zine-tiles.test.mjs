@@ -75,7 +75,7 @@ test("which of your tiles can go on a page", () => {
   assert.equal(tilePlacement(r("glass-lantern"), getType).ok, true);
   assert.equal(tilePlacement(r("sprite-walker"), getType).ok, true);
   assert.equal(tilePlacement(r("coaster-carnival"), getType).ok, true);
-  assert.match(tilePlacement(r("mixtape"), getType).reason, /A tape/);
+  assert.match(tilePlacement(r("mixtape"), getType).reason, /“A mixtape”/);
   assert.match(tilePlacement(r("zine"), getType).reason, /can't go on a zine page/);
   assert.match(tilePlacement(r("glass-lantern", { typeVersion: 99 }), getType).reason, /newer Foundry/);
   assert.match(tilePlacement(r("unknown-kind"), getType).reason, /doesn't know/);
@@ -194,8 +194,8 @@ test("tapes: what the J-card keeps from tape.json (no liner notes), and placemen
   const getType = (id) => types.find((x) => x.id === id);
   const r = (type) => ({ madeWith: "Web Tile Foundry", type, typeVersion: 1 });
   assert.equal(tilePlacement(r("mixtape"), getType, "tape").ok, true);
-  assert.match(tilePlacement(r("glass-lantern"), getType, "tape").reason, /A tile/);
-  assert.match(tilePlacement(r("mixtape"), getType, "live").reason, /A tape/);
+  assert.match(tilePlacement(r("glass-lantern"), getType, "tape").reason, /“A web tile”/);
+  assert.match(tilePlacement(r("mixtape"), getType, "live").reason, /“A mixtape”/);
 });
 
 test("a tape page: problems, only the banner copied, the reader's J-card, the recipe", () => {
@@ -255,4 +255,19 @@ test("a zine with a tape page: the banner and the taste go in; the Add a sound s
   assert.equal(soundToggle.hide({ layout: "both" }), false);
   assert.ok(LAYOUTS.some((l) => l.value === "tape" && l.shows.join() === "piece,subtitle"));
   assert.ok(READER_JS.includes("function fitTape(pageEl)") && READER_JS.includes('"▶ Play this tape ↗"') && READER_JS.includes('" more"'));
+});
+
+test("your own tiles aren't credited on the page, from any of your accounts (owner, Oct 9)", () => {
+  const own = tileForReader({ id: "p1", layout: "tile", piece: piece({ own: true }) }, "p1");
+  assert.equal(own.by, "", "picked from one of your accounts: no credit");
+  const other = tileForReader({ id: "p1", layout: "tile", piece: piece() }, "p1");
+  assert.equal(other.by, "@thunderbirdwine.bsky.social", "without `own`, the maker is kept (for other people's tiles later)");
+});
+
+test("a taste's song file is in the tape's account, whatever account its plyr.fm record is in", () => {
+  const songs = tasteSongs(tapePiece());
+  assert.ok(songs.every((s) => s.home === "did:plc:rqbqpaaluty5v47jwciowpik"));
+  assert.equal(clipFromSong(songs[0]).song.home, "did:plc:rqbqpaaluty5v47jwciowpik");
+  assert.equal(clipFromSong({ ...songs[0], home: "not a did" }).song.home, undefined);
+  assert.equal(clipFromSong({ ...songs[0], home: undefined }).song.home, undefined);
 });

@@ -30,10 +30,10 @@ export const LAYOUTS = Object.freeze([
   { value: "quote", label: "Big quote", shows: ["words", "subtitle"], labels: { words: "Quote", subtitle: "Who said it (optional)" } },
   // Stage 4: one of the creator's own published tiles, live on the page (tap to
   // start), with an optional heading and words below (see piece.js).
-  { value: "tile", label: "A tile", shows: ["piece", "heading", "words"], labels: { piece: "Your tile", words: "Words (optional)" } },
+  { value: "tile", label: "A web tile", shows: ["piece", "heading", "words"], labels: { piece: "Your tile", words: "Words (optional)" } },
   // Stage 4, part 2: one of the creator's tapes as its J-card (banner, title,
   // songs by side, dedication), a line of their own, a link out to the tape.
-  { value: "tape", label: "A tape", shows: ["piece", "subtitle"], labels: { piece: "Your tape", subtitle: "Your own line (optional)" } },
+  { value: "tape", label: "A mixtape", shows: ["piece", "subtitle"], labels: { piece: "Your tape", subtitle: "Your own line (optional)" } },
 ]);
 
 export const PAGES = Object.freeze([

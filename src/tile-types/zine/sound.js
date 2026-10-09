@@ -74,6 +74,8 @@ export function clipFromSong(song) {
       uri: song.uri, cid: song.cid, title: song.title, album: song.album || "", artist: song.artist || "",
       seconds: song.seconds, blobCid: song.blob && song.blob.cid,
       ...(typeof song.url === "string" && /^https:\/\//.test(song.url) ? { url: song.url } : {}),
+      // The account the song's file is in, when it isn't the one in its address (a tape's songs).
+      ...(typeof song.home === "string" && /^did:[a-z]+:[A-Za-z0-9._:%-]+$/.test(song.home) ? { home: song.home } : {}),
     },
     ...cut,
     title: String(song.title || "").slice(0, SOUND_TITLE_MAX),

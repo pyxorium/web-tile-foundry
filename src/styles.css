@@ -202,6 +202,9 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .publish p { margin: 0; max-width: 56ch; }
 .publish-note { margin-top: 4px !important; font-size: 14px; color: var(--ink-2); }
 .debug-badge { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--gold-soft); }
+.sprite-from { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
+.sprite-from .field-help { margin: 0; }
+.sprite-from select { width: auto; max-width: 100%; }
 .sprite-ok { margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
 .sprite-ok span { color: var(--ink-2); font-size: 14px; overflow-wrap: anywhere; }
 
@@ -220,6 +223,19 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
   margin-top: 16px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 15px;
 }
+.account-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
+.account-bar-wrap .account-bar + * { margin-top: 2px; }
+.account-current label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.account-pick { font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; max-width: 100%; }
+.account-actions { display: inline-flex; gap: 14px; flex-wrap: wrap; }
+.account-note { margin: 0 4px; font-size: 13px; color: var(--ink-2); }
+.account-add { max-width: 520px; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.account-add .field-help { margin: 0; }
+.known-accounts .field-help { margin: 4px 0 6px; }
+.signin-window-done { max-width: 420px; margin: 15vh auto; padding: 0 16px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.signin-window-done h1 { margin: 0; font-size: 24px; }
+.signin-window-done p { margin: 0; color: var(--ink-2); }
+.linklike:disabled { color: var(--ink-2); cursor: default; text-decoration: none; }
 .linklike { font: inherit; font-size: 14px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
 .notice { margin: 4px 0 8px; padding: 12px 14px; border-radius: 12px; background: var(--gold-soft); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .notice p { margin: 0; }
@@ -354,6 +370,7 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .mx-show { border-top: 1px solid var(--line); padding-top: 6px; }
 .mx-show > summary { cursor: pointer; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; padding: 2px 0; }
 .mx-album { font-weight: 600; }
+.mx-account { margin: 10px 0 2px; font-size: 13px; font-weight: 700; color: var(--ink-2); overflow-wrap: anywhere; }
 .mx-count { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .mx-show-tools { margin: 6px 0 2px; }
 .mx-songs { list-style: none; margin: 4px 0 6px; padding: 0; display: grid; gap: 2px; }

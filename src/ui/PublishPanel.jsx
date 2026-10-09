@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { publishTile, deleteTile, tileViewUrl } from "../core/publish.js";
 import { fetchPublicBlob } from "../core/atproto.js";
-import { xrpc } from "../auth/auth.js";
+import { xrpcFor } from "../auth/auth.js";
 import { DEBUG } from "./debug.js";
 
 // The Publish step: a plain confirmation, live progress, then the result.
@@ -39,11 +39,13 @@ function CopyButton({ text, label = "Copy" }) {
 }
 
 // getFinal(): the complete tile to publish (card pictures included); may take a moment.
-export function PublishPanel({ result, getFinal, account, who }) {
+export function PublishPanel({ result, getFinal, account }) {
   const [state, setState] = useState({ phase: "idle" });
   const signedIn = account.status === "signedIn" && account.did && account.pds;
 
   async function publish() {
+    // Held to the account in use now, even if the creator switches accounts meanwhile.
+    const to = { did: account.did, pds: account.pds, handle: account.handle };
     const progress = {};
     setState({ phase: "running", progress });
     try {
@@ -53,17 +55,18 @@ export function PublishPanel({ result, getFinal, account, who }) {
       }
       const tile = getFinal ? await getFinal() : result;
       if (progress.prepare) progress.prepare = { state: "done" };
+      const xrpc = xrpcFor(to.did);
       const out = await publishTile({
         xrpc,
-        fetchBlob: (cid) => fetchPublicBlob(account.did, account.pds, cid),
-        did: account.did,
+        fetchBlob: (cid) => fetchPublicBlob(to.did, to.pds, cid),
+        did: to.did,
         result: tile,
         onStep: (id, s, detail) => {
           progress[id] = { state: s, detail };
           setState({ phase: "running", progress: { ...progress } });
         },
       });
-      setState({ phase: "done", out, name: tile.name });
+      setState({ phase: "done", out, name: tile.name, to });
     } catch (err) {
       console.error("[publish]", err);
       setState({ phase: "error", message: err.message, step: err.step, progress: { ...progress } });
@@ -71,9 +74,13 @@ export function PublishPanel({ result, getFinal, account, who }) {
   }
 
   async function removeTestTile() {
+    if (account.did !== state.to.did) {
+      window.alert(`Switch back to ${state.to.handle ? `@${state.to.handle}` : "the account it was published to"} to delete it.`);
+      return;
+    }
     if (!window.confirm(`Delete the tile "${state.name}" from your account? This can't be undone.`)) return;
     try {
-      await deleteTile({ xrpc, did: account.did, rkey: state.out.rkey });
+      await deleteTile({ xrpc: xrpcFor(state.to.did), did: state.to.did, rkey: state.out.rkey });
       setState((s) => ({ ...s, deleted: true }));
     } catch (err) {
       window.alert(`Couldn't delete it: ${err.message}`);
@@ -81,8 +88,9 @@ export function PublishPanel({ result, getFinal, account, who }) {
   }
 
   if (state.phase === "done") {
-    const { out } = state;
-    const link = tileViewUrl(out.uri, account.handle);
+    const { out, to } = state;
+    const link = tileViewUrl(out.uri, to.handle);
+    const who = to.handle ? `@${to.handle}'s account` : "your account";
     return (
       <div className="publish publish-done" role="status">
         <div className="publish-done-text">
@@ -139,6 +147,7 @@ export function PublishPanel({ result, getFinal, account, who }) {
 
   const running = state.phase === "running";
   const progress = state.progress || {};
+  const who = account.handle ? `@${account.handle}'s account` : "your account";
   return (
     <div className="publish">
       <div>

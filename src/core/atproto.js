@@ -44,6 +44,29 @@ export function pdsFromDidDocument(doc) {
   return String(service.serviceEndpoint).replace(/\/+$/, "");
 }
 
+const pdsLookups = new Map(); // did -> Promise<pds>
+
+/**
+ * Where an account's data lives, looked up once per visit. `known`
+ * ([{ did, pds }], such as the creator's own accounts) answers without a lookup.
+ */
+export function pdsOf(did, known = [], fetchImpl = fetch) {
+  const k = (known || []).find((a) => a && a.did === did && a.pds);
+  if (k) return Promise.resolve(k.pds);
+  if (!pdsLookups.has(did)) {
+    const p = resolveDidDocument(did, fetchImpl).then(pdsFromDidDocument);
+    p.catch(() => pdsLookups.delete(did));
+    pdsLookups.set(did, p);
+  }
+  return pdsLookups.get(did);
+}
+
+/** The account (DID) in an at:// address, or null. */
+export function didOfUri(uri) {
+  const m = /^at:\/\/(did:[a-z]+:[A-Za-z0-9._:%-]+)/.exec(String(uri || ""));
+  return m ? m[1] : null;
+}
+
 /** The account's handle, from its DID document (null if none is listed). */
 export function handleFromDidDocument(doc) {
   const aka = (doc.alsoKnownAs || []).find((a) => typeof a === "string" && a.startsWith("at://"));

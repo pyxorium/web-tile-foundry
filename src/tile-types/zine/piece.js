@@ -8,9 +8,10 @@ import { tileViewUrl } from "../../core/publish.js";
 // that picks a tile is tilepanel.js.
 //
 // A page with the "A tile" layout keeps its tile in page.piece:
-//   { kind: "tile", uri, cid, name, did, handle, typeId, typeVersion, foundryVersion,
+//   { kind: "tile", uri, cid, name, did, handle, own, typeId, typeVersion, foundryVersion,
 //     status: "loading" | "ready" | "error", error?,
 //     files: [{ path, bytes, contentType }] }   the tile's files as published (when ready)
+// `own`: picked from one of the creator's own accounts (any of them), so not credited.
 // A page with the "A tape" layout (part 2) keeps one of the creator's Mixtape C60
 // tapes the same way, with kind "tape": `files` holds only the tape's banner
 // (copied as published), and `tape` what the J-card shows, read from its tape.json:
@@ -94,7 +95,8 @@ export function tileForReader(page, pageId, src = (path) => tilePath(pageId, pat
   const refs = pageRefs(html, t.files.map((f) => f.path));
   const out = {
     name: oneLine(t.name, TILE_NAME_MAX) || "Untitled tile",
-    by: t.handle ? `@${oneLine(t.handle, 253)}` : "",
+    // The creator's own tiles (from any of their accounts) aren't credited: it's still them (owner, Oct 9).
+    by: t.handle && !t.own ? `@${oneLine(t.handle, 253)}` : "",
     page: src("/"),
     refs: refs.map((ref) => ({ ref, src: src(ref) })),
   };
@@ -125,8 +127,8 @@ export function tilePlacement(recipe, getType, want = "live") {
   }
   const type = getType(recipe.type);
   if (!type) return { ok: false, reason: "A kind of tile this Foundry doesn't know." };
-  if (want === "live" && type.zinePage === "tape") return { ok: false, reason: "Tapes go on “A tape” pages.", type };
-  if (want === "tape" && type.zinePage === "live") return { ok: false, reason: "Live tiles go on “A tile” pages.", type };
+  if (want === "live" && type.zinePage === "tape") return { ok: false, reason: "Mixtapes go on “A mixtape” pages.", type };
+  if (want === "tape" && type.zinePage === "live") return { ok: false, reason: "Live tiles go on “A web tile” pages.", type };
   if (type.zinePage !== want) return { ok: false, reason: `A ${type.title} can't go on a zine page.`, type };
   if (Number.isFinite(recipe.typeVersion) && recipe.typeVersion > type.version) {
     return { ok: false, reason: "Made with a newer Foundry than this one.", type };
@@ -202,6 +204,8 @@ export function tasteSongs(piece) {
         blob: { cid: t.cid },
         usable: true,
         details: `From ${piece.tape.title}`.slice(0, 80),
+        // The song's file is the tape's own copy, in the tape's account.
+        ...(piece.did ? { home: piece.did } : {}),
         ...(t.url ? { url: t.url } : {}),
       });
     }

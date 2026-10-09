@@ -83,6 +83,16 @@ function SpriteInput({ input, value, onChange, context = {} }) {
     <div className="field">
       <span className="field-label">{input.label}</span>
       {own.state === "loading" && <p className="field-help">Fetching your sprite from your account…</p>}
+      {own.state === "ready" && own.options && own.options.length > 1 && (
+        <label className="sprite-from">
+          <span className="field-help">Sprite from</span>
+          <select className="text" value={own.chosen || ""} onChange={(e) => own.choose(e.target.value)}>
+            {own.options.map((o) => (
+              <option key={o.did} value={o.did}>{o.handle ? `@${o.handle}` : o.did}</option>
+            ))}
+          </select>
+        </label>
+      )}
       {own.state === "none" && (
         <div className="notice" role="status">
           <p>

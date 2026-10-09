@@ -1,4 +1,5 @@
-import { fetchPublicBlob } from "../../core/atproto.js";
+import { fetchPublicBlob, pdsOf, didOfUri } from "../../core/atproto.js";
+import { myAccounts, nameOf } from "../../core/my-accounts.js";
 import { rawCid } from "../../core/cid.js";
 import { formatSize } from "../../core/fileset.js";
 import { convertPcm } from "../../core/audio/convert.js";
@@ -42,14 +43,6 @@ export function clockTenths(sec) {
   return `${m}:${s.padStart(4, "0")}`;
 }
 
-function accountOf(ctx) {
-  const a = ctx && ctx.account;
-  if (!a || a.status !== "signedIn" || !a.did) return { state: "out" };
-  if (a.lookupError) return { state: "lookup" };
-  if (!a.pds) return { state: "waiting" };
-  return { state: "ok", did: a.did, pds: a.pds, handle: a.handle || null };
-}
-
 function songsOf(a) {
   if (!songLists.has(a.did)) {
     const p = (async () => {
@@ -62,9 +55,11 @@ function songsOf(a) {
   return songLists.get(a.did);
 }
 
-function original(a, cid) {
+// `from`: where the song's file is ({ did, pds }), or a promise of it.
+function original(from, cid) {
   if (!originals.has(cid)) {
     const p = (async () => {
+      const a = await from;
       const bytes = await fetchPublicBlob(a.did, a.pds, cid);
       if ((await rawCid(bytes)) !== cid) throw new Error("the downloaded file doesn't match the song's record");
       return bytes;
@@ -147,6 +142,7 @@ function makeClip(a, cid, start, end, onProgress) {
  * songs; a tape page's taste (stage 4) lists the tape's own songs instead.
  */
 export const PLYR_SOURCE = Object.freeze({
+  perAccount: true, // listed from each of your accounts
   list: (a) => songsOf(a),
   forget: (a) => songLists.delete(a.did),
   groups: (all) => groupShows(all).map((show) => ({ label: show.album, songs: show.songs })),
@@ -214,7 +210,8 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
   editor.append(wave, times, tools, waveHelp, made, titleRow, detailsRow);
   box.append(head, listNote, status, editor);
 
-  let account = null;
+  let accounts = null; // your accounts, the one in use first: [{ did, pds, handle }]
+  let accountsKey = "";
   let songs = null; // usable songs, by uri
   let listTicket = 0;
   let disposed = false;
@@ -236,23 +233,44 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
     status.classList.toggle("is-error", error);
   }
 
-  // The song list.
+  // The song list: from each of your accounts (plyr.fm songs), or just the
+  // tape's own songs (a taste). Each song knows the account it's in.
+  async function allSongs(list) {
+    const from = songSource.perAccount ? list : list.slice(0, 1);
+    const results = await Promise.allSettled(from.map((a) => songSource.list(a).then((all) => all.map((x) => ({ ...x, owner: a })))));
+    const all = [];
+    const failed = [];
+    results.forEach((r, i) => (r.status === "fulfilled" ? all.push(...r.value) : failed.push({ a: from[i], err: r.reason })));
+    if (!all.length && failed.length) throw failed[0].err;
+    return { all, failed };
+  }
+
   async function loadList(force = false) {
-    const a = account;
-    if (!a) return;
+    const list = accounts;
+    if (!list) return;
     const mine = ++listTicket;
-    if (force && songSource.forget) songSource.forget(a);
+    if (force && songSource.forget) for (const a of list) songSource.forget(a);
     setStatus(songSource.looking);
     try {
-      const all = await songSource.list(a);
+      const { all, failed } = await allSongs(list);
       if (mine !== listTicket || disposed) return;
-      songs = new Map(all.filter((s) => s.usable).map((s) => [s.uri, s]));
+      songs = new Map(all.filter((x) => x.usable).map((x) => [x.uri, x]));
       drawList(all);
-      setStatus(songs.size ? "" : songSource.none, !songs.size);
+      const lost = failed.length ? `${failed.map((f) => nameOf(f.a)).join(", ")}: songs couldn't be listed (${failed[0].err.message}). ` : "";
+      setStatus(songs.size ? lost.trim() : `${lost}${songSource.none}`, !songs.size);
     } catch (err) {
       if (mine !== listTicket || disposed) return;
       setStatus(songSource.failed(err.message), true);
     }
+  }
+
+  // Where a song's file is: the account in its record's address (or, for a
+  // tape's songs, the tape's account).
+  function songHome(song) {
+    const did = (song && song.home) || didOfUri(song && song.uri) || (song && song.owner && song.owner.did) || accounts[0].did;
+    const p = pdsOf(did, accounts || []).then((pds) => ({ did, pds }));
+    p.catch(() => {}); // reported where it's used (a song already downloaded doesn't need it)
+    return p;
   }
 
   function drawList(all) {
@@ -262,7 +280,16 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
     none.value = "";
     pick.append(none);
     let found = false;
-    for (const show of songSource.groups(all).map((g) => ({ album: g.label, songs: g.songs }))) {
+    // Grouped as the source groups them, and by account when there's more than one.
+    const owners = [...new Set(all.map((x) => x.owner && x.owner.did))];
+    const several = owners.length > 1;
+    const shows = [];
+    for (const did of owners) {
+      const mineOnly = all.filter((x) => (x.owner && x.owner.did) === did);
+      const who = mineOnly[0] && mineOnly[0].owner;
+      for (const g of songSource.groups(mineOnly)) shows.push({ album: several ? `${g.label} · ${nameOf(who)}` : g.label, songs: g.songs });
+    }
+    for (const show of shows) {
       const usable = show.songs.filter((s) => s.usable);
       if (!usable.length) continue;
       const group = el("optgroup");
@@ -302,7 +329,7 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
   // The waveform.
   async function ensurePeaks() {
     const c = clip();
-    if (!c || !c.song || !c.song.blobCid || !account) return;
+    if (!c || !c.song || !c.song.blobCid || !accounts) return;
     const cid = c.song.blobCid;
     if (peaksCid === cid && peaks) return;
     peaksCid = cid;
@@ -311,10 +338,10 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
     draw();
     try {
       setStatus("Downloading the song…");
-      await original(account, cid);
+      await original(songHome(c.song), cid);
       if (disposed || peaksCid !== cid) return;
       setStatus("Reading the song…");
-      const buf = await decoded(account, cid);
+      const buf = await decoded(songHome(c.song), cid);
       if (disposed || peaksCid !== cid) return;
       const p = peaksFor(buf.getChannelData(0), buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0));
       peakCache.set(cid, p);
@@ -448,12 +475,12 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
   // Listening (in the Foundry, from the song as read by the browser).
   async function playSong(from, until) {
     const c = clip();
-    if (!c || !c.song || !account) return;
+    if (!c || !c.song || !accounts) return;
     stopListening();
     try {
       if (!ctxAudio) ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
       if (ctxAudio.state === "suspended") await ctxAudio.resume();
-      const buf = await decoded(account, c.song.blobCid);
+      const buf = await decoded(songHome(c.song), c.song.blobCid);
       if (disposed) return;
       source = ctxAudio.createBufferSource();
       source.buffer = buf;
@@ -495,19 +522,19 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
   function scheduleMake() {
     const c = clip();
     clearTimeout(makeTimer);
-    if (!c || !c.song || !account || clipUpToDate(c) || c.status === "error") return;
+    if (!c || !c.song || !accounts || clipUpToDate(c) || c.status === "error") return;
     const key = `${c.song.blobCid}|${c.start}|${c.end}`;
     if (making === key) return;
-    pendingMake = () => make(c.song.blobCid, c.start, c.end);
+    pendingMake = () => make(c.song, c.song.blobCid, c.start, c.end);
     makeTimer = setTimeout(() => { const run = pendingMake; pendingMake = null; if (run) run(); }, MAKE_DELAY_MS);
   }
-  function make(cid, start, end) {
+  function make(song, cid, start, end) {
     const key = `${cid}|${start}|${end}`;
     making = key;
     progress = 0;
     drawMade();
     const forThisCut = (pg) => pg.clip && pg.clip.song && pg.clip.song.blobCid === cid && pg.clip.start === start && pg.clip.end === end;
-    makeClip(account, cid, start, end, (stage, pct) => {
+    makeClip(songHome(song), cid, start, end, (stage, pct) => {
       if (making === key && stage === "encoding") { progress = Math.round(pct); drawMade(); }
     }).then(
       (r) => {
@@ -553,24 +580,26 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
   const resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => draw()) : null;
   if (resize) resize.observe(wave);
 
-  function useAccount(ctx) {
-    const a = accountOf(ctx);
-    if (a.state !== "ok") {
-      account = null;
+  function useAccounts(ctx) {
+    const mine = myAccounts(ctx);
+    if (mine.state !== "ok") {
+      accounts = null;
+      accountsKey = "";
       songs = null;
       pick.replaceChildren(el("option", null, songSource.placeholder));
       pick.disabled = true;
       refresh.hidden = true;
       listNote.hidden = true;
       setStatus(
-        a.state === "out" ? songSource.signedOut :
-        a.state === "lookup" ? "Your account's details couldn't be looked up, so your songs can't be listed yet." :
+        mine.state === "out" ? songSource.signedOut :
+        mine.state === "lookup" ? "Your account's details couldn't be looked up, so your songs can't be listed yet." :
         "Looking up your account…"
       );
       return false;
     }
-    if (account && account.did === a.did && account.pds === a.pds) return true;
-    account = a;
+    if (accounts && accountsKey === mine.key) return true;
+    accounts = mine.list;
+    accountsKey = mine.key;
     pick.disabled = false;
     refresh.hidden = !songSource.refresh;
     loadList();
@@ -580,11 +609,11 @@ export function mountSoundPanel(root, { getPage, patchPage, context }, songSourc
   function update(next, _values, ctx) {
     if (disposed) return;
     page = next || getPage() || {};
-    const ok = useAccount(ctx);
+    const ok = useAccounts(ctx);
     const c = clip();
     editor.hidden = !(c && c.song);
     if (songs && c && c.song && pick.value !== c.song.uri) {
-      songSource.list(account).then((all) => { if (!disposed) drawList(all); }, () => {});
+      allSongs(accounts).then(({ all }) => { if (!disposed) drawList(all); }, () => {});
     }
     if (ok && c && c.song) {
       ensurePeaks();

@@ -1,4 +1,5 @@
-import { fetchPublicBlob } from "../../core/atproto.js";
+import { fetchPublicBlob, pdsOf, didOfUri } from "../../core/atproto.js";
+import { myAccounts, nameOf } from "../../core/my-accounts.js";
 import { rawCid } from "../../core/cid.js";
 import { formatDuration } from "../../core/contract.js";
 import { convertSong } from "../../core/audio/convert.js";
@@ -6,10 +7,12 @@ import { listPlyrSongs, ownerNames, groupShows, REASONS } from "./plyr.js";
 import { createWorkshop, trackFromSong, sideFor } from "./workshop.js";
 import { sharedPool } from "./shared.js";
 
-// The song picker shown above the song list: the account's plyr.fm songs,
-// grouped by show. Ticking a song adds it to the tape and starts converting
-// it; unticking removes it. Songs that can't be used yet are listed with the
-// reason. Plain DOM (the Foundry mounts it through the tracks input's picker).
+// The song picker shown above the song list: the creator's plyr.fm songs, from
+// the account in use and their other accounts on this browser
+// (src/core/my-accounts.js), grouped by account and show. Ticking a song adds
+// it to the tape and starts converting it; unticking removes it. Songs that
+// can't be used yet are listed with the reason. Plain DOM (the Foundry mounts
+// it through the tracks input's picker).
 //
 // mountPicker(element, { getTracks, setTracks, context, sides, maxTracks })
 //   -> { update(tracks, context), dispose() }
@@ -41,7 +44,8 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   const shows = el("div", "mx-shows");
   box.append(head, status, shows);
 
-  let account = null; // { did, pds, handle }
+  let accounts = null; // your accounts, the one in use first: [{ did, pds, handle }]
+  let accountsKey = "";
   let workshop = null;
   let loadTicket = 0;
   let rows = new Map(); // song uri -> { input, extra, song }
@@ -53,92 +57,101 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     status.hidden = !text;
   }
 
-  function accountOf(ctx) {
-    const a = ctx && ctx.account;
-    if (!a || a.status !== "signedIn" || !a.did) return { state: "out" };
-    if (a.lookupError) return { state: "lookup" };
-    if (!a.pds) return { state: "waiting" };
-    return { state: "ok", did: a.did, pds: a.pds, handle: a.handle || null };
-  }
-
-  function useAccount(ctx) {
-    const a = accountOf(ctx);
-    if (a.state !== "ok") {
-      account = null;
+  function useAccounts(ctx) {
+    const mine = myAccounts(ctx);
+    if (mine.state !== "ok") {
+      accounts = null;
+      accountsKey = "";
       shows.replaceChildren();
       rows = new Map();
       who.textContent = "Your plyr.fm songs";
       refresh.hidden = true;
       setStatus(
-        a.state === "out" ? "Sign in to list your plyr.fm songs." :
-        a.state === "lookup" ? "Your account's details couldn't be looked up, so your songs can't be listed yet. Use Try again above." :
+        mine.state === "out" ? "Sign in to list your plyr.fm songs." :
+        mine.state === "lookup" ? "Your account's details couldn't be looked up, so your songs can't be listed yet. Use Try again above." :
         "Looking up your account…"
       );
       return;
     }
-    if (account && account.did === a.did && account.pds === a.pds) {
-      if (a.handle && account.handle !== a.handle) {
-        account.handle = a.handle;
-        who.textContent = `Songs from @${a.handle} on plyr.fm`;
-      }
-      return;
+    if (accounts && accountsKey === mine.key) return;
+    accounts = mine.list;
+    accountsKey = mine.key;
+    // One workshop for every account: each song is downloaded from its own account.
+    if (!workshop) {
+      workshop = createWorkshop({
+        sides,
+        setTracks,
+        download: (t) => download(t),
+        convert: (bytes, fades, onProgress) =>
+          convertSong(bytes, { pool: sharedPool(), ...fades, onProgress }).then((r) => ({ bytes: r.bytes, seconds: r.seconds })),
+      });
     }
-    account = a;
-    if (workshop) workshop.dispose();
-    workshop = createWorkshop({
-      sides,
-      setTracks,
-      download: (t) => download(a, t),
-      convert: (bytes, fades, onProgress) =>
-        convertSong(bytes, { pool: sharedPool(), ...fades, onProgress }).then((r) => ({ bytes: r.bytes, seconds: r.seconds })),
-    });
-    who.textContent = a.handle ? `Songs from @${a.handle} on plyr.fm` : "Your plyr.fm songs";
+    who.textContent = accounts.length > 1 ? "Your plyr.fm songs" : accounts[0].handle ? `Songs from @${accounts[0].handle} on plyr.fm` : "Your plyr.fm songs";
     refresh.hidden = false;
     load();
     workshop.sync(getTracks());
   }
 
-  async function download(a, t) {
+  async function download(t) {
     if (!t.blobCid) throw new Error("this song has no file on your account");
-    const bytes = await fetchPublicBlob(a.did, a.pds, t.blobCid);
+    // A song comes from the account it was picked from (its id is its record's at:// address).
+    const did = didOfUri(t.id) || (accounts && accounts[0].did);
+    if (!did) throw new Error("you're not signed in");
+    const pds = await pdsOf(did, accounts || []);
+    const bytes = await fetchPublicBlob(did, pds, t.blobCid);
     if ((await rawCid(bytes)) !== t.blobCid) throw new Error("the downloaded file doesn't match the song's record");
     return bytes;
   }
 
+  async function songsFrom(a) {
+    const names = await ownerNames({ did: a.did, pds: a.pds, handle: a.handle });
+    return listPlyrSongs({ did: a.did, pds: a.pds, owner: names });
+  }
+
   async function load() {
     const mine = ++loadTicket;
-    const a = account;
+    const list = accounts;
     setStatus("Looking for your plyr.fm songs…");
     shows.replaceChildren();
     rows = new Map();
-    try {
-      const names = await ownerNames({ did: a.did, pds: a.pds, handle: a.handle });
-      if (mine !== loadTicket || disposed) return;
-      const songs = await listPlyrSongs({ did: a.did, pds: a.pds, owner: names });
-      if (mine !== loadTicket || disposed) return;
-      render(songs);
-    } catch (err) {
-      if (mine !== loadTicket || disposed) return;
-      console.error("[plyr.fm songs]", err);
-      setStatus(`Your plyr.fm songs couldn't be listed (${err.message}). Press Refresh to try again.`, true);
-    }
-  }
-
-  function render(songs) {
-    if (!songs.length) {
-      setStatus("No plyr.fm songs were found on this account.");
+    const results = await Promise.allSettled(list.map(songsFrom));
+    if (mine !== loadTicket || disposed) return;
+    const found = [];
+    const failed = [];
+    results.forEach((r, i) => (r.status === "fulfilled" ? found.push({ a: list[i], songs: r.value }) : failed.push({ a: list[i], err: r.reason })));
+    for (const f of failed) console.error("[plyr.fm songs]", f.a.did, f.err);
+    if (!found.length) {
+      setStatus(`Your plyr.fm songs couldn't be listed (${failed[0].err.message}). Press Refresh to try again.`, true);
       return;
     }
-    const groups = groupShows(songs);
-    const usable = groups.filter((g) => g.usable > 0);
-    const unusable = groups.filter((g) => g.usable === 0);
-    const usableCount = usable.reduce((n, g) => n + g.usable, 0);
+    render(found, failed);
+  }
+
+  // found: [{ a, songs }] per account; failed: [{ a, err }].
+  function render(found, failed = []) {
+    const songs = found.flatMap((f) => f.songs);
+    const lost = failed.length ? ` ${failed.map((f) => nameOf(f.a)).join(", ")}: songs couldn't be listed (${failed[0].err.message}).` : "";
+    if (!songs.length) {
+      setStatus(`No plyr.fm songs were found on ${found.length > 1 ? "your accounts" : "this account"}.${lost}`, Boolean(lost));
+      return;
+    }
+    const several = found.filter((f) => f.songs.length).length > 1;
+    let usableCount = 0;
+    const unusable = [];
+    for (const f of found) {
+      const groups = groupShows(f.songs);
+      const usable = groups.filter((g) => g.usable > 0);
+      unusable.push(...groups.filter((g) => g.usable === 0));
+      usableCount += usable.reduce((n, g) => n + g.usable, 0);
+      // With songs in more than one of your accounts, each account's shows come under its name.
+      if (several && usable.length) shows.append(el("p", "mx-account", nameOf(f.a)));
+      for (const g of usable) shows.append(showBlock(g));
+    }
     setStatus(
-      usableCount
+      (usableCount
         ? `${usableCount} of your ${songs.length} songs can go on a tape. Open a show and tick songs to add them; they start converting right away.`
-        : `None of your ${songs.length} songs can go on a tape yet: their audio is only on plyr.fm's storage, which other sites can't read.`
+        : `None of your ${songs.length} songs can go on a tape yet: their audio is only on plyr.fm's storage, which other sites can't read.`) + lost
     );
-    for (const g of usable) shows.append(showBlock(g));
     if (unusable.length) {
       const d = el("details", "mx-show mx-unusable");
       const count = unusable.reduce((n, g) => n + g.songs.length, 0);
@@ -225,12 +238,12 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     if (workshop) workshop.sync(tracks || []);
   }
 
-  refresh.addEventListener("click", () => account && load());
-  useAccount(context);
+  refresh.addEventListener("click", () => accounts && load());
+  useAccounts(context);
 
   return {
     update(tracks, ctx) {
-      if (ctx) useAccount(ctx);
+      if (ctx) useAccounts(ctx);
       update(tracks);
     },
     dispose() {

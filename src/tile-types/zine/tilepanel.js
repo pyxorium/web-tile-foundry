@@ -2,6 +2,7 @@ import { fetchPublishedTile, jsonFile, TILE_COLLECTION } from "../../core/publis
 import { listTileTypes } from "../../core/registry.js";
 import { formatSize } from "../../core/fileset.js";
 import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS } from "./piece.js";
+import { myAccounts, nameOf } from "../../core/my-accounts.js";
 
 // The "Your tile" / "Your tape" panel on an "A tile" or "A tape" page (stage 4):
 // pick one of your published tiles (or tapes); the Foundry copies it into the
@@ -14,9 +15,10 @@ import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS } from "./piece.js
 //           its tape.json; and an optional taste, cut from one of the tape's own
 //           songs with the sound panel (soundpanel.js), played on the page's sound band.
 //
-// The list comes from your own account (public reads): every ing.dasl.masl
-// record, with its recipe (/foundry.json) read to see what kind of tile it is.
-// Tiles that can't go on this kind of page are listed with the reason.
+// The list comes from your own accounts (public reads): the account in use and
+// your other accounts on this browser (src/core/my-accounts.js), every
+// ing.dasl.masl record, with its recipe (/foundry.json) read to see what kind of
+// tile it is. Tiles that can't go on this kind of page are listed with the reason.
 
 const lists = new Map(); // did -> Promise<entries>
 const recipes = new Map(); // blob cid -> Promise<recipe | null>
@@ -31,14 +33,6 @@ function el(tag, className, text) {
   if (className) e.className = className;
   if (text !== undefined && text !== null) e.textContent = String(text);
   return e;
-}
-
-function accountOf(ctx) {
-  const a = ctx && ctx.account;
-  if (!a || a.status !== "signedIn" || !a.did) return { state: "out" };
-  if (a.lookupError) return { state: "lookup" };
-  if (!a.pds) return { state: "waiting" };
-  return { state: "ok", did: a.did, pds: a.pds, handle: a.handle || null };
 }
 
 async function getJson(url) {
@@ -101,6 +95,7 @@ function tilesOf(a) {
           return {
             uri: r.uri,
             cid: r.cid,
+            owner: { did: a.did, pds: a.pds, handle: a.handle || null },
             rkey: String(r.uri || "").split("/").pop(),
             name: String(tile.name || "Untitled tile"),
             banner: cidOf(res["/banner.png"]),
@@ -210,11 +205,14 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
   let tastePanel = null; // the mounted sound panel
   let tasteMounting = null;
 
-  let account = null;
+  let accounts = null; // your accounts, the one in use first: [{ did, pds, handle }]
+  let accountsKey = "";
   let tiles = null; // by uri
   let ticket = 0;
   let disposed = false;
   let lastValues = values;
+  let thumbUrl = null; // the banner thumbnail, from the zine's copy
+  let thumbFor = null;
   let lastContext = context;
   const piece = () => (page && page.piece && page.piece.kind === kind ? page.piece : null);
 
@@ -227,19 +225,40 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
   const getType = (id) => listTileTypes().find((t) => t.id === id);
   const placementOf = (t) => tilePlacement(t.recipe, getType, want);
 
+  // Every account's list; one that can't be read is left out, with a note.
+  async function allTiles(list) {
+    const results = await Promise.allSettled(list.map((a) => tilesOf(a)));
+    const all = [];
+    const failed = [];
+    results.forEach((r, i) => (r.status === "fulfilled" ? all.push(...r.value) : failed.push({ a: list[i], err: r.reason })));
+    if (!all.length && failed.length) throw failed[0].err;
+    return { all, failed };
+  }
+
   async function loadList(force = false) {
-    const a = account;
-    if (!a) return;
+    const list = accounts;
+    if (!list) return;
     const mine = ++ticket;
-    if (force) lists.delete(a.did);
+    if (force) for (const a of list) lists.delete(a.did);
     setStatus(`Looking for your ${noun}s…`);
     try {
-      const all = await tilesOf(a);
+      const { all, failed } = await allTiles(list);
       if (mine !== ticket || disposed) return;
       tiles = new Map(all.map((t) => [t.uri, t]));
       drawList(all);
+      drawCard();
       const usable = all.filter((t) => placementOf(t).ok).length;
-      setStatus(usable ? "" : all.length ? `None of your tiles can go on this page (see the list for why).` : "You haven't published any tiles from this account yet.", !usable);
+      const chosen = piece();
+      const where = list.length > 1 ? "your accounts" : "this account";
+      let text = "";
+      if (failed.length) text = `${failed.map((f) => nameOf(f.a)).join(", ")}: couldn't be listed (${failed[0].err.message}). Press Refresh to try again. `;
+      // Only a problem while nothing is chosen: a chosen tile or tape keeps working.
+      if (!usable && !(chosen && chosen.uri)) {
+        text += all.length
+          ? `None of your tiles can go on this page (see the list for why).`
+          : `You haven't published any ${noun === "tape" ? "tapes" : "tiles"} from ${where} yet.`;
+      }
+      setStatus(text.trim(), Boolean(text) && !(chosen && chosen.uri));
     } catch (err) {
       if (mine !== ticket || disposed) return;
       setStatus(`Your tiles couldn't be listed (${err.message}). Press Refresh to try again.`, true);
@@ -253,15 +272,17 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     none.value = "";
     pick.append(none);
     let found = false;
-    const byType = new Map();
+    const several = new Set(all.map((t) => t.owner && t.owner.did)).size > 1;
+    // Grouped by kind of tile, and by account when there's more than one.
+    const groups = new Map();
     for (const t of all) {
       const pl = placementOf(t);
       if (!pl.ok) continue;
-      const k = pl.type.title;
-      if (!byType.has(k)) byType.set(k, []);
-      byType.get(k).push(t);
+      const k = several ? `${pl.type.title} · ${nameOf(t.owner)}` : pl.type.title;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(t);
     }
-    for (const [k, list] of byType) {
+    for (const [k, list] of groups) {
       const group = el("optgroup");
       group.label = k;
       for (const t of list) {
@@ -277,14 +298,15 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
       const group = el("optgroup");
       group.label = "Can't go on this page";
       for (const t of others) {
-        const o = el("option", null, `${t.name}: ${placementOf(t).reason}`);
+        const o = el("option", null, `${t.name}${several ? ` (${nameOf(t.owner)})` : ""}: ${placementOf(t).reason}`);
         o.value = t.uri;
         o.disabled = true;
         group.append(o);
       }
       pick.append(group);
     }
-    // One no longer listed (deleted since) keeps working while its copy is here.
+    // One no longer listed (deleted since, or from an account no longer signed
+    // in here) keeps working while its copy is here.
     if (p && p.uri && !found) {
       const o = el("option", null, p.name || `This page's ${noun}`);
       o.value = p.uri;
@@ -300,7 +322,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
       ({ pub, tape, files }) => patchPage((pg) => (pg.piece && pg.piece.uri === uri && pg.piece.kind === kind ? {
         piece: {
           ...pg.piece, status: "ready", error: undefined, cid: pub.cid || pg.piece.cid, name: (pub.manifest && pub.manifest.name) || pg.piece.name,
-          handle: pub.handle || pg.piece.handle, did: pub.did, files, ...(tape ? { tape } : {}),
+          handle: pub.handle || pg.piece.handle, did: pub.did, own: true, files, ...(tape ? { tape } : {}),
         },
       } : null)),
       (err) => patchPage((pg) => (pg.piece && pg.piece.uri === uri ? { piece: { ...pg.piece, status: "error", error: err.message || String(err) } } : null)),
@@ -315,7 +337,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     const r = t.recipe || {};
     const change = {
       piece: {
-        kind, uri: t.uri, cid: t.cid, name: t.name, did: account.did, handle: account.handle,
+        kind, uri: t.uri, cid: t.cid, name: t.name, did: t.owner.did, handle: t.owner.handle, own: true,
         typeId: r.type, typeVersion: r.typeVersion, foundryVersion: r.foundryVersion, banner: t.banner, status: "loading",
       },
     };
@@ -345,8 +367,23 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     const typeTitle = (pl && pl.type && pl.type.title) || p.typeId || "";
     const songs = p.tape ? p.tape.sides.reduce((n, s) => n + s.tracks.length, 0) : 0;
     typeLine.textContent = [typeTitle, p.tape ? `${songs} song${songs === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+    // The banner: the zine's own copy once it's here; before that, from the
+    // account the tile or tape is in (not necessarily the one in use).
+    const copied = Array.isArray(p.files) && p.files.find((f) => f.path === "/banner.png");
     const banner = p.banner || (t && t.banner);
-    if (banner && account) { thumb.src = blobUrl(account, banner); thumb.hidden = false; } else thumb.hidden = true;
+    const owner = (t && t.owner) || (accounts || []).find((a) => a.did === p.did);
+    let src = "";
+    if (copied) {
+      if (thumbFor !== copied.bytes) {
+        if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+        thumbUrl = URL.createObjectURL(new Blob([copied.bytes], { type: "image/png" }));
+        thumbFor = copied.bytes;
+      }
+      src = thumbUrl;
+    } else if (banner && owner) {
+      src = blobUrl(owner, banner);
+    }
+    if (src) { if (thumb.src !== src) thumb.src = src; thumb.hidden = false; } else thumb.hidden = true;
     made.replaceChildren();
     made.classList.remove("is-error");
     if (p.status === "error") {
@@ -382,24 +419,26 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     }
   }
 
-  function useAccount(ctx) {
-    const a = accountOf(ctx);
-    if (a.state !== "ok") {
-      account = null;
+  function useAccounts(ctx) {
+    const mine = myAccounts(ctx);
+    if (mine.state !== "ok") {
+      accounts = null;
+      accountsKey = "";
       tiles = null;
       pick.replaceChildren(el("option", null, `Your ${noun}s`));
       pick.disabled = true;
       refresh.hidden = true;
       note.hidden = true;
       setStatus(
-        a.state === "out" ? `Sign in to pick one of your ${noun}s.` :
-        a.state === "lookup" ? `Your account's details couldn't be looked up, so your ${noun}s can't be listed yet.` :
+        mine.state === "out" ? `Sign in to pick one of your ${noun}s.` :
+        mine.state === "lookup" ? `Your account's details couldn't be looked up, so your ${noun}s can't be listed yet.` :
         "Looking up your account…"
       );
       return false;
     }
-    if (account && account.did === a.did && account.pds === a.pds) return true;
-    account = a;
+    if (accounts && accountsKey === mine.key) return true;
+    accounts = mine.list;
+    accountsKey = mine.key;
     pick.disabled = false;
     refresh.hidden = false;
     loadList();
@@ -411,11 +450,11 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     page = next || getPage() || {};
     if (nextValues) lastValues = nextValues;
     if (ctx) lastContext = ctx;
-    const ok = useAccount(ctx || lastContext);
+    const ok = useAccounts(ctx || lastContext);
     const p = piece();
     // A page whose copy was interrupted (the panel closed) picks it up again.
     if (ok && p && p.uri && p.status === "loading") copy(p.uri, p.cid);
-    if (tiles && p && p.uri && pick.value !== p.uri) tilesOf(account).then((all) => { if (!disposed) drawList(all); }, () => {});
+    if (tiles && p && p.uri && pick.value !== p.uri) allTiles(accounts).then(({ all }) => { if (!disposed) drawList(all); }, () => {});
     drawCard();
     drawTaste();
   }
@@ -425,6 +464,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     update,
     dispose() {
       disposed = true;
+      if (thumbUrl) URL.revokeObjectURL(thumbUrl);
       if (tastePanel) tastePanel.dispose();
       box.remove();
     },

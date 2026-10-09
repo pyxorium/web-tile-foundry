@@ -9,10 +9,10 @@ import { LiveTile, CardPreview } from "./ui/Previews.jsx";
 import { TypePreview } from "./ui/TypePreview.jsx";
 import { FileList } from "./ui/FileList.jsx";
 import { RealLoaderPreview } from "./ui/RealLoaderPreview.jsx";
-import { SignIn, AccountBar } from "./ui/SignIn.jsx";
+import { SignIn, AccountBar, SignInWindowDone } from "./ui/SignIn.jsx";
 import { PublishPanel } from "./ui/PublishPanel.jsx";
 import { useTileBuild, useFileUrls } from "./ui/useTileBuild.js";
-import { useAccount, useOwnSprite } from "./ui/useAccount.js";
+import { useAccount, useOwnSprite, useOtherAccounts } from "./ui/useAccount.js";
 import { DEBUG } from "./ui/debug.js";
 
 // The Foundry, kept as simple as possible for first-time users:
@@ -56,8 +56,9 @@ function TypeCredits({ credits }) {
 }
 
 export default function App() {
-  const { account, signIn, signOut, retryLookup } = useAccount();
-  const ownSprite = useOwnSprite(account, retryLookup);
+  const { account, accounts, adding, signIn, signOut, switchTo, addAccount, cancelAdding, retryLookup } = useAccount();
+  const otherAccounts = useOtherAccounts(account, accounts);
+  const ownSprite = useOwnSprite(account, retryLookup, otherAccounts);
   const signedIn = account.status === "signedIn";
 
   const types = listTileTypes();
@@ -127,7 +128,7 @@ export default function App() {
   const ready = !!type && buildProblems(problems).length === 0;
   const publishBlockers = problems.filter((p) => p.publishOnly);
   // The same object while nothing in it changes, so pickers aren't told of changes that didn't happen.
-  const context = useMemo(() => ({ ownSprite, account }), [ownSprite, account]);
+  const context = useMemo(() => ({ ownSprite, account, accounts: otherAccounts }), [ownSprite, account, otherAccounts]);
   // While making the tile, types may skip costly card pictures; the debug views
   // show the exact files, so they get the complete tile.
   const { result, error, building } = useTileBuild(type, values, ready, type && type.buildDelayMs ? type.buildDelayMs : 250, DEBUG);
@@ -136,7 +137,9 @@ export default function App() {
   const urls = useFileUrls(result);
 
   const canMake = signedIn || DEBUG;
-  const who = account.handle ? `@${account.handle}'s account` : "your account";
+
+  // The small window used to add an account, once it's done.
+  if (account.status === "windowDone") return <SignInWindowDone />;
 
   let n = 0;
   return (
@@ -153,11 +156,21 @@ export default function App() {
         </p>
       </header>
 
-      {signedIn && <AccountBar account={account} onSignOut={signOut} />}
+      {signedIn && (
+        <AccountBar
+          account={account}
+          accounts={accounts}
+          adding={adding}
+          onSignOut={signOut}
+          onSwitch={switchTo}
+          onAdd={addAccount}
+          onCancelAdd={cancelAdding}
+        />
+      )}
 
       {!signedIn && (
         <Step n={++n} title="Sign in">
-          <SignIn account={account} onSignIn={signIn} />
+          <SignIn account={account} onSignIn={signIn} accounts={accounts} onSwitch={switchTo} />
         </Step>
       )}
 
@@ -227,7 +240,7 @@ export default function App() {
             {publishBlockers.map((p) => <li key={p.key}>{p.message}</li>)}
           </ul>
         ) : result ? (
-          <PublishPanel result={result} getFinal={finalResult} account={account} who={who} />
+          <PublishPanel result={result} getFinal={finalResult} account={account} />
         ) : (
           <p className="step-help">Available once your tile is ready.</p>
         )}
