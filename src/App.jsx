@@ -148,18 +148,22 @@ export default function App() {
 
   let n = 0;
   return (
+    <>
+    {/* The sign: a white stripe, a black band and a white stripe, edge to edge. */}
+    <header className="sign">
+      <div className="sign-inner">
+        <p className="kicker">thunderbird.cafe</p>
+        <h1>Web Tile Foundry</h1>
+      </div>
+    </header>
     <div className="page">
-      <header className="masthead">
-        <div>
-          <p className="kicker">thunderbird.cafe</p>
-          <h1>Web Tile Foundry</h1>
-          <p className="lede">Mint your own Web Tiles, and keep them in your own atproto repo.</p>
-        </div>
+      <div className="masthead">
+        <p className="lede">Mint your own Web Tiles, keep them in your atproto repo.</p>
         <p className="stage-note">
           <strong>Preview version</strong> · v{FOUNDRY_VERSION}
           {DEBUG && <> · <span className="debug-badge">debug</span></>}
         </p>
-      </header>
+      </div>
 
       {signedIn && (
         <AccountBar
@@ -286,5 +290,6 @@ export default function App() {
         <a href="https://thunderbird.cafe/" target="_blank" rel="noopener">thunderbird.cafe</a>.
       </footer>
     </div>
+    </>
   );
 }
