@@ -491,3 +491,22 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .zt-hint { font-size: 12px; color: var(--ink-2); }
 .zt-count { margin-left: auto; font-variant-numeric: tabular-nums; }
 .zt-help { margin: 0; width: 100%; }
+
+/* Publish: the review (the card as feeds show it, its words, where it goes) */
+.publish-review { display: block; }
+.review-grid { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 20px 28px; align-items: start; }
+@media (max-width: 760px) { .review-grid { grid-template-columns: minmax(0, 1fr); } }
+.review-label { margin: 0 0 8px !important; font-size: 13px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.review-card { display: block; width: 100%; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.review-card-col .publish-note { margin-top: 8px !important; }
+.review-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.review-side .form { gap: 12px; }
+.review-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 15px; }
+.review-facts dt { color: var(--ink-2); }
+.review-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.review-card .tile-card-name, .review-card .tile-card-desc { overflow-wrap: anywhere; }
+.review-card .tile-card-body > span { min-width: 0; }
+/* Next to the card, the group's own title ("For display in the link preview card") isn't needed. */
+.review-side .input-group-title { display: none; }
+.text::placeholder { color: #9a958a; opacity: 1; }
+.field-help-after { margin: 4px 0 0; font-size: 13px; }

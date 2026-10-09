@@ -1,7 +1,7 @@
 import { makeZineTile } from "./tile.js";
 import {
   PAGES, LAYOUTS, PAPERS, HEADING_MAX, SUBTITLE_MAX, TITLE_MAX, DESCRIPTION_MAX,
-  emptyPages, defaultPaper, wordLimit, wordSize, madeLabel, fillFrame, FILL_ZOOM_MAX, usableSprite,
+  emptyPages, defaultPaper, wordLimit, wordSize, madeLabel, fillFrame, FILL_ZOOM_MAX, usableSprite, showsOf,
 } from "./pages.js";
 import { LOOK_OPTIONS, INK_OPTIONS, DEFAULT_LOOK, DEFAULT_INK } from "./looks.js";
 import { soundProblems, soundBytes } from "./sound.js";
@@ -30,7 +30,7 @@ export const zine = {
   id: "zine",
   version: 1,
   title: "Zine Scene",
-  summary: "Make a little zine: eight pages of pictures and words.",
+  summary: "Make a little zine: eight pages of pictures, words, and more.",
   maxBytes: 20 * 1024 * 1024,
   credits: [
     ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, "."],
@@ -47,6 +47,20 @@ export const zine = {
     ],
   ],
   buildDelayMs: 400,
+
+  // For the Publish step's review, next to the size: "8 pages · 3 pictures · 1 web tile · 2 sounds".
+  reviewSummary(values) {
+    const pages = (values && values.pages) || [];
+    const count = (fn) => PAGES.filter((spec, i) => pages[i] && fn(pages[i], showsOf(spec, pages[i]))).length;
+    const of = (n, one) => (n ? `${n} ${one}${n === 1 ? "" : "s"}` : "");
+    return [
+      `${PAGES.length} pages`,
+      of(count((p, shows) => p.picture && shows.includes("picture")), "picture"),
+      of(count((p, shows) => p.layout === "tile" && p.piece && shows.includes("piece")), "web tile"),
+      of(count((p, shows) => p.layout === "tape" && p.piece && shows.includes("piece")), "mixtape"),
+      of(count((p) => p.sound && p.clip), "sound"),
+    ].filter(Boolean).join(" · ");
+  },
 
   inputs: [
     {

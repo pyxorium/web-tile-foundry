@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./tile-types/index.js";
 import { listTileTypes, getTileType } from "./core/registry.js";
-import { checkInputs, buildProblems } from "./core/contract.js";
+import { checkInputs, buildProblems, reviewInputs } from "./core/contract.js";
 import { buildTile } from "./core/build.js";
 import { FOUNDRY_VERSION } from "./core/version.js";
 import { InputForm } from "./ui/InputForm.jsx";
@@ -126,7 +126,8 @@ export default function App() {
   const problems = useMemo(() => (type ? checkInputs(type, values) : []), [type, values]);
   // Publish-only problems (an unticked confirmation) don't stop the preview.
   const ready = !!type && buildProblems(problems).length === 0;
-  const publishBlockers = problems.filter((p) => p.publishOnly);
+  // The card's words and the confirmations are filled in at the Publish step's review.
+  const reviewKeys = useMemo(() => (type ? reviewInputs(type) : new Set()), [type]);
   // The same object while nothing in it changes, so pickers aren't told of changes that didn't happen.
   const context = useMemo(() => ({ ownSprite, account, accounts: otherAccounts }), [ownSprite, account, otherAccounts]);
   // While making the tile, types may skip costly card pictures; the debug views
@@ -135,6 +136,10 @@ export default function App() {
   // The complete tile, for publishing (built again only if parts were skipped).
   const finalResult = useCallback(async () => (result && result.final ? result : buildTile(type, valuesRef.current, { final: true })), [result, type]);
   const urls = useFileUrls(result);
+  // The latest tile that could be built, so the review stays up while a field is being fixed.
+  const lastGood = useRef(null);
+  if (result && type && result.typeId === type.id) lastGood.current = result;
+  if (lastGood.current && (!type || lastGood.current.typeId !== type.id)) lastGood.current = null;
 
   const canMake = signedIn || DEBUG;
 
@@ -196,7 +201,7 @@ export default function App() {
       {canMake && type ? (
         <Step n={++n} title="Make your tile">
           <div className="make">
-            <InputForm type={type} values={values} onChange={setValue} problems={problems} context={context} />
+            <InputForm type={type} values={values} onChange={setValue} problems={problems} context={context} skip={reviewKeys} />
             <div className="make-preview">
               {type.preview ? (
                 <>
@@ -235,12 +240,24 @@ export default function App() {
       )}
 
       <Step n={++n} title="Publish" muted={!result}>
-        {result && publishBlockers.length ? (
-          <ul className="publish-blockers">
-            {publishBlockers.map((p) => <li key={p.key}>{p.message}</li>)}
-          </ul>
-        ) : result ? (
-          <PublishPanel result={result} getFinal={finalResult} account={account} />
+        {canMake && type && lastGood.current ? (
+          <PublishPanel
+            key={type.id}
+            result={result}
+            shown={lastGood.current}
+            getFinal={finalResult}
+            account={account}
+            type={type}
+            values={values}
+            setValue={setValue}
+            problems={problems}
+            context={context}
+            reviewKeys={reviewKeys}
+            onBack={() => {
+              const make = document.querySelector(".make");
+              if (make) make.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
         ) : (
           <p className="step-help">Available once your tile is ready.</p>
         )}

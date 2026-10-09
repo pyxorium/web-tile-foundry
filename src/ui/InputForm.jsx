@@ -199,10 +199,13 @@ function ChoiceInput(props) {
   );
 }
 
-function TextInput({ input, value, onChange }) {
+// placeholder: shown in light grey while the box is empty (at the review, the
+// words the card will use if it's left empty).
+function TextInput({ input, value, onChange, placeholder = "" }) {
   const id = `input-${input.key}`;
   const Tag = input.multiline ? "textarea" : "input";
   const length = (value || "").length;
+  const empty = !String(value || "").trim();
   return (
     <div className="field">
       <label className="field-label" htmlFor={id}>{input.label}</label>
@@ -211,10 +214,12 @@ function TextInput({ input, value, onChange }) {
         className="text"
         value={value || ""}
         maxLength={input.maxLength}
-        rows={input.multiline ? 2 : undefined}
+        rows={input.multiline ? (placeholder ? 3 : 2) : undefined}
+        placeholder={placeholder || undefined}
         onChange={(e) => onChange(e.target.value)}
       />
       {input.maxLength && <span className="counter">{length} / {input.maxLength}</span>}
+      {placeholder && empty && <p className="field-help field-help-after">Leave it empty to use the words shown in grey.</p>}
     </div>
   );
 }
@@ -880,15 +885,18 @@ const KIND_COMPONENTS = {
   toggle: ToggleInput,
 };
 
-export function InputForm({ type, values, onChange, problems, context }) {
+// only / skip: Sets of input keys to show or leave out (the review step shows
+// the card's words and the confirmations; "Make your tile" shows the rest).
+export function InputForm({ type, values, onChange, problems, context, only = null, skip = null, placeholders = null }) {
   function field(input) {
     const Component = KIND_COMPONENTS[input.kind];
+    const extra = placeholders && placeholders[input.key] ? { placeholder: placeholders[input.key] } : {};
     const problem = problems.find((p) => p.key === input.key);
     // A book's pages can have several problems at once (one per page): show them all.
     const shown = input.kind === "pages" ? problems.filter((p) => p.key === input.key) : problem ? [problem] : [];
     return (
       <div key={input.key}>
-        <Component input={input} value={values[input.key]} onChange={(v) => onChange(input.key, v)} type={type} values={values} context={context} />
+        <Component input={input} value={values[input.key]} onChange={(v) => onChange(input.key, v)} type={type} values={values} context={context} {...extra} />
         {input.kind !== "sprite" && shown.map((p, i) => <p key={i} className="field-error">{p.message}</p>)}
       </div>
     );
@@ -896,7 +904,8 @@ export function InputForm({ type, values, onChange, problems, context }) {
 
   // Inputs that share a group are shown together under the group's title.
   const blocks = [];
-  for (const input of type.inputs.filter((i) => isShown(i, values))) {
+  const wanted = (i) => (only ? only.has(i.key) : !(skip && skip.has(i.key)));
+  for (const input of type.inputs.filter((i) => isShown(i, values) && wanted(i))) {
     const last = blocks[blocks.length - 1];
     if (input.group && last && last.group === input.group) last.inputs.push(input);
     else blocks.push({ group: input.group || null, inputs: [input] });

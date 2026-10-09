@@ -1,3 +1,4 @@
+import { formatDuration } from "../../core/contract.js";
 import { makeMixtapeTile } from "./tile.js";
 import { shapesFor } from "./transitions.js";
 import {
@@ -62,6 +63,8 @@ export const mixtape = {
       transitions: true,
       picker,
     },
+    // On the cassette and the J-card, so it's edited with the tape (not at the Publish step's review).
+    { key: "name", kind: "text", label: "Tape title", help: "On the cassette and the J-card, and the title of the link preview card.", required: true, maxLength: NAME_MAX, group: "tape" },
     {
       key: "kit",
       kind: "choice",
@@ -77,7 +80,6 @@ export const mixtape = {
     { key: "genres", kind: "text", label: "Genres", help: "Words separated by commas, like funk, soul.", maxLength: WORDS_MAX, group: "words" },
     { key: "moods", kind: "text", label: "Moods", help: "Like mellow, upbeat.", maxLength: WORDS_MAX, group: "words" },
     { key: "tags", kind: "text", label: "Tags", help: "Anything else, like live, road trip.", maxLength: WORDS_MAX, group: "words" },
-    { key: "name", kind: "text", label: "Tape title", help: "Also the title of the link preview card.", required: true, maxLength: NAME_MAX, group: "card" },
     { key: "description", kind: "text", label: "Description (optional)", maxLength: DESCRIPTION_MAX, multiline: true, group: "card" },
     {
       key: "confirm",
@@ -91,8 +93,18 @@ export const mixtape = {
   groups: [
     { id: "tape", title: "On the cassette" },
     { id: "words", title: "Genres, moods and tags (optional)", collapsed: true },
-    { id: "card", title: "Title, and the link preview card" },
+    { id: "card", title: "For display in the link preview card" },
   ],
+
+  // For the Publish step's review, next to the size: "14 songs · Side A 28:10 · Side B 27:45".
+  reviewSummary(values) {
+    const tracks = (values && values.tracks) || [];
+    const sides = SIDES.map((side) => {
+      const secs = tracks.filter((t) => t.side === side).reduce((n, t) => n + (t.seconds || 0), 0);
+      return secs ? `Side ${side} ${formatDuration(secs)}` : "";
+    });
+    return [`${tracks.length} song${tracks.length === 1 ? "" : "s"}`, ...sides].filter(Boolean).join(" · ");
+  },
 
   defaults(context = {}) {
     return panelDefaults(context);

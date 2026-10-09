@@ -92,8 +92,13 @@
 //                        panel, problems and bytes work as for page toggles (above).
 //             showIf(values): OPTIONAL; the input is shown (and checked) only when it returns true.
 //             Inputs with the same `group` are shown together under that group's title.
+//             The group "card" (the link preview card's words) is shown at the
+//             Publish step's review, next to the card, with the confirmations
+//             (see reviewInputs).
 //   groups    array    OPTIONAL: [{ id, title, collapsed? }] titles for grouped inputs;
 //                      collapsed: true starts the group closed (click its title to open).
+//   reviewSummary(values)  OPTIONAL: a few words about the tile for the Publish
+//             step's review, next to its size (e.g. "8 pages · 2 web tiles · 3 sounds").
 //   applyChange(key, value, values)   OPTIONAL
 //                      -> { values, confirm? }: the values after the user changes one
 //                         input, for types where one change affects others (for example
@@ -188,6 +193,7 @@ export function checkTileType(type) {
   for (const field of ["title", "summary"]) {
     if (typeof type[field] !== "string" || !type[field]) throw new Error(`${where}: missing ${field}.`);
   }
+  if (type.reviewSummary !== undefined && typeof type.reviewSummary !== "function") throw new Error(`${where}: reviewSummary must be a function.`);
   if (!Array.isArray(type.inputs)) throw new Error(`${where}: inputs must be an array.`);
   const keys = new Set();
   for (const input of type.inputs) {
@@ -495,6 +501,18 @@ export function trackProblems(input, tracks) {
 /** Whether an input is shown for these values (see showIf). */
 export function isShown(input, values) {
   return typeof input.showIf !== "function" || Boolean(input.showIf(values));
+}
+
+/**
+ * The inputs shown at the Publish step's review, next to the card, instead of
+ * while making the tile: those in the "card" group (the link preview card's
+ * words) and the confirmations (toggles with mustBeOn). Words that are drawn in
+ * the tile itself (a zine's title on its cover, a tape's title on the cassette)
+ * belong outside the "card" group, so they're edited with the rest of the tile.
+ * Returns a Set of input keys.
+ */
+export function reviewInputs(type) {
+  return new Set((type.inputs || []).filter((i) => i.group === "card" || (i.kind === "toggle" && i.mustBeOn)).map((i) => i.key));
 }
 
 /** The problems that stop the tile being built (all but the publish-only ones). */

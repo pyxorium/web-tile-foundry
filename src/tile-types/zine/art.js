@@ -424,6 +424,11 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
     grain(g, x, y, w, h, style, u);
     return;
   }
+  if (page.layout === "tape" && page.tape) {
+    drawJCard(g, x, y, w, h, u, page, bitmap, style);
+    grain(g, x, y, w, h, style, u);
+    return;
+  }
   const pad = 22 * u;
   const inner = w - 2 * pad;
   let cy = y + pad;
@@ -445,6 +450,84 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
     for (const line of wrap(g, page.words, inner, max)) { g.fillText(line, x + pad, cy); cy += 20 * u; }
   }
   grain(g, x, y, w, h, style, u);
+}
+
+/**
+ * A tape page (stage 4) as its J-card, the way the reader shows it: the
+ * cassette (the tape's own banner, in its own colors), the tape's title, the
+ * songs by side, the dedication, the creator's own line, and "▶ Play this tape".
+ * Whatever doesn't fit is left out from the bottom up (songs are trimmed first).
+ */
+function drawJCard(g, x, y, w, h, u, page, bitmap, style) {
+  const pad = 22 * u;
+  const inner = w - 2 * pad;
+  const bottom = y + h - (page.lane ? 26 + 58 : 26) * u;
+  const tape = page.tape;
+  let cy = y + pad;
+  if (bitmap) {
+    const placed = drawPicture(g, bitmap, { x: x + pad, y: cy, w: inner, h: h * 0.34, top: true }, u, { ...style, look: "clean" }, 0, null);
+    cy = placed.y + placed.h + 12 * u;
+  }
+  cy = drawHeading(g, x + pad, cy, inner, u, tape.title, style) - 2 * u;
+
+  // What goes below the songs, measured first so the songs know their room.
+  const LH = 16 * u;
+  g.font = `italic ${12 * u}px ${SANS}`;
+  // Up to two lines each, with "…" when there's more.
+  const clip2 = (text) => {
+    const lines = wrap(g, text, inner, 2);
+    if (lines.join(" ").length < String(text).replace(/\s+/g, " ").trim().length) lines[lines.length - 1] = lines[lines.length - 1].replace(/[,.;\s]*$/, "") + "\u2026";
+    return lines;
+  };
+  const ded = tape.dedication ? clip2(tape.dedication) : [];
+  const own = page.subtitle ? clip2(`\u2014 ${page.subtitle}`) : [];
+  const play = 24 * u;
+  const below = (ded.length + own.length) * LH + (ded.length || own.length ? 8 * u : 0) + play;
+
+  g.textBaseline = "top";
+  const room = Math.max(0, Math.floor((bottom - below - cy) / LH));
+  const sides = tape.sides || [];
+  // Each side gets an even share of the room (up to five lines).
+  const share = Math.max(1, Math.min(5, Math.floor(room / Math.max(1, sides.length))));
+  let used = 0;
+  for (const side of sides) {
+    if (used >= room) break;
+    const label = `Side ${side.name}: `;
+    g.font = `700 ${12 * u}px ${SANS}`;
+    const lw = g.measureText(label).width;
+    g.font = `${12 * u}px ${SANS}`;
+    const lines = wrap(g, (side.songs || []).join(", "), inner - lw, Math.min(share, room - used));
+    const all = (side.songs || []).join(", ");
+    if (lines.length && lines.join(" ").length < all.length) lines[lines.length - 1] = lines[lines.length - 1].replace(/[,\s]*$/, "") + "\u2026";
+    g.fillStyle = style.look === "riso" ? style.riso.b : style.ink;
+    g.font = `700 ${12 * u}px ${SANS}`;
+    g.fillText(label, x + pad, cy);
+    g.fillStyle = style.ink;
+    g.font = `${12 * u}px ${SANS}`;
+    lines.forEach((line, i) => g.fillText(line, x + pad + lw, cy + i * LH));
+    cy += Math.max(1, lines.length) * LH + 3 * u;
+    used += Math.max(1, lines.length);
+  }
+  cy += 5 * u;
+  g.font = `italic ${12 * u}px ${SANS}`;
+  g.fillStyle = style.soft;
+  for (const line of ded) { if (cy + LH > bottom - play) break; g.fillText(line, x + pad, cy); cy += LH; }
+  g.fillStyle = style.ink;
+  for (const line of own) { if (cy + LH > bottom - play) break; g.fillText(line, x + pad, cy); cy += LH; }
+
+  // The play button, as on the page.
+  g.font = `600 ${11 * u}px ${SANS}`;
+  const label = "\u25b6 Play this tape \u2197";
+  const bw = g.measureText(label).width + 24 * u, bh = 20 * u;
+  const bx = x + pad, by = Math.min(bottom - bh, cy + 6 * u);
+  g.fillStyle = style.look === "collage" && style.accent ? style.accent : style.ink;
+  g.beginPath();
+  if (g.roundRect) g.roundRect(bx, by, bw, bh, bh / 2); else g.rect(bx, by, bw, bh);
+  g.fill();
+  g.fillStyle = style.look === "collage" ? "#ffffff" : style.paper;
+  g.textBaseline = "middle";
+  g.fillText(label, bx + 12 * u, by + bh / 2 + 0.5 * u);
+  g.textBaseline = "top";
 }
 
 /**
