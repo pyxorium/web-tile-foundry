@@ -718,7 +718,7 @@ function PagesInput({ input, value, onChange, values, type, context }) {
           </div>
         )}
         {spec.note && <p className="field-help">{spec.note}</p>}
-        {(input.pageToggles || []).map((t) => {
+        {(input.pageToggles || []).filter((t) => !(t.hide && t.hide(page))).map((t) => {
           const why = t.unavailable ? t.unavailable(values, context || {}) : null;
           return (
             <div key={t.key} className="page-toggle">
@@ -752,7 +752,7 @@ function PagesInput({ input, value, onChange, values, type, context }) {
           <div className="field page-piece">
             <span className="field-label">{labelFor("piece", "Piece")}</span>
             <TogglePanel
-              key={`${spec.id}-piece`}
+              key={`${spec.id}-${page.layout || ""}-piece`}
               panel={input.piece.panel}
               page={page}
               values={values}

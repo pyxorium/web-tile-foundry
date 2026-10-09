@@ -18,7 +18,8 @@ import { SOUND_ROW } from "../sound.js";
 //   makeUrl, pages: [{ id, kind: "cover"|"page"|"back", label, shows,
 //   heading, subtitle, words, picture: { src, width, height, alt } | null,
 //   sound?: { src, title, details?, url?, seconds },
-//   tile?: { name, by, url?, page, refs: [{ ref, src }], poster? } }], sounds?: true }
+//   tile?: { name, by, url?, page, refs: [{ ref, src }], poster? },
+//   tape?: { name, title, url?, poster?, sides: [{ name, songs }], dedication? } }], sounds?: true }
 //
 // Tiles on a page (stage 4, layout "tile"): one of the creator's own tiles, its
 // files copied into the zine. Its banner shows with a play button; a tap fetches
@@ -258,6 +259,28 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 [data-look="collage"] .zp .tilebox::before { content: ""; position: absolute; z-index: 3; top: -7px; left: 50%; width: 64px; height: 16px; margin-left: -32px; background: rgba(240,228,190,.78); transform: rotate(-3deg); pointer-events: none; }
 [data-look="riso"] .zp .tileframe { border: 2px solid var(--ink-b); }
 .card .tilebox { visibility: hidden; }
+/* A tape's J-card (stage 4, part 2). The banner keeps its own colours; its frame follows the look. */
+.zp.tape-page .tapeframe { position: relative; display: block; flex: none; aspect-ratio: 16 / 9; overflow: hidden; background: #222; border: 1px solid var(--line); border-radius: 4px; color: inherit; }
+.zp .tapeframe img.poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.zp .tapeframe .tape-plain { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10px; color: #fff; font-weight: 700; text-align: center; }
+.zp .tapeframe:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
+.zp .jcard { flex: 1 1 auto; min-height: 0; overflow: hidden; margin-top: 10px; font-size: var(--js, 12.5px); line-height: 1.4; }
+.zp .jcard .tape-title { margin: 0 0 6px; font-size: 17px; }
+.zp .jcard p { margin: 0 0 .5em; overflow-wrap: anywhere; }
+.zp .tape-side b { font-weight: 700; }
+.zp .tape-ded { font-style: italic; color: var(--soft); }
+.zp .tape-own { font-style: italic; }
+.zp .tape-own::before { content: "— "; }
+.zp .jcard.tight .tape-ded, .zp .jcard.tight .tape-own { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.zp .tcap a.tape-link { display: inline-flex; align-items: center; min-height: 28px; margin-left: 0; padding: 0 12px; border-radius: 999px; background: var(--ink); color: var(--paper); font: 600 11px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-decoration: none; }
+.zp .tape-link:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
+[data-look="photocopy"] .zp .tapeframe { border: 1.5px dashed var(--ink); border-radius: 0; }
+[data-look="collage"] .zp .tapeframe { border: 6px solid #fff; border-radius: 2px; box-shadow: 0 2px 8px rgba(40,25,5,.3); }
+[data-look="photocopy"] .zp .tcap a.tape-link { color: var(--paper); text-decoration: none; }
+[data-look="collage"] .zp .tcap a.tape-link { background: var(--accent); color: #fff; }
+[data-look="riso"] .zp .tapeframe { border: 2px solid var(--ink-b); }
+[data-look="riso"] .zp .tape-side b { color: var(--ink-b); mix-blend-mode: multiply; }
+[data-look="riso"] .zp .tcap a.tape-link { background: var(--ink-b); color: var(--ink); }
 /* A slow or failed picture on the pages shown: a quiet note with Try again. */
 .loadnote { position: absolute; top: 8px; left: 8px; z-index: 6; display: flex; align-items: center; gap: 8px; max-width: min(70%, 320px); padding: 4px 4px 4px 11px;
   border-radius: 999px; background: rgba(27,26,23,.78); color: #fff; font-size: 12px; line-height: 1.2; }
@@ -799,6 +822,10 @@ export const READER_JS = String.raw`
       if (heading) e.appendChild(el("h2", null, page.heading));
       e.appendChild(tileBox(page));
       if (hasWords) { e.classList.add("has-words"); e.appendChild(wordsBlock(page.words)); }
+    } else if (page.layout === "tape") {
+      // A tape: its J-card, with a link out to the whole tape.
+      e.classList.add("tape-page");
+      tapeCard(page).forEach(function (n) { e.appendChild(n); });
     } else if (page.layout === "quote") {
       // Big quote: the words set large (shrunk to fit if long), who said it below.
       e.classList.add("quote");
@@ -882,6 +909,88 @@ export const READER_JS = String.raw`
     }
     box.appendChild(cap);
     return box;
+  }
+  // A tape's J-card (stage 4, part 2): its banner (which also opens the tape),
+  // title, songs by side, dedication, the creator's own line, and a link out.
+  function tapeCard(p) {
+    var t = p.tape;
+    if (!t) {
+      var empty = el("div", "tapeframe");
+      empty.appendChild(el("span", "tile-empty", "Your tape goes here"));
+      return [empty];
+    }
+    var cover = el("a", "tapeframe");
+    if (t.url) { cover.href = t.url; cover.target = "_blank"; cover.rel = "noopener"; cover.setAttribute("aria-label", "Play “" + t.title + "” on its own page (opens a new tab)"); }
+    if (t.poster) cover.appendChild(image({ src: t.poster }, "poster", ""));
+    else cover.appendChild(el("span", "tape-plain", t.title));
+    var card = el("div", "jcard");
+    card.appendChild(el("h2", "tape-title", t.title));
+    var sides = el("div", "tape-sides");
+    t.sides.forEach(function (s) {
+      var line = el("p", "tape-side");
+      line.setAttribute("data-side", s.name);
+      sides.appendChild(line);
+    });
+    card.appendChild(sides);
+    if (t.dedication) card.appendChild(el("p", "tape-ded", t.dedication));
+    if (has(p.shows || [], "subtitle") && String(p.subtitle || "").trim()) card.appendChild(el("p", "tape-own", p.subtitle));
+    card.__tape = t;
+    var out = [cover, card];
+    if (t.url) {
+      var cap = el("div", "tcap");
+      var a = el("a", "tape-link", "▶ Play this tape ↗");
+      a.href = t.url; a.target = "_blank"; a.rel = "noopener";
+      a.setAttribute("aria-label", "Play “" + t.title + "” on its own page (opens a new tab)");
+      cap.appendChild(a);
+      out.push(cap);
+    }
+    return out;
+  }
+  // The J-card fits the page, step by step, until nothing overflows: smaller
+  // words; songs trimmed from the end of the longest side ("and 6 more", at least
+  // one song a side); the dedication and the creator's line kept to two lines;
+  // a shorter cassette picture; and last, a side as just its count ("22 songs").
+  function fitTape(pageEl) {
+    var card = pageEl.querySelector(".jcard");
+    if (!card || !card.__tape) return;
+    var t = card.__tape;
+    var cover = pageEl.querySelector(".tapeframe");
+    var keep = t.sides.map(function (s) { return s.songs.length; });
+    function fill() {
+      Array.prototype.forEach.call(card.querySelectorAll(".tape-side"), function (line, k) {
+        var s = t.sides[k], n = keep[k], all = s.songs.length;
+        line.textContent = "";
+        line.appendChild(el("b", null, "Side " + s.name + ": "));
+        var text = n ? s.songs.slice(0, n).join(", ") + (n < all ? ", and " + (all - n) + " more" : "") : all + (all === 1 ? " song" : " songs");
+        line.appendChild(document.createTextNode(text));
+      });
+    }
+    var over = function () { return card.scrollHeight > card.clientHeight + 1; };
+    var size = 12.5;
+    card.style.setProperty("--js", size + "px");
+    card.classList.remove("tight");
+    if (cover) { cover.style.height = ""; cover.style.aspectRatio = ""; }
+    fill();
+    var guard = 0;
+    while (over() && size > 10.5 && guard++ < 10) { size = Math.max(10.5, size - 0.5); card.style.setProperty("--js", size + "px"); }
+    function trim(min) {
+      while (over() && guard++ < 400) {
+        var most = -1, k = -1;
+        keep.forEach(function (n, i) { if (n > most) { most = n; k = i; } });
+        if (most <= min) return;
+        keep[k]--;
+        fill();
+      }
+    }
+    trim(1);
+    if (over()) card.classList.add("tight"); // two lines for the dedication and the creator's line
+    if (over() && cover) {
+      var h = cover.offsetHeight, low = h * 0.45;
+      cover.style.height = h + "px"; // keep its size while its shape is let go
+      cover.style.aspectRatio = "auto";
+      while (over() && h > low && guard++ < 400) { h = Math.max(low, h - 6); cover.style.height = h + "px"; }
+    }
+    trim(0);
   }
   function tilePage(id) { return config.pages.filter(function (q) { return q.id === id; })[0]; }
   function drawTile(id) {
@@ -1066,6 +1175,7 @@ export const READER_JS = String.raw`
     nextBtn.addEventListener("click", function () { turn(1); });
     pageEls.forEach(fitWords);
     pageEls.forEach(fitQuote);
+    pageEls.forEach(fitTape);
     drawSound();
     if (config.preview && window.__zineAfterBuild) setTimeout(window.__zineAfterBuild, 0);
     layout();

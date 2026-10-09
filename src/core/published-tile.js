@@ -61,9 +61,10 @@ export function blobCidOf(src) {
  * Reads a published tile: { uri, cid, did, handle, pds, manifest, files, recipe }.
  * `files` is [{ path, bytes, contentType }] exactly as published (bytes checked
  * against their addresses); `recipe` is the parsed /foundry.json, or null for a
- * tile the Foundry didn't make.
+ * tile the Foundry didn't make. With `only` (a list of paths), just those files
+ * are downloaded (a tape's songs are big and not needed for its J-card).
  */
-export async function fetchPublishedTile(address, { fetchImpl = fetch } = {}) {
+export async function fetchPublishedTile(address, { fetchImpl = fetch, only = null } = {}) {
   const where = parseTileAddress(address);
   if (!where) throw new Error("That doesn't look like a tile address. Paste its at:// address or its appmosphe.re link.");
   const did = await resolveRepo(where.repo, fetchImpl);
@@ -83,6 +84,7 @@ export async function fetchPublishedTile(address, { fetchImpl = fetch } = {}) {
   const files = [];
   for (const [path, entry] of Object.entries(resources)) {
     if (typeof path !== "string" || !path.startsWith("/")) continue;
+    if (only && !only.includes(path)) continue;
     const blob = blobCidOf(entry && entry.src);
     if (!blob) throw new Error(`The tile's file ${path} has no address.`);
     const bytes = await fetchPublicBlob(did, pds, blob, fetchImpl);
@@ -95,6 +97,13 @@ export async function fetchPublishedTile(address, { fetchImpl = fetch } = {}) {
     try { recipe = JSON.parse(new TextDecoder().decode(recipeFile.bytes)); } catch { recipe = null; }
   }
   return { uri: uri || `at://${did}/${TILE_COLLECTION}/${where.rkey}`, cid, did, handle: handleFromDidDocument(doc), pds, manifest, files, recipe };
+}
+
+/** A file of a published tile, as text parsed from JSON (null if missing or not JSON). */
+export function jsonFile(files, path) {
+  const f = (files || []).find((x) => x.path === path);
+  if (!f) return null;
+  try { return JSON.parse(new TextDecoder().decode(f.bytes)); } catch { return null; }
 }
 
 /**

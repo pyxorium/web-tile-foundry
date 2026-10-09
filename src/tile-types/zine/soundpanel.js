@@ -142,13 +142,31 @@ function makeClip(a, cid, start, end, onProgress) {
   return clipResults.get(key);
 }
 
-export function mountSoundPanel(root, { getPage, patchPage, context }) {
+/**
+ * Where a sound panel's songs come from. The default is the creator's plyr.fm
+ * songs; a tape page's taste (stage 4) lists the tape's own songs instead.
+ */
+export const PLYR_SOURCE = Object.freeze({
+  list: (a) => songsOf(a),
+  forget: (a) => songLists.delete(a.did),
+  groups: (all) => groupShows(all).map((show) => ({ label: show.album, songs: show.songs })),
+  refresh: true,
+  pickLabel: "Song for this page's sound",
+  signedOut: "Sign in to pick one of your plyr.fm songs.",
+  placeholder: "Your plyr.fm songs",
+  looking: "Looking for your plyr.fm songs…",
+  none: "None of your plyr.fm songs can be used yet: their audio is only on plyr.fm's storage. In plyr.fm, copy a song's audio to your PDS to use it here.",
+  failed: (msg) => `Your plyr.fm songs couldn't be listed (${msg}). Press Refresh to try again.`,
+  unusableNote: (n) => `${n} of your songs ${n === 1 ? "is" : "are"} only on plyr.fm's storage or for supporters, so ${n === 1 ? "it isn't" : "they aren't"} listed.`,
+});
+
+export function mountSoundPanel(root, { getPage, patchPage, context }, songSource = PLYR_SOURCE) {
   const box = el("div", "snd-panel");
   root.append(box);
 
   const head = el("div", "snd-head");
   const pick = el("select", "text snd-pick");
-  pick.setAttribute("aria-label", "Song for this page's sound");
+  pick.setAttribute("aria-label", songSource.pickLabel);
   const refresh = el("button", "btn btn-quiet btn-small", "Refresh");
   refresh.type = "button";
   head.append(pick, refresh);
@@ -223,17 +241,17 @@ export function mountSoundPanel(root, { getPage, patchPage, context }) {
     const a = account;
     if (!a) return;
     const mine = ++listTicket;
-    if (force) songLists.delete(a.did);
-    setStatus("Looking for your plyr.fm songs…");
+    if (force && songSource.forget) songSource.forget(a);
+    setStatus(songSource.looking);
     try {
-      const all = await songsOf(a);
+      const all = await songSource.list(a);
       if (mine !== listTicket || disposed) return;
       songs = new Map(all.filter((s) => s.usable).map((s) => [s.uri, s]));
       drawList(all);
-      setStatus(songs.size ? "" : "None of your plyr.fm songs can be used yet: their audio is only on plyr.fm's storage. In plyr.fm, copy a song's audio to your PDS to use it here.", !songs.size);
+      setStatus(songs.size ? "" : songSource.none, !songs.size);
     } catch (err) {
       if (mine !== listTicket || disposed) return;
-      setStatus(`Your plyr.fm songs couldn't be listed (${err.message}). Press Refresh to try again.`, true);
+      setStatus(songSource.failed(err.message), true);
     }
   }
 
@@ -244,7 +262,7 @@ export function mountSoundPanel(root, { getPage, patchPage, context }) {
     none.value = "";
     pick.append(none);
     let found = false;
-    for (const show of groupShows(all)) {
+    for (const show of songSource.groups(all).map((g) => ({ album: g.label, songs: g.songs }))) {
       const usable = show.songs.filter((s) => s.usable);
       if (!usable.length) continue;
       const group = el("optgroup");
@@ -265,7 +283,7 @@ export function mountSoundPanel(root, { getPage, patchPage, context }) {
       pick.insertBefore(o, none.nextSibling);
     }
     const unusable = all.length - all.filter((s) => s.usable).length;
-    listNote.textContent = unusable ? `${unusable} of your songs ${unusable === 1 ? "is" : "are"} only on plyr.fm's storage or for supporters, so ${unusable === 1 ? "it isn't" : "they aren't"} listed.` : "";
+    listNote.textContent = unusable ? songSource.unusableNote(unusable) : "";
     listNote.hidden = !unusable;
   }
 
@@ -540,12 +558,12 @@ export function mountSoundPanel(root, { getPage, patchPage, context }) {
     if (a.state !== "ok") {
       account = null;
       songs = null;
-      pick.replaceChildren(el("option", null, "Your plyr.fm songs"));
+      pick.replaceChildren(el("option", null, songSource.placeholder));
       pick.disabled = true;
       refresh.hidden = true;
       listNote.hidden = true;
       setStatus(
-        a.state === "out" ? "Sign in to pick one of your plyr.fm songs." :
+        a.state === "out" ? songSource.signedOut :
         a.state === "lookup" ? "Your account's details couldn't be looked up, so your songs can't be listed yet." :
         "Looking up your account…"
       );
@@ -554,7 +572,7 @@ export function mountSoundPanel(root, { getPage, patchPage, context }) {
     if (account && account.did === a.did && account.pds === a.pds) return true;
     account = a;
     pick.disabled = false;
-    refresh.hidden = false;
+    refresh.hidden = !songSource.refresh;
     loadList();
     return true;
   }
@@ -566,7 +584,7 @@ export function mountSoundPanel(root, { getPage, patchPage, context }) {
     const c = clip();
     editor.hidden = !(c && c.song);
     if (songs && c && c.song && pick.value !== c.song.uri) {
-      songsOf(account).then((all) => { if (!disposed) drawList(all); }, () => {});
+      songSource.list(account).then((all) => { if (!disposed) drawList(all); }, () => {});
     }
     if (ok && c && c.song) {
       ensurePeaks();

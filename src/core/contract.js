@@ -82,7 +82,9 @@
 //                            own tools shown under the switch (plain DOM); patchPage(change)
 //                            changes the page (always the latest one), getPage() reads it;
 //                          problems(page, spec, values) -> sentences that stop building;
-//                          bytes(page) -> how many bytes it adds (counted in the size meter).
+//                          bytes(page) -> how many bytes it adds (counted in the size meter);
+//                          hide(page) -> true where the switch isn't offered (its problems
+//                            and bytes still count if the page has it on).
 //                        sizeLabel, optional: what the size meter counts (default "Pictures").
 //                        piece: { panel, problems?, bytes? }, needed when a layout (or a
 //                        page's fields) shows "piece": something the type manages itself
@@ -296,7 +298,7 @@ function checkPagesInput(where, input) {
       throw new Error(`${name}: each page toggle needs its own key and a label.`);
     }
     if (t.unavailable !== undefined && typeof t.unavailable !== "function") throw new Error(`${name}: a page toggle's unavailable must be a function.`);
-    for (const f of ["problems", "bytes"]) {
+    for (const f of ["problems", "bytes", "hide"]) {
       if (t[f] !== undefined && typeof t[f] !== "function") throw new Error(`${name}: a page toggle's ${f} must be a function.`);
     }
     if (t.panel !== undefined && !(t.panel && typeof t.panel.mount === "function")) throw new Error(`${name}: a page toggle's panel needs a mount function.`);

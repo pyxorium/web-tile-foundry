@@ -135,6 +135,8 @@ export const zine = {
           },
           problems: (page, spec) => soundProblems(page, spec),
           bytes: soundBytes,
+          // On a tape page the sound is the tape's own taste, set in the tape's panel.
+          hide: (page) => Boolean(page && page.layout === "tape"),
         },
       ],
       onSelect: (id) => selectListeners.forEach((fn) => fn(id)),

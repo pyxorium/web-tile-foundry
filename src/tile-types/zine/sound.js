@@ -73,10 +73,11 @@ export function clipFromSong(song) {
     song: {
       uri: song.uri, cid: song.cid, title: song.title, album: song.album || "", artist: song.artist || "",
       seconds: song.seconds, blobCid: song.blob && song.blob.cid,
+      ...(typeof song.url === "string" && /^https:\/\//.test(song.url) ? { url: song.url } : {}),
     },
     ...cut,
     title: String(song.title || "").slice(0, SOUND_TITLE_MAX),
-    details: defaultDetails(song),
+    details: typeof song.details === "string" ? song.details.slice(0, SOUND_DETAILS_MAX) : defaultDetails(song),
     status: "waiting",
   };
 }
@@ -138,7 +139,8 @@ export function soundForReader(page, src = (p) => soundPath(p.id)) {
   const out = { src: src(page), title: oneLine(c.title, SOUND_TITLE_MAX) || "Untitled", seconds: Math.round((c.seconds || c.end - c.start) * 10) / 10 };
   const details = oneLine(c.details, SOUND_DETAILS_MAX);
   if (details) out.details = details;
-  const url = plyrSongUrl(c.song.uri);
+  // A taste from a tape knows its song's plyr.fm address; a plyr.fm song is found by its record.
+  const url = (typeof c.song.url === "string" && /^https:\/\/[^\s"'<>]+$/.test(c.song.url) && c.song.url) || plyrSongUrl(c.song.uri);
   if (url) out.url = url;
   return out;
 }

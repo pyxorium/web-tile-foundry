@@ -47,6 +47,7 @@ export function zineRecipe({ paper, look, ink, pages, sprite = null }) {
       }
       if (z.sound) out.sound = soundRecipe({ ...byId.get(z.id), id: z.id });
       if (z.tile) out.tile = pieceRecipe(byId.get(z.id), z.id);
+      if (z.tape) out.tape = pieceRecipe(byId.get(z.id), z.id);
       return out;
     }),
   };

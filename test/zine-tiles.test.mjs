@@ -102,7 +102,7 @@ test("a page's tile: problems, size, files copied byte for byte, the reader's vi
     refs: [{ ref: "/lantern.js", src: "/tiles/p1/lantern.js" }],
     url: `https://appmosphe.re/@${DID}/3mlantern`, poster: "/tiles/p1/banner.png",
   });
-  assert.deepEqual(pieceRecipe(page, "p1"), { uri: piece().uri, cid: "bafyreirec", name: "Glass lantern", folder: "/tiles/p1", type: "glass-lantern", typeVersion: 1, foundryVersion: "0.9.0" });
+  assert.deepEqual(pieceRecipe(page, "p1"), { kind: "tile", uri: piece().uri, cid: "bafyreirec", name: "Glass lantern", folder: "/tiles/p1", type: "glass-lantern", typeVersion: 1, foundryVersion: "0.9.0" });
 });
 
 test("the size meter and the page problems count the tile only on an A tile page", () => {
@@ -153,4 +153,106 @@ test("the reader: tap to start, files handed over, stop off the page, frames per
   const html = renderZineHtml({ title: "T", config: zineConfig({ title: "T", handle: "x", paper: "letter", look: "clean", pages: sample().pages }) });
   assert.ok(!/\son[a-z]+=/i.test(html));
   assert.ok(!/(src|href)=["']https?:/i.test(html));
+});
+
+// ---- Part 2: tapes as J-card pages, with an optional taste ----
+
+import { tapeFromJson, tapeForReader, tasteSongs } from "../src/tile-types/zine/piece.js";
+import { clipFromSong, soundForReader } from "../src/tile-types/zine/sound.js";
+
+const TAPE_JSON = {
+  v: 2, title: "Parlor Greens at Jam Cruise", dedication: "For the boat.", notes: "Long liner notes that stay on the tape's own page.",
+  label: { text: "JAM CRUISE '26", colors: { shell: "#222222" } },
+  sides: [
+    { name: "A", tracks: [
+      { path: "/tracks/a1.mp3", cid: "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", title: "Drop Top", duration: 281.4,
+        source: { record: { uri: "at://did:plc:rqbqpaaluty5v47jwciowpik/fm.plyr.track/3mabc", cid: "bafyreiplyr" }, url: "https://plyr.fm/track/42" } },
+      { path: "/tracks/a2.mp3", cid: "bafkreibbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", title: "Jolene", duration: 224 },
+    ] },
+    { name: "B", tracks: [{ path: "/tracks/b1.mp3", cid: "bafkreicccccccccccccccccccccccccccccccccccccccccccccccccccc", title: "Parlor <Strut>", duration: 541 }] },
+  ],
+};
+function tapePiece(extra = {}) {
+  return {
+    kind: "tape", uri: "at://did:plc:rqbqpaaluty5v47jwciowpik/ing.dasl.masl/3mtape", cid: "bafyreitape", name: "Parlor Greens at Jam Cruise",
+    did: "did:plc:rqbqpaaluty5v47jwciowpik", handle: "pyxorium.com", typeId: "mixtape", typeVersion: 1, status: "ready",
+    files: [{ path: "/banner.png", bytes: new Uint8Array([137, 80, 78, 71, 7]), contentType: "image/png" }],
+    tape: tapeFromJson(TAPE_JSON), ...extra,
+  };
+}
+
+test("tapes: what the J-card keeps from tape.json (no liner notes), and placement", () => {
+  const t = tapeFromJson(TAPE_JSON);
+  assert.equal(t.title, "Parlor Greens at Jam Cruise");
+  assert.equal(t.dedication, "For the boat.");
+  assert.equal(t.notes, undefined, "liner notes stay on the tape's own page");
+  assert.deepEqual(t.sides.map((s) => [s.name, s.tracks.map((x) => x.title)]), [["A", ["Drop Top", "Jolene"]], ["B", ["Parlor <Strut>"]]]);
+  assert.equal(t.sides[0].tracks[0].url, "https://plyr.fm/track/42");
+  assert.equal(tapeFromJson({ sides: [] }), null);
+  assert.equal(tapeFromJson(null), null);
+  const types = [glassLantern, mixtape, zine];
+  const getType = (id) => types.find((x) => x.id === id);
+  const r = (type) => ({ madeWith: "Web Tile Foundry", type, typeVersion: 1 });
+  assert.equal(tilePlacement(r("mixtape"), getType, "tape").ok, true);
+  assert.match(tilePlacement(r("glass-lantern"), getType, "tape").reason, /A tile/);
+  assert.match(tilePlacement(r("mixtape"), getType, "live").reason, /A tape/);
+});
+
+test("a tape page: problems, only the banner copied, the reader's J-card, the recipe", () => {
+  const spec = PAGES[2];
+  assert.match(pieceProblems({ layout: "tape" }, spec)[0], /choose one of your tapes/);
+  assert.match(pieceProblems({ layout: "tape", piece: piece() }, spec)[0], /choose one of your tapes/, "a tile on a tape page doesn't count");
+  assert.match(pieceProblems({ layout: "tile", piece: tapePiece() }, spec)[0], /choose one of your tiles/);
+  const page = { id: "p2", layout: "tape", piece: tapePiece(), subtitle: "Side B is the one." };
+  assert.deepEqual(pieceProblems(page, spec), []);
+  assert.deepEqual(pieceFiles(page, "p2").map((f) => f.path), ["/tiles/p2/banner.png"], "the songs aren't copied");
+  const r = tapeForReader(page, "p2");
+  assert.deepEqual(r, {
+    name: "Parlor Greens at Jam Cruise", title: "Parlor Greens at Jam Cruise",
+    sides: [{ name: "A", songs: ["Drop Top", "Jolene"] }, { name: "B", songs: ["Parlor <Strut>"] }],
+    dedication: "For the boat.", url: "https://appmosphe.re/@did:plc:rqbqpaaluty5v47jwciowpik/3mtape", poster: "/tiles/p2/banner.png",
+  });
+  assert.equal(pieceRecipe(page, "p2").kind, "tape");
+  assert.equal(tileForReader(page, "p2"), null);
+});
+
+test("a taste: the tape's own songs by side, each from its song file, with its plyr.fm link", () => {
+  const songs = tasteSongs(tapePiece());
+  assert.equal(songs.length, 3);
+  assert.deepEqual(songs.map((s) => s.album), ["Side A", "Side A", "Side B"]);
+  assert.equal(songs[0].blob.cid, TAPE_JSON.sides[0].tracks[0].cid, "cut from the tape's own song file");
+  assert.equal(songs[0].uri, TAPE_JSON.sides[0].tracks[0].source.record.uri);
+  assert.equal(songs[1].uri, `${tapePiece().uri}#/tracks/a2.mp3`);
+  const clip = { ...clipFromSong(songs[0]), status: "ready", bytes: new Uint8Array(9), seconds: 60, start: 0, end: 60, made: { start: 0, end: 60 } };
+  assert.equal(clip.details, "From Parlor Greens at Jam Cruise");
+  const s = soundForReader({ id: "p2", sound: true, clip });
+  assert.equal(s.url, "https://plyr.fm/track/42");
+  assert.equal(s.details, "From Parlor Greens at Jam Cruise");
+  assert.deepEqual(tasteSongs(piece()), [], "only tapes have tastes");
+});
+
+test("a zine with a tape page: the banner and the taste go in; the Add a sound switch steps aside there", async () => {
+  const v = sample();
+  v.pages[2].layout = "tape";
+  v.pages[2].piece = tapePiece();
+  v.pages[2].subtitle = "Side B is the one.";
+  const songs = tasteSongs(v.pages[2].piece);
+  v.pages[2].sound = true;
+  v.pages[2].clip = { ...clipFromSong(songs[2]), status: "ready", bytes: new Uint8Array(20), seconds: 30, start: 10, end: 40, made: { start: 10, end: 40 } };
+  v.soundRights = true;
+  const result = await buildTile(zine, v, { final: false });
+  const paths = result.files.map((f) => f.path);
+  assert.ok(paths.includes("/tiles/p2/banner.png") && paths.includes("/sounds/p2.mp3"));
+  assert.ok(!paths.some((p) => p.startsWith("/tiles/p2/tracks")));
+  const c = zineConfig({ title: "T", handle: "pyxorium.com", paper: "letter", look: "clean", pages: v.pages });
+  assert.equal(c.pages[2].tape.title, "Parlor Greens at Jam Cruise");
+  assert.equal(c.pages[2].subtitle, "Side B is the one.");
+  assert.equal(c.pages[2].sound.details, "From Parlor Greens at Jam Cruise");
+  const recipe = JSON.parse(new TextDecoder().decode(result.files.find((f) => f.path === "/foundry.json").bytes));
+  assert.equal(recipe.inputs.pages[2].tape.kind, "tape");
+  const soundToggle = pagesInput.pageToggles.find((t) => t.key === "sound");
+  assert.equal(soundToggle.hide({ layout: "tape" }), true);
+  assert.equal(soundToggle.hide({ layout: "both" }), false);
+  assert.ok(LAYOUTS.some((l) => l.value === "tape" && l.shows.join() === "piece,subtitle"));
+  assert.ok(READER_JS.includes("function fitTape(pageEl)") && READER_JS.includes('"▶ Play this tape ↗"') && READER_JS.includes('" more"'));
 });

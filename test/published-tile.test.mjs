@@ -1,13 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkTileType } from "../src/core/contract.js";
-import { buildTile } from "../src/core/build.js";
 import { rawCid } from "../src/core/cid.js";
-import { parseTileAddress, fetchPublishedTile, copyPaths, blobCidOf } from "../src/core/published-tile.js";
-import { zineTileTest, pageRefs, pageInFolder } from "../src/tile-types/zine-tile-test/index.js";
-import { renderTileTestHtml } from "../src/tile-types/zine-tile-test/template.js";
+import { parseTileAddress, fetchPublishedTile, copyPaths, blobCidOf, jsonFile, pageRefs, swapRefs } from "../src/core/published-tile.js";
 
-// Stage 4 host test: reading a published tile back and copying it into another tile.
+// Reading a published tile back and copying it into a zine (stage 4).
 
 const DID = "did:plc:joer5rzmwgec3dkr4srfmq45";
 const PDS = "https://pds.example";
@@ -82,32 +78,15 @@ test("copies keep their bytes and their content type", () => {
   assert.throws(() => copyPaths([{ path: "/x.js", bytes: enc("1"), contentType: "application/javascript" }], "/t1"), /can't be copied/);
 });
 
-test("the test page: refs, way B's copy, safe text, and a script that parses", () => {
+test("only some files, JSON files, and the page's own references", async () => {
+  const { fetchImpl, calls } = await standIn();
+  const pub = await fetchPublishedTile(`at://${DID}/ing.dasl.masl/3mlantern`, { fetchImpl, only: ["/banner.png", "/foundry.json"] });
+  assert.deepEqual(pub.files.map((f) => f.path).sort(), ["/banner.png", "/foundry.json"]);
+  assert.equal(calls.filter((c) => c.endsWith("getBlob")).length, 2, "only those files are downloaded");
+  assert.equal(jsonFile(pub.files, "/foundry.json").type, "glass-lantern");
+  assert.equal(jsonFile(pub.files, "/missing.json"), null);
+  assert.equal(jsonFile([{ path: "/x.json", bytes: enc("not json") }], "/x.json"), null);
   const refs = pageRefs(PAGE, Object.keys(FILES));
   assert.deepEqual(refs, ["/lantern.js"]);
-  assert.ok(pageInFolder(PAGE, refs).includes('<script src="/t1/lantern.js">'));
-  const html = renderTileTestHtml({ title: "T <b>", config: { title: "T", tile: { name: "Glass <Lantern>", by: "@x", uri: "at://x", page: "/t1/index.html", pageB: "/t1/page-b.html", refs } } });
-  assert.ok(html.includes("Glass &lt;Lantern&gt;") && !html.includes("Glass <Lantern>"));
-  assert.equal(html.split("</script").length - 1, 2, "nothing inside the scripts ends them early");
-  assert.ok(!/\son[a-z]+=/i.test(html));
-  assert.doesNotThrow(() => new Function(html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"))));
-  for (const way of ["A. Written into a frame", "B. A page inside this tile", "C. Files handed over", "D. Walled off"]) assert.ok(html.includes(way));
-});
-
-test("the test type builds through the Foundry (debug only)", async (t) => {
-  checkTileType(zineTileTest);
-  const { fetchImpl } = await standIn();
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = fetchImpl;
-  t.after(() => { globalThis.fetch = realFetch; });
-  const result = await buildTile(zineTileTest, { name: "Lantern on a page", address: `at://${DID}/ing.dasl.masl/3mlantern`, description: "" }, { final: true });
-  const paths = result.files.map((f) => f.path).sort();
-  assert.deepEqual(paths, ["/", "/banner.png", "/foundry.json", "/icon.png", "/t1/banner.png", "/t1/foundry.json", "/t1/icon.png", "/t1/index.html", "/t1/lantern.js", "/t1/page-b.html"]);
-  assert.deepEqual(result.files.find((f) => f.path === "/t1/lantern.js").bytes, FILES["/lantern.js"].bytes, "copied byte for byte");
-  assert.deepEqual(result.files.find((f) => f.path === "/t1/index.html").bytes, FILES["/"].bytes, "the page too");
-  const recipe = JSON.parse(new TextDecoder().decode(result.files.find((f) => f.path === "/foundry.json").bytes));
-  assert.equal(recipe.inputs.tile.type, "glass-lantern");
-  assert.equal(recipe.inputs.tile.uri, `at://${DID}/ing.dasl.masl/3mlantern`);
-  await assert.rejects(buildTile(zineTileTest, { name: "x", address: "", description: "" }, { final: false }), /need attention/);
-  await assert.rejects(buildTile(zineTileTest, { name: "x", address: "not an address", description: "" }, { final: false }), /tile address/);
+  assert.ok(swapRefs(PAGE, { "/lantern.js": "/tiles/p3/lantern.js" }).includes('<script src="/tiles/p3/lantern.js">'));
 });

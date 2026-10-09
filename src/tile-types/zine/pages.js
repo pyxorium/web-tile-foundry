@@ -2,7 +2,7 @@ import { lookOf, lookColors } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
 import { soundForReader, soundPath, SOUND_COST, QUOTE_SOUND_COST } from "./sound.js";
-import { tileForReader } from "./piece.js";
+import { tileForReader, tapeForReader } from "./piece.js";
 export { cropRect } from "../../core/pictures.js";
 
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
@@ -31,6 +31,9 @@ export const LAYOUTS = Object.freeze([
   // Stage 4: one of the creator's own published tiles, live on the page (tap to
   // start), with an optional heading and words below (see piece.js).
   { value: "tile", label: "A tile", shows: ["piece", "heading", "words"], labels: { piece: "Your tile", words: "Words (optional)" } },
+  // Stage 4, part 2: one of the creator's tapes as its J-card (banner, title,
+  // songs by side, dedication), a line of their own, a link out to the tape.
+  { value: "tape", label: "A tape", shows: ["piece", "subtitle"], labels: { piece: "Your tape", subtitle: "Your own line (optional)" } },
 ]);
 
 export const PAGES = Object.freeze([
@@ -200,8 +203,11 @@ export function zinePages(pages, src = picturePath, { paper, look, sprite = fals
     if (shows.includes("subtitle")) out.subtitle = cleanText(p.subtitle, SUBTITLE_MAX).replace(/\n+/g, " ");
     if (shows.includes("words")) out.words = cleanText(p.words);
     if (shows.includes("piece")) {
-      const tile = tileForReader(p, spec.id, tileSrc ? (path) => tileSrc(spec.id, path) : undefined);
+      const at = tileSrc ? (path) => tileSrc(spec.id, path) : undefined;
+      const tile = p.layout === "tile" ? tileForReader(p, spec.id, at) : null;
       if (tile) out.tile = tile;
+      const tape = p.layout === "tape" ? tapeForReader(p, spec.id, at) : null;
+      if (tape) out.tape = tape;
     }
     const marks = cleanMarks(p.marks, PAGE_SIZES[paper] || PAGE_SIZES.letter);
     if (marks.length) out.marks = marks;
