@@ -1,3 +1,4 @@
+import { cleanPictureSource } from "../../core/app-pictures.js";
 import { makeFile } from "../../core/fileset.js";
 import { renderZineHtml } from "./runtime/template.js";
 import { lookOf, inkOf } from "./looks.js";
@@ -44,6 +45,8 @@ export function zineRecipe({ paper, look, ink, pages, sprite = null }) {
         out.picture = { path: z.picture.src, width: z.picture.width, height: z.picture.height };
         if (z.picture.alt) out.picture.alt = z.picture.alt;
         if (z.picture.fill) { out.picture.fill = true; out.picture.crop = z.picture.crop; }
+        const from = cleanPictureSource((byId.get(z.id) || {}).picture && byId.get(z.id).picture.source);
+        if (from) out.picture.source = from;
       }
       if (z.sound) out.sound = soundRecipe({ ...byId.get(z.id), id: z.id });
       if (z.tile) out.tile = pieceRecipe(byId.get(z.id), z.id);

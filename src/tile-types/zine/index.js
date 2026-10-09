@@ -33,7 +33,7 @@ export const zine = {
   summary: "Make a little zine: eight pages of pictures, words, and more.",
   maxBytes: 20 * 1024 * 1024,
   credits: [
-    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, "."],
+    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, "."],
     [
       "MP3 encoding by ",
       { text: "lamejs", href: "https://github.com/zhuker/lamejs" },
@@ -102,7 +102,7 @@ export const zine = {
       key: "pages",
       kind: "pages",
       label: "Pages",
-      help: "Pick a page to fill it in. Pictures are made smaller on your computer before they're added.",
+      help: "Pick a page to fill it in. Pictures can come from your computer, your Grain photos or your PinkSea drawings; they're made smaller before they're added.",
       sizeLabel: "Pictures, sounds and tiles",
       // "A tile" pages: one of your published tiles, copied in and run on the page.
       piece: {
@@ -122,6 +122,8 @@ export const zine = {
       wordLimit,
       wordSize,
       // The shape a picture fills on a page (edge to edge on the cover and on picture-only pages).
+      // Stage 5: pictures can also come from your Grain photos and PinkSea drawings.
+      pictureSources: ["grain", "pinksea"],
       pictureFrame: (spec, page, values) => fillFrame(spec, { ...page, picture: { ...(page.picture || {}), fill: true } }, values),
       zoomMax: FILL_ZOOM_MAX,
       pageToggles: [

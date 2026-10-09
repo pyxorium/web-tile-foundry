@@ -67,8 +67,14 @@
 //                        The value is a list, one entry per page, in the same order:
 //                          { id, layout?, heading?, subtitle?, words?, picture? }
 //                        picture: { bytes (Uint8Array), contentType, width, height, alt?,
-//                                   fill?, crop? }
+//                                   fill?, crop?, source?, autoAlt? }
 //                        made small in the browser (src/core/pictures.js).
+//                        pictureSources, optional: apps whose pictures the creator can
+//                        choose from, as well as their computer (ids from
+//                        APP_PICTURE_SOURCES in src/core/app-pictures.js: "grain",
+//                        "pinksea"). "Choose picture" then opens a menu; a picture from an
+//                        app keeps source { app, uri, cid } (its record), and autoAlt (the
+//                        description that came with it, while unchanged).
 //                        With pictureFrame(page, value, values) -> { w, h } (the shape a
 //                        picture fills on that page), the editor offers Fit / Fill and a
 //                        crop (drag, and zoom from 1 to zoomMax, default 2): crop is
@@ -148,6 +154,8 @@
 //
 // recipeInputs is PUBLIC: it is stored inside the tile for anyone to read.
 // A type must only put in it what is safe to publish.
+
+import { APP_PICTURE_SOURCES } from "./app-pictures.js";
 
 /** Size budget for a tile when its type doesn't set maxBytes. */
 export const DEFAULT_MAX_TILE_BYTES = 5 * 1024 * 1024;
@@ -299,6 +307,9 @@ function checkPagesInput(where, input) {
   if (input.wordSize !== undefined && typeof input.wordSize !== "function") throw new Error(`${name}: wordSize must be a function.`);
   if (input.onSelect !== undefined && typeof input.onSelect !== "function") throw new Error(`${name}: onSelect must be a function.`);
   if (input.pictureFrame !== undefined && typeof input.pictureFrame !== "function") throw new Error(`${name}: pictureFrame must be a function.`);
+  if (input.pictureSources !== undefined && !(Array.isArray(input.pictureSources) && input.pictureSources.every((a) => Object.prototype.hasOwnProperty.call(APP_PICTURE_SOURCES, a)))) {
+    throw new Error(`${name}: pictureSources must list apps from ${Object.keys(APP_PICTURE_SOURCES).join(", ")}.`);
+  }
   for (const t of input.pageToggles || []) {
     if (!t || typeof t.key !== "string" || !t.key || typeof t.label !== "string" || PAGE_FIELDS.includes(t.key) || ["id", "layout"].includes(t.key)) {
       throw new Error(`${name}: each page toggle needs its own key and a label.`);

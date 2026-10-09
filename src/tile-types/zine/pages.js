@@ -1,3 +1,4 @@
+import { APP_PICTURE_SOURCES, appsUsed } from "../../core/app-pictures.js";
 import { lookOf, lookColors } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
@@ -109,7 +110,29 @@ export function wordLimit(spec, page, values = {}) {
   // The sound band (stage 3) takes its room the same way, as soon as the switch
   // is on; a big quote loses a little; words over a picture keep theirs (measured).
   const band = page && page.sound ? (fills ? SOUND_COST : layout === "quote" ? QUOTE_SOUND_COST : 0) : 0;
-  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane - band);
+  // The back page's footer (stage 5): its credit links sit two to a line; the
+  // limits above were measured with up to two lines (rpg.actor, plyr.fm and
+  // “Make your own zine”). Each further line takes room from words that fill the page.
+  const foot = where === "back" && fills ? FOOT_LINE_COST * footExtraLines(values) : 0;
+  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane - band - foot);
+}
+
+/** Word room (see wordSize) one more line of the back page's footer takes (measured). */
+export const FOOT_LINE_COST = 110;
+
+/** The back page footer's links: rpg.actor, plyr.fm, each app pictures came from, and “Make your own zine”. */
+export function footLinks(values = {}) {
+  const pages = Array.isArray(values.pages) ? values.pages : [];
+  let n = 1; // Make your own zine
+  if (usesSprite(pages, values.sprite)) n += 1;
+  if (pages.some((p) => p && p.sound)) n += 1;
+  n += appsUsed(PAGES.map((spec, i) => (pages[i] && showsOf(spec, pages[i]).includes("picture") ? pages[i].picture : null))).length;
+  return n;
+}
+
+/** Footer lines beyond the two the word limits were measured with. */
+export function footExtraLines(values = {}) {
+  return Math.max(0, Math.ceil(footLinks(values) / 2) - 2);
 }
 
 /** Letter in the Americas where it's the usual paper, A4 elsewhere. */
@@ -250,6 +273,9 @@ export function zineConfig({ title, handle, paper, look, ink, pages, made, src, 
   };
   // Sounds (stage 3): the back page credits plyr.fm.
   if (config.pages.some((p) => p.sound)) config.sounds = true;
+  // Pictures from your apps (stage 5): the back page credits each app used.
+  const apps = appsUsed(PAGES.map((spec, i) => (pages && pages[i] && showsOf(spec, pages[i]).includes("picture") ? pages[i].picture : null)));
+  if (apps.length) config.appCredits = apps.map((a) => ({ text: APP_PICTURE_SOURCES[a].credit, href: APP_PICTURE_SOURCES[a].home }));
   if (withSprite) {
     const g = sprite.geometry;
     config.sprite = { src: spriteSrc, frameWidth: g.frameWidth, frameHeight: g.frameHeight, columns: g.columns, rows: g.rows };

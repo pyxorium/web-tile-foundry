@@ -853,6 +853,7 @@ export const READER_JS = String.raw`
       // Credits, like the last page of a printed zine.
       if (config.sprite) link("Sprite from rpg.actor ↗", "https://rpg.actor/");
       if (config.sounds) link("Songs from plyr.fm ↗", "https://plyr.fm/");
+      (config.appCredits || []).forEach(function (c) { if (c && c.text && /^https:\/\//.test(c.href || "")) link(c.text, c.href); });
       if (config.makeUrl) link("Make your own zine ↗", config.makeUrl);
       if (links.firstChild) foot.appendChild(links);
       e.appendChild(foot);

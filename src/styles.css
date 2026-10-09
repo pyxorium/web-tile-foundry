@@ -434,6 +434,33 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .page-thumb { width: 72px; height: 72px; object-fit: contain; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2, #f1ede6); display: grid; place-items: center; font-size: 11px; color: var(--ink-2); text-align: center; }
 .page-picture-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .page-picture-size { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* "Choose picture" menu and pictures from your apps (stage 5) */
+.picture-menu { position: relative; display: inline-block; }
+.picture-menu-caret { margin-left: 6px; font-size: 0.85em; }
+.picture-menu-list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 230px; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16); }
+.picture-menu-item { display: grid; gap: 1px; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 7px; background: none; color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+.picture-menu-item:hover, .picture-menu-item:focus-visible { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); outline: none; }
+.picture-menu-item.off { color: var(--ink-2); cursor: default; }
+.picture-menu-item.off:hover { background: none; }
+.picture-menu-why { font-size: 12px; color: var(--ink-2); }
+.page-picture .app-pictures { grid-column: 1 / -1; }
+.app-pictures { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--surface-2); display: grid; gap: 8px; }
+.app-pictures-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.app-pictures-title { font-weight: 700; margin-right: auto; }
+.app-pictures-group { display: grid; gap: 6px; }
+.app-pictures-group-title { margin: 0; font-size: 13px; color: var(--ink-2); }
+.app-pictures-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; padding: 2px; }
+.app-thumb { position: relative; aspect-ratio: 1; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); cursor: pointer; }
+.app-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.app-thumb:hover, .app-thumb:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
+.app-thumb.sensitive img { filter: blur(14px); transform: scale(1.15); }
+.app-thumb-flag, .app-thumb-used { position: absolute; left: 4px; right: 4px; padding: 2px 4px; border-radius: 5px; font-size: 10.5px; line-height: 1.25; text-align: center; background: rgba(20, 18, 40, 0.78); color: #fff; }
+.app-thumb-flag { top: 50%; transform: translateY(-50%); }
+.app-thumb-used { bottom: 4px; }
+.app-thumb-fail { display: grid; place-items: center; height: 100%; font-size: 11px; color: var(--ink-2); }
+.app-pictures-ask { border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--surface); }
+.app-pictures-ask p { margin: 0 0 8px; }
+.app-pictures-ask-buttons { display: flex; gap: 6px; }
 .page-text { position: relative; margin: 0; }
 .page-text textarea { resize: vertical; min-height: 120px; }
 .counter.over { color: var(--danger); font-weight: 700; }

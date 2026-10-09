@@ -3,6 +3,7 @@ import { spriteFromBytes } from "../core/sprite-source.js";
 import { formatSize } from "../core/fileset.js";
 import { DEBUG } from "./debug.js";
 import { cropRect, clampCrop } from "../core/pictures.js";
+import { PictureMenu, AppPictureGrid } from "./AppPictures.jsx";
 import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout, pagesBytes } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
@@ -649,6 +650,7 @@ function PagesInput({ input, value, onChange, values, type, context }) {
   const [openId, setOpenId] = useState(input.pages[0].id);
   const [busy, setBusy] = useState({}); // page id -> true while its picture is being made small
   const [pictureError, setPictureError] = useState({});
+  const [browsing, setBrowsing] = useState(null); // { page, app } while an app's pictures are shown
   const fileRef = useRef(null);
   // Pictures finish after other edits, so changes build on the latest pages.
   const latest = useRef(pages);
@@ -666,6 +668,7 @@ function PagesInput({ input, value, onChange, values, type, context }) {
 
   function open(id) {
     setOpenId(id);
+    setBrowsing(null);
     if (input.onSelect) input.onSelect(id);
   }
   function patch(id, change) {
@@ -683,16 +686,61 @@ function PagesInput({ input, value, onChange, values, type, context }) {
     try {
       const { shrinkPicture } = await import("../core/pictures.js");
       const made = await shrinkPicture(file);
-      const old = latest.current.find((p) => p.id === id);
-      // A new picture keeps the description and Fit / Fill; its crop starts centred.
-      const before = (old && old.picture) || {};
-      patch(id, { picture: { ...made, alt: before.alt || "", ...(before.fill ? { fill: true } : {}) } });
+      patch(id, { picture: nextPicture(id, made, null) });
     } catch (err) {
       setPictureError((x) => ({ ...x, [id]: err.message || String(err) }));
     } finally {
       setBusy((x) => ({ ...x, [id]: false }));
     }
   }
+
+  // A new picture keeps the description you wrote and Fit / Fill; its crop
+  // starts centred. A description filled in from an app (and not changed since)
+  // goes with its picture: the new picture brings its own, or none.
+  function nextPicture(id, made, item) {
+    const old = latest.current.find((p) => p.id === id);
+    const before = (old && old.picture) || {};
+    const typed = before.alt && before.alt !== before.autoAlt ? before.alt : "";
+    const fromApp = item && item.alt ? item.alt : "";
+    const alt = typed || fromApp;
+    return {
+      ...made,
+      alt,
+      ...(alt && alt === fromApp && !typed ? { autoAlt: fromApp } : {}),
+      ...(before.fill ? { fill: true } : {}),
+      ...(item ? { source: { app: item.app, uri: item.uri, cid: item.cid } } : {}),
+    };
+  }
+  // A picture from one of your apps (stage 5): downloaded from your own
+  // account, checked against its record, then made small like any other.
+  async function chooseFromApp(item) {
+    const id = spec.id;
+    setBrowsing(null);
+    setPictureError((x) => ({ ...x, [id]: null }));
+    setBusy((x) => ({ ...x, [id]: true }));
+    try {
+      const [{ fetchAppPicture }, { shrinkPicture }] = await Promise.all([import("../core/app-pictures.js"), import("../core/pictures.js")]);
+      const blob = await fetchAppPicture(item);
+      const made = await shrinkPicture(blob);
+      patch(id, { picture: nextPicture(id, made, item) });
+    } catch (err) {
+      setPictureError((x) => ({ ...x, [id]: err.message || String(err) }));
+    } finally {
+      setBusy((x) => ({ ...x, [id]: false }));
+    }
+  }
+  // "On page 3" when another page already shows this app picture.
+  function usedOn(uri) {
+    for (let i = 0; i < input.pages.length; i++) {
+      const s = input.pages[i];
+      const p = pages[i];
+      if (s.id === spec.id || !p || !p.picture || !p.picture.source || p.picture.source.uri !== uri) continue;
+      if (!pageShows(input, s, p).includes("picture")) continue;
+      return s.label.toLowerCase().startsWith("page") ? s.label.toLowerCase() : `the ${s.label.toLowerCase()}`;
+    }
+    return null;
+  }
+  const apps = Array.isArray(input.pictureSources) ? input.pictureSources : [];
 
   const pictureBytes = pagesBytes(input, pages);
   const limit = type && type.maxBytes;
@@ -786,15 +834,29 @@ function PagesInput({ input, value, onChange, values, type, context }) {
           <div className="page-picture">
             {page.picture ? <PictureThumb picture={page.picture} /> : <span className="page-thumb page-thumb-empty">No picture</span>}
             <div className="page-picture-tools">
-              <button type="button" className="btn btn-quiet btn-small" disabled={busy[spec.id]} onClick={() => fileRef.current && fileRef.current.click()}>
-                {busy[spec.id] ? "Making it small…" : page.picture ? "Change picture" : "Choose picture"}
-              </button>
+              {apps.length ? (
+                <PictureMenu
+                  apps={apps}
+                  context={context}
+                  disabled={busy[spec.id]}
+                  label={busy[spec.id] ? "Making it small…" : page.picture ? "Change picture" : "Choose picture"}
+                  onComputer={() => { setBrowsing(null); if (fileRef.current) fileRef.current.click(); }}
+                  onApp={(app) => setBrowsing({ page: spec.id, app })}
+                />
+              ) : (
+                <button type="button" className="btn btn-quiet btn-small" disabled={busy[spec.id]} onClick={() => fileRef.current && fileRef.current.click()}>
+                  {busy[spec.id] ? "Making it small…" : page.picture ? "Change picture" : "Choose picture"}
+                </button>
+              )}
               {page.picture && (
                 <button type="button" className="btn btn-quiet btn-small" onClick={() => patch(spec.id, { picture: null })}>Remove</button>
               )}
               {page.picture && <span className="page-picture-size">{formatSize(page.picture.bytes.length)}</span>}
               <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.heic,.heif" hidden onChange={choose} />
             </div>
+            {browsing && browsing.page === spec.id && (
+              <AppPictureGrid app={browsing.app} context={context} usedOn={usedOn} onChoose={chooseFromApp} onClose={() => setBrowsing(null)} />
+            )}
             {pictureError[spec.id] && <p className="field-error">{pictureError[spec.id]}</p>}
             {page.picture && input.pictureFrame && !alwaysFill && (
               <div className="segmented page-fill">
