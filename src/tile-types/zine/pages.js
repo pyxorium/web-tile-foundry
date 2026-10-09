@@ -1,9 +1,10 @@
-import { APP_PICTURE_SOURCES, appsUsed } from "../../core/app-pictures.js";
+import { APP_PICTURE_SOURCES } from "../../core/app-pictures.js";
 import { lookOf, lookColors } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
 import { soundForReader, soundPath, SOUND_COST, QUOTE_SOUND_COST } from "./sound.js";
 import { tileForReader, tapeForReader } from "./piece.js";
+import { bookForReader, BOOKHIVE } from "./books.js";
 export { cropRect } from "../../core/pictures.js";
 
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
@@ -35,6 +36,9 @@ export const LAYOUTS = Object.freeze([
   // Stage 4, part 2: one of the creator's tapes as its J-card (banner, title,
   // songs by side, dedication), a line of their own, a link out to the tape.
   { value: "tape", label: "A mixtape", shows: ["piece", "subtitle"], labels: { piece: "Your tape", subtitle: "Your own line (optional)" } },
+  // Stage 5, part 2: one of the creator's Bookhive books (cover, title, author,
+  // stars, where they are with it) and a line from their review (see books.js).
+  { value: "book", label: "A book", shows: ["piece", "words"], labels: { piece: "Your book", words: "Line from your review (optional)" } },
 ]);
 
 export const PAGES = Object.freeze([
@@ -45,7 +49,7 @@ export const PAGES = Object.freeze([
   ...[1, 2, 3, 4, 5, 6].map((n) => ({ id: `p${n}`, label: `Page ${n}`, short: String(n), kind: "page", layouts: true })),
   {
     id: "back", label: "Back", short: "B", kind: "back", layouts: true,
-    note: "A small footer is added at the bottom: Made by @you, the month, and a “Make your own zine” link.",
+    note: "A small footer is added at the bottom: Made by @you, the month, a “Make your own zine” link, and Credits when something came from another app.",
   },
 ]);
 
@@ -73,16 +77,29 @@ export function wordSize(text) {
 // the sprite's lane and the sound band, Oct 8). "tile" is the words under
 // a tile (its box takes half the page; measured in all looks, with and without
 // the sprite's lane and the sound band, Oct 8).
+// "book" (stage 5) is the line from the review under a book's cover, title,
+// author, stars and status (no heading). Measured Oct 9 in all looks, both
+// papers, page and back, with and without the sprite's lane and the sound band:
+// a typical book (one-line title, one author) keeps its cover at 80% or more;
+// an extra-long one (three-line title, two authors) fits with its cover made
+// smaller (the reader's fitBook). About 5% kept spare. The sprite's lane and the
+// sound band take BOOK_SPRITE_COST / BOOK_SOUND_COST of it. (An A4 back page
+// with both has no room left for a review line.)
+export const BOOK_ROOM = Object.freeze({ letter: { page: 560, back: 360 }, a4: { page: 460, back: 280 } });
+export const BOOK_SPRITE_COST = 200;
+export const BOOK_SOUND_COST = 150;
 export const WORD_LIMITS = Object.freeze({
   letter: {
     words: { page: [1380, 1230], back: [1230, 990] }, both: { page: [560, 450], back: [450, 250] },
     overlay: { page: [300, 220], back: [240, 160] }, quote: { page: [180, 180], back: [180, 180] },
     tile: { page: [560, 380], back: [420, 230] },
+    book: { page: [BOOK_ROOM.letter.page, BOOK_ROOM.letter.page], back: [BOOK_ROOM.letter.back, BOOK_ROOM.letter.back] },
   },
   a4: {
     words: { page: [1230, 1090], back: [1090, 890] }, both: { page: [540, 390], back: [350, 160] },
     overlay: { page: [280, 200], back: [220, 140] }, quote: { page: [180, 180], back: [180, 180] },
     tile: { page: [510, 320], back: [320, 180] },
+    book: { page: [BOOK_ROOM.a4.page, BOOK_ROOM.a4.page], back: [BOOK_ROOM.a4.back, BOOK_ROOM.a4.back] },
   },
 });
 
@@ -106,33 +123,13 @@ export function wordLimit(spec, page, values = {}) {
   // The sprite's lane takes room from words that fill the page; the band of
   // words over a picture and a big quote keep theirs (measured).
   const fills = layout === "words" || layout === "both" || layout === "tile";
-  const lane = fills && page && page.sprite && usableSprite(values.sprite) ? SPRITE_COST : 0;
+  // A book page (stage 5) loses room for its line from the review in the same way (measured).
+  const book = layout === "book";
+  const lane = (fills || book) && page && page.sprite && usableSprite(values.sprite) ? (book ? BOOK_SPRITE_COST : SPRITE_COST) : 0;
   // The sound band (stage 3) takes its room the same way, as soon as the switch
   // is on; a big quote loses a little; words over a picture keep theirs (measured).
-  const band = page && page.sound ? (fills ? SOUND_COST : layout === "quote" ? QUOTE_SOUND_COST : 0) : 0;
-  // The back page's footer (stage 5): its credit links sit two to a line; the
-  // limits above were measured with up to two lines (rpg.actor, plyr.fm and
-  // “Make your own zine”). Each further line takes room from words that fill the page.
-  const foot = where === "back" && fills ? FOOT_LINE_COST * footExtraLines(values) : 0;
-  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane - band - foot);
-}
-
-/** Word room (see wordSize) one more line of the back page's footer takes (measured). */
-export const FOOT_LINE_COST = 110;
-
-/** The back page footer's links: rpg.actor, plyr.fm, each app pictures came from, and “Make your own zine”. */
-export function footLinks(values = {}) {
-  const pages = Array.isArray(values.pages) ? values.pages : [];
-  let n = 1; // Make your own zine
-  if (usesSprite(pages, values.sprite)) n += 1;
-  if (pages.some((p) => p && p.sound)) n += 1;
-  n += appsUsed(PAGES.map((spec, i) => (pages[i] && showsOf(spec, pages[i]).includes("picture") ? pages[i].picture : null))).length;
-  return n;
-}
-
-/** Footer lines beyond the two the word limits were measured with. */
-export function footExtraLines(values = {}) {
-  return Math.max(0, Math.ceil(footLinks(values) / 2) - 2);
+  const band = page && page.sound ? (fills ? SOUND_COST : book ? BOOK_SOUND_COST : layout === "quote" ? QUOTE_SOUND_COST : 0) : 0;
+  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane - band);
 }
 
 /** Letter in the Americas where it's the usual paper, A4 elsewhere. */
@@ -231,6 +228,8 @@ export function zinePages(pages, src = picturePath, { paper, look, sprite = fals
       if (tile) out.tile = tile;
       const tape = p.layout === "tape" ? tapeForReader(p, spec.id, at) : null;
       if (tape) out.tape = tape;
+      const book = p.layout === "book" ? bookForReader(p, spec.id, at) : null;
+      if (book) out.book = book;
     }
     const marks = cleanMarks(p.marks, PAGE_SIZES[paper] || PAGE_SIZES.letter);
     if (marks.length) out.marks = marks;
@@ -259,6 +258,39 @@ export function usesSprite(pages, sprite) {
   return usableSprite(sprite) && (pages || []).some((p) => p && p.sprite);
 }
 
+/** How a page is named in the credits: "the cover", "page 2", "the back". */
+function creditPlace(spec) {
+  return spec.kind === "cover" ? "the cover" : spec.kind === "back" ? "the back" : spec.label.toLowerCase();
+}
+
+/** "the cover", "the cover and page 2", "page 1, page 3 and the back". */
+function andList(items) {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * The zine's credits: [{ what, app, href, pages }], one per app something came
+ * from, in a fixed order (sprite, songs, then the apps), with the pages it's on
+ * ("the cover and page 2"; the sheet says "On the cover and page 2").
+ * `shown` are the pages as the reader gets them (zinePages).
+ */
+export function zineCredits(pages, shown, withSprite) {
+  const out = [];
+  const where = (fn) => andList(PAGES.filter((spec, i) => fn(shown[i] || {}, (pages && pages[i]) || {})).map(creditPlace));
+  const add = (what, app, href, fn) => {
+    const at = where(fn);
+    if (at) out.push({ what, app, href, pages: at });
+  };
+  if (withSprite) add("Sprite", "rpg.actor", "https://rpg.actor/", (z) => z.sprite);
+  add("Songs", "plyr.fm", "https://plyr.fm/", (z) => z.sound);
+  for (const a of Object.keys(APP_PICTURE_SOURCES)) {
+    const s = APP_PICTURE_SOURCES[a];
+    add(s.what, s.app, s.home, (z, raw) => z.picture && raw.picture && raw.picture.source && raw.picture.source.app === a);
+  }
+  add("Books", BOOKHIVE.app, BOOKHIVE.home, (z) => z.book);
+  return out;
+}
+
 export function zineConfig({ title, handle, paper, look, ink, pages, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, tileSrc, preview = false }) {
   const withSprite = usesSprite(pages, sprite);
   const config = {
@@ -271,11 +303,10 @@ export function zineConfig({ title, handle, paper, look, ink, pages, made, src, 
     makeUrl: MAKE_URL,
     pages: zinePages(pages, src, { paper, look, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}), ...(tileSrc ? { tileSrc } : {}) }),
   };
-  // Sounds (stage 3): the back page credits plyr.fm.
-  if (config.pages.some((p) => p.sound)) config.sounds = true;
-  // Pictures from your apps (stage 5): the back page credits each app used.
-  const apps = appsUsed(PAGES.map((spec, i) => (pages && pages[i] && showsOf(spec, pages[i]).includes("picture") ? pages[i].picture : null)));
-  if (apps.length) config.appCredits = apps.map((a) => ({ text: APP_PICTURE_SOURCES[a].credit, href: APP_PICTURE_SOURCES[a].home }));
+  // Credits (stage 5): what came from other apps, and on which pages. The back
+  // page's footer has a "Credits" button that opens them as a sheet.
+  const credits = zineCredits(pages, config.pages, withSprite);
+  if (credits.length) config.credits = credits;
   if (withSprite) {
     const g = sprite.geometry;
     config.sprite = { src: spriteSrc, frameWidth: g.frameWidth, frameHeight: g.frameHeight, columns: g.columns, rows: g.rows };

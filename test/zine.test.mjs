@@ -437,12 +437,15 @@ test("layout labels and always-fill are checked by the contract", () => {
   assert.throws(() => checkTileType(withLayouts([...LAYOUTS, { value: "y", label: "Y", shows: ["picture"], fill: "sometimes" }])), /fill/);
 });
 
-test("the back page credits rpg.actor when the zine uses the sprite", () => {
-  assert.ok(READER_JS.includes("Sprite from rpg.actor"));
-  assert.ok(READER_JS.includes('if (config.sprite) link('));
+test("the credits name rpg.actor when the zine uses the sprite", () => {
   const v = sample();
-  const without = JSON.parse(/id="zine-config">([\s\S]*?)<\/script>/.exec(new TextDecoder().decode(makeZineTile({ ...v, sprite: SPRITE, made: "x" }).files[0].bytes))[1]);
+  const read = (tile) => JSON.parse(/id="zine-config">([\s\S]*?)<\/script>/.exec(new TextDecoder().decode(tile.files[0].bytes))[1]);
+  const without = read(makeZineTile({ ...v, sprite: SPRITE, made: "x" }));
   assert.equal(without.sprite, undefined); // no page uses it: no sprite, so no credit
+  assert.equal(without.credits, undefined);
+  const pages = v.pages.map((p, i) => (i === 1 || i === 7 ? { ...p, sprite: true } : p));
+  const withIt = read(makeZineTile({ ...v, pages, sprite: SPRITE, made: "x" }));
+  assert.deepEqual(withIt.credits, [{ what: "Sprite", app: "rpg.actor", href: "https://rpg.actor/", pages: "page 1 and the back" }]);
 });
 
 // Stage 2: stickers and drawing.

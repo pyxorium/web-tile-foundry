@@ -281,6 +281,51 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 [data-look="riso"] .zp .tapeframe { border: 2px solid var(--ink-b); }
 [data-look="riso"] .zp .tape-side b { color: var(--ink-b); mix-blend-mode: multiply; }
 [data-look="riso"] .zp .tcap a.tape-link { background: var(--ink-b); color: var(--ink); }
+/* A book (stage 5, part 2): its cover (or one drawn in the look), title, author, stars, status, a line from the review. */
+.zp.book-page { align-items: stretch; }
+.zp.book-page .pic { flex: 0 0 auto; container-type: normal; margin: 0 0 10px; }
+.zp.book-page .photo img { max-width: 100%; max-height: calc(var(--ph) * 0.38 * var(--cover-scale, 1)); }
+[data-look="collage"] .zp.book-page .photo img { max-width: calc(100% - 12px); max-height: calc(var(--ph) * 0.34 * var(--cover-scale, 1)); }
+.zp.book-page .photo.drawn { line-height: 1.2; }
+.zp .dcover { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; height: calc(var(--ph) * 0.38 * var(--cover-scale, 1)); aspect-ratio: 2 / 3; padding: 14px 12px; box-sizing: border-box;
+  background: var(--cover, var(--ink)); color: var(--paper); text-align: center; border-radius: 2px 5px 5px 2px; box-shadow: inset 6px 0 0 rgba(0,0,0,.18), inset 0 0 0 3px var(--cover, var(--ink)), inset 0 0 0 4px color-mix(in srgb, var(--paper) 55%, transparent); overflow: hidden; }
+.zp .dcover b { font: 700 15px/1.2 Georgia, "Times New Roman", serif; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+.zp .dcover i { font: 11px/1.25 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-style: normal; opacity: .85; overflow-wrap: anywhere; }
+[data-look="collage"] .zp .dcover { --cover: var(--accent); height: calc(var(--ph) * 0.31 * var(--cover-scale, 1)); }
+[data-look="riso"] .zp .dcover { --cover: var(--ink-b); color: var(--ink); box-shadow: inset 6px 0 0 color-mix(in srgb, var(--ink) 25%, transparent), inset 0 0 0 3px var(--ink-b), inset 0 0 0 4px color-mix(in srgb, var(--ink) 40%, transparent); }
+.zp .book-info { flex: none; text-align: center; }
+.zp.book-page h2.book-title { align-self: center; margin: 0 0 3px; font-size: 18px; text-align: center; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+[data-look="collage"] .zp.book-page h2.book-title, [data-look="riso"] .zp.book-page h2.book-title { margin-left: 0; }
+.zp .book-by { margin: 0 0 4px; font-size: 13px; color: var(--soft); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.zp .book-stars { position: relative; display: inline-block; margin: 0 0 2px; font-size: 15px; line-height: 1; letter-spacing: 1px; color: color-mix(in srgb, var(--soft) 45%, transparent); }
+.zp .book-stars .on { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap; color: var(--star, #c8901a); }
+[data-look="photocopy"] .zp .book-stars .on { --star: var(--ink); }
+[data-look="collage"] .zp .book-stars .on { --star: var(--accent); }
+[data-look="riso"] .zp .book-stars .on { --star: var(--ink-b); mix-blend-mode: multiply; }
+.zp .book-status { margin: 2px 0 0; font-size: 11.5px; color: var(--soft); text-transform: uppercase; letter-spacing: .06em; }
+.zp.book-page .words.review { margin-top: 10px; font-style: italic; text-align: center; }
+.zp.book-page .book-empty { flex: none; height: calc(var(--ph) * 0.38); display: flex; align-items: center; justify-content: center; border: 1.5px dashed var(--line); color: var(--soft); font-size: 13px; margin: 0 0 10px; }
+/* The back page's credits (stage 5): a button in the footer, and the sheet it opens. */
+.zp .foot button.credits-open { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+.zp .foot button.credits-open:hover { text-decoration: underline; }
+[data-look="photocopy"] .zp .foot button.credits-open { color: var(--ink); text-decoration: underline; }
+.credits-veil { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(20,18,14,.45); }
+.credits-sheet { width: min(340px, 100%); max-height: 100%; overflow: auto; box-sizing: border-box; padding: 18px 20px 16px; background: var(--paper); color: var(--ink); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.3); font-size: 13.5px; line-height: 1.45; }
+.credits-sheet h2 { margin: 0 0 10px; font-size: 19px; line-height: 1.2; }
+.credits-sheet ul { list-style: none; margin: 0 0 14px; padding: 0; }
+.credits-sheet li { padding: 7px 0; border-top: 1px solid var(--line); }
+.credits-sheet li:first-child { border-top: 0; }
+.credits-sheet b { font-weight: 700; }
+.credits-sheet a { color: var(--accent); }
+.credits-sheet .where-on { display: block; font-size: 12px; color: var(--soft); }
+.credits-sheet .credits-close { min-height: 32px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 999px; background: var(--paper); color: var(--ink); font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
+.credits-sheet .credits-close:focus-visible, .credits-sheet a:focus-visible, .zp .foot button.credits-open:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
+[data-look="photocopy"] .credits-sheet h2 { font-family: "Courier New", Courier, "Liberation Mono", ui-monospace, monospace; }
+[data-look="photocopy"] .credits-sheet a { color: var(--ink); }
+[data-look="collage"] .credits-sheet { border-radius: 2px; transform: rotate(-.6deg); }
+[data-look="collage"] .credits-sheet h2 { display: inline-block; background: var(--ink); color: var(--paper); padding: 3px 8px 4px; transform: rotate(-1.2deg); }
+[data-look="riso"] .credits-sheet h2 { color: var(--ink); text-shadow: 2px 2px 0 color-mix(in srgb, var(--ink-b) 80%, transparent); }
+[data-look="riso"] .credits-sheet b { color: var(--ink-b); }
 /* A slow or failed picture on the pages shown: a quiet note with Try again. */
 .loadnote { position: absolute; top: 8px; left: 8px; z-index: 6; display: flex; align-items: center; gap: 8px; max-width: min(70%, 320px); padding: 4px 4px 4px 11px;
   border-radius: 999px; background: rgba(27,26,23,.78); color: #fff; font-size: 12px; line-height: 1.2; }
@@ -826,6 +871,11 @@ export const READER_JS = String.raw`
       // A tape: its J-card, with a link out to the whole tape.
       e.classList.add("tape-page");
       tapeCard(page).forEach(function (n) { e.appendChild(n); });
+    } else if (page.layout === "book") {
+      // A book: its cover, title, author, stars and status, then a line from the review.
+      e.classList.add("book-page");
+      bookBlock(page).forEach(function (n) { e.appendChild(n); });
+      if (hasWords) { e.classList.add("has-words"); var rv = wordsBlock(page.words); rv.classList.add("review"); e.appendChild(rv); }
     } else if (page.layout === "quote") {
       // Big quote: the words set large (shrunk to fit if long), who said it below.
       e.classList.add("quote");
@@ -845,22 +895,124 @@ export const READER_JS = String.raw`
       var foot = el("div", "foot");
       foot.appendChild(el("span", null, "Made by " + (config.handle ? "@" + config.handle : "its maker") + (config.made ? " · " + config.made : "")));
       var links = el("span", "links");
-      function link(text, href) {
-        var a = el("a", null, text);
-        a.href = href; a.target = "_blank"; a.rel = "noopener";
-        links.appendChild(a);
+      // Credits, like the last page of a printed zine: one button opens the
+      // whole list as a sheet, so the footer stays two lines however many apps a zine uses.
+      if (config.credits && config.credits.length) {
+        var cb = el("button", "credits-open", "Credits");
+        cb.type = "button";
+        cb.setAttribute("aria-haspopup", "dialog");
+        cb.addEventListener("click", function (ev) { ev.stopPropagation(); openCredits(cb); });
+        links.appendChild(cb);
       }
-      // Credits, like the last page of a printed zine.
-      if (config.sprite) link("Sprite from rpg.actor ↗", "https://rpg.actor/");
-      if (config.sounds) link("Songs from plyr.fm ↗", "https://plyr.fm/");
-      (config.appCredits || []).forEach(function (c) { if (c && c.text && /^https:\/\//.test(c.href || "")) link(c.text, c.href); });
-      if (config.makeUrl) link("Make your own zine ↗", config.makeUrl);
+      if (config.makeUrl) {
+        var mk = el("a", null, "Make your own zine ↗");
+        mk.href = config.makeUrl; mk.target = "_blank"; mk.rel = "noopener";
+        links.appendChild(mk);
+      }
       if (links.firstChild) foot.appendChild(links);
       e.appendChild(foot);
     } else {
       e.appendChild(el("span", "num", String(i)));
     }
     return e;
+  }
+
+  // A book page's top part (stage 5): the cover (the book's own, framed in the
+  // look like a picture, or one drawn in the look's colours), then the details.
+  function bookBlock(p) {
+    var b = p.book;
+    if (!b) return [el("div", "book-empty", "Your book goes here")];
+    var out = [];
+    if (b.cover) {
+      out.push(picture({ src: b.cover.src, width: b.cover.width, height: b.cover.height, alt: "Cover of " + b.title }));
+    } else {
+      var box = el("div", "pic");
+      var photo = el("span", "photo drawn");
+      var dc = el("span", "dcover");
+      dc.setAttribute("role", "img");
+      dc.setAttribute("aria-label", "Cover of " + b.title);
+      dc.appendChild(el("b", null, b.title));
+      if (b.authors) dc.appendChild(el("i", null, b.authors));
+      photo.appendChild(dc);
+      box.appendChild(photo);
+      out.push(box);
+    }
+    var info = el("div", "book-info");
+    info.appendChild(el("h2", "book-title", b.title));
+    if (b.authors) info.appendChild(el("p", "book-by", b.authors));
+    if (b.stars) {
+      var st = el("p", "book-stars");
+      st.setAttribute("role", "img");
+      st.setAttribute("aria-label", b.starsLabel || "");
+      st.appendChild(document.createTextNode("★★★★★"));
+      var on = el("span", "on", "★★★★★");
+      on.style.width = Math.max(0, Math.min(100, b.stars * 10)) + "%";
+      on.setAttribute("aria-hidden", "true");
+      st.appendChild(on);
+      info.appendChild(st);
+    }
+    if (b.status) info.appendChild(el("p", "book-status", b.status));
+    out.push(info);
+    return out;
+  }
+
+  // The credits sheet (stage 5): what came from which app, and where it is in the zine.
+  var creditsOpen = null; // { veil, opener } while the sheet is shown
+  function openCredits(opener) {
+    if (creditsOpen) return;
+    var veil = el("div", "credits-veil");
+    var sheet = el("div", "credits-sheet");
+    sheet.setAttribute("role", "dialog");
+    sheet.setAttribute("aria-modal", "true");
+    sheet.setAttribute("aria-labelledby", "credits-title");
+    var h = el("h2", null, "Credits");
+    h.id = "credits-title";
+    sheet.appendChild(h);
+    var list = el("ul");
+    (config.credits || []).forEach(function (c) {
+      if (!c || !c.app) return;
+      var li = el("li");
+      li.appendChild(el("b", null, (c.what || "From") + ": "));
+      if (/^https:\/\//.test(c.href || "")) {
+        var a = el("a", null, c.app + " ↗");
+        a.href = c.href; a.target = "_blank"; a.rel = "noopener";
+        a.setAttribute("aria-label", c.app + " (opens a new tab)");
+        li.appendChild(a);
+      } else {
+        li.appendChild(document.createTextNode(c.app));
+      }
+      if (c.pages) li.appendChild(el("span", "where-on", "On " + c.pages));
+      list.appendChild(li);
+    });
+    sheet.appendChild(list);
+    var close = el("button", "credits-close", "Close");
+    close.type = "button";
+    sheet.appendChild(close);
+    veil.appendChild(sheet);
+    function shut() {
+      if (!creditsOpen) return;
+      veil.remove();
+      creditsOpen = null;
+      if (opener && opener.isConnected) opener.focus();
+    }
+    close.addEventListener("click", function (ev) { ev.stopPropagation(); shut(); });
+    veil.addEventListener("click", function (ev) { if (ev.target === veil) shut(); });
+    // Keys stay in the sheet: Escape closes it, Tab goes round its links and Close.
+    veil.addEventListener("keydown", function (ev) {
+      ev.stopPropagation();
+      if (ev.key === "Escape") { ev.preventDefault(); shut(); return; }
+      if (ev.key === "Tab") {
+        var f = Array.prototype.slice.call(sheet.querySelectorAll("a, button"));
+        var at = f.indexOf(document.activeElement);
+        if (ev.shiftKey && at <= 0) { ev.preventDefault(); f[f.length - 1].focus(); }
+        else if (!ev.shiftKey && at === f.length - 1) { ev.preventDefault(); f[0].focus(); }
+      }
+    });
+    veil.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+    veil.addEventListener("pointerup", function (ev) { ev.stopPropagation(); });
+    root.appendChild(veil);
+    creditsOpen = { veil: veil, shut: shut };
+    close.focus();
   }
 
   // Tiles on a page (stage 4). One running frame per page; it stops when the page goes.
@@ -1121,6 +1273,20 @@ export const READER_JS = String.raw`
   }
 
   // Long words shrink a little to fit their page (never below MIN_SCALE).
+  // A book page fits step by step: its words shrink first (fitWords); if the page
+  // is still too full (a long title, the sprite's lane, a sound), the cover gets smaller.
+  var COVER_STEPS = [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
+  function fitBook(pageEl) {
+    if (!pageEl.classList.contains("book-page")) return;
+    var w = pageEl.querySelector(".words.review");
+    for (var k = 0; k < COVER_STEPS.length; k++) {
+      pageEl.style.setProperty("--cover-scale", String(COVER_STEPS[k]));
+      fitWords(pageEl);
+      var full = (w && w.scrollHeight > w.clientHeight + 1) || pageEl.scrollHeight > pageEl.clientHeight + 1;
+      if (!full) return;
+    }
+  }
+
   function fitWords(pageEl) {
     var w = pageEl.querySelector(".words");
     if (!w || !w.firstChild) return;
@@ -1135,6 +1301,7 @@ export const READER_JS = String.raw`
 
   function build() {
     Object.keys(tilesOn).forEach(function (id) { stopTile(id, true); });
+    if (creditsOpen) creditsOpen.shut();
     root.textContent = "";
     applyLook();
     size = SIZES[config.paper] || SIZES.letter;
@@ -1160,7 +1327,7 @@ export const READER_JS = String.raw`
       // A picture takes its room only once it has loaded: fit the words again then.
       // (Pictures arrive as their page comes near: see wantPage.)
       Array.prototype.forEach.call(e.querySelectorAll("img.la"), function (img) {
-        img.addEventListener("load", function () { fitWords(e); });
+        img.addEventListener("load", function () { fitWords(e); fitBook(e); });
       });
       return e;
     });
@@ -1175,6 +1342,7 @@ export const READER_JS = String.raw`
     prevBtn.addEventListener("click", function () { turn(-1); });
     nextBtn.addEventListener("click", function () { turn(1); });
     pageEls.forEach(fitWords);
+    pageEls.forEach(fitBook);
     pageEls.forEach(fitQuote);
     pageEls.forEach(fitTape);
     drawSound();
@@ -1274,7 +1442,7 @@ export const READER_JS = String.raw`
   function indexName(p) { return String(config.pages.indexOf(p)); }
 
   function turn(dir) {
-    if (window.__zineLock) return;
+    if (window.__zineLock || creditsOpen) return;
     var v = views(), k = viewIndex() + dir;
     if (k < 0 || k >= v.length) return;
     var first = v[k].filter(function (i) { return i != null; })[0];
@@ -1291,7 +1459,7 @@ export const READER_JS = String.raw`
 
   window.addEventListener("resize", layout);
   document.addEventListener("keydown", function (e) {
-    if (mode === "card" || window.__zineLock) return;
+    if (mode === "card" || window.__zineLock || creditsOpen) return;
     var t = e.target;
     if ((e.key === " " || e.key === "Enter") && t && t.closest && t.closest("button, a")) return;
     if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { turn(1); e.preventDefault(); }
@@ -1303,7 +1471,7 @@ export const READER_JS = String.raw`
   var startX = null, startY = 0;
   document.addEventListener("pointerdown", function (e) { if (e.isPrimary) { startX = e.clientX; startY = e.clientY; } });
   document.addEventListener("pointerup", function (e) {
-    if (startX == null || mode === "card" || window.__zineLock) { startX = null; return; }
+    if (startX == null || mode === "card" || window.__zineLock || creditsOpen) { startX = null; return; }
     var dx = e.clientX - startX, dy = e.clientY - startY;
     startX = null;
     if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.5) turn(dx < 0 ? 1 : -1);

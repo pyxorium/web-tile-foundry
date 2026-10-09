@@ -122,31 +122,33 @@ test("app pictures: the file is downloaded from its own account and checked agai
   await assert.rejects(fetchAppPicture(it, fakeServer({}).fetchImpl), /Couldn't download this drawing \(the server answered 404\)/);
 });
 
-test("app pictures: the zine credits each app on the back page and records each picture's source", () => {
+test("app pictures: the zine's credits name each app and its pages, and the recipe records each picture's source", () => {
   const pages = emptyPages();
   const pic = (source) => ({ bytes: new Uint8Array([1, 2, 3]), contentType: "image/webp", width: 1200, height: 900, alt: "x", ...(source ? { source } : {}) });
   const grainItem = pictureFromRecord("grain", GOLDEN, OWNER);
   pages[0].picture = pic(pictureSource(grainItem));
   pages[1].picture = pic(null);
   let c = zineConfig({ title: "T", handle: "pyxorium.com", paper: "letter", pages, src: () => "data:," });
-  assert.deepEqual(c.appCredits, [{ text: "Photos from Grain ↗", href: "https://grain.social/" }]);
+  assert.deepEqual(c.credits, [{ what: "Photos", app: "Grain", href: "https://grain.social/", pages: "the cover" }]);
   pages[2].layout = "picture";
   pages[2].picture = pic(pictureSource(pictureFromRecord("pinksea", GHOST_RANCH, OWNER)));
+  pages[3].picture = pic(pictureSource(grainItem));
   c = zineConfig({ title: "T", handle: "h", paper: "letter", pages, src: () => "data:," });
-  assert.deepEqual(c.appCredits.map((x) => x.text), ["Photos from Grain ↗", "Drawings from PinkSea ↗"]);
+  assert.deepEqual(c.credits.map((x) => [x.what, x.app, x.pages]), [["Photos", "Grain", "the cover and page 3"], ["Drawings", "PinkSea", "page 2"]]);
   // A picture its layout hides isn't credited.
   pages[2].layout = "words";
   c = zineConfig({ title: "T", handle: "h", paper: "letter", pages, src: () => "data:," });
-  assert.deepEqual(c.appCredits.map((x) => x.text), ["Photos from Grain ↗"]);
+  assert.deepEqual(c.credits.map((x) => x.app), ["Grain"]);
   // Recipe: the record it came from, nothing else of it.
   const r = zineRecipe({ paper: "letter", look: "clean", pages });
   assert.deepEqual(r.pages[0].picture.source, { app: "grain", record: { uri: GOLDEN.uri, cid: GOLDEN.cid } });
   assert.equal(r.pages[1].picture.source, undefined);
   assert.equal(JSON.stringify(r).includes("autoAlt"), false);
   // No apps, no credits.
-  assert.equal(zineConfig({ title: "T", handle: "h", paper: "letter", pages: emptyPages(), src: () => "" }).appCredits, undefined);
-  // The reader adds the credit links.
-  assert.match(READER_JS, /config\.appCredits/);
+  assert.equal(zineConfig({ title: "T", handle: "h", paper: "letter", pages: emptyPages(), src: () => "" }).credits, undefined);
+  // The reader opens them from a Credits button in the footer.
+  assert.match(READER_JS, /config\.credits/);
+  assert.match(READER_JS, /credits-open/);
 });
 
 test("app pictures: sources and the pages input option are checked", () => {
@@ -159,29 +161,4 @@ test("app pictures: sources and the pages input option are checked", () => {
   assert.doesNotThrow(() => checkTileType(zine));
   const bad = { ...zine, inputs: zine.inputs.map((i) => (i.kind === "pages" ? { ...i, pictureSources: ["flickr"] } : i)) };
   assert.throws(() => checkTileType(bad), /pictureSources/);
-});
-
-test("app pictures: a third footer line takes word room from the back page", async () => {
-  const { footLinks, footExtraLines, wordLimit, PAGES, FOOT_LINE_COST } = await import("../src/tile-types/zine/pages.js");
-  const back = PAGES.find((p) => p.kind === "back");
-  const pages = emptyPages();
-  pages[7].layout = "words";
-  const pic = (app) => ({ bytes: new Uint8Array([1]), contentType: "image/webp", width: 10, height: 10, alt: "", source: { app, uri: `at://did:plc:x/${app}/1`, cid: "c" } });
-  const sprite = { bytes: new Uint8Array([1]), geometry: { frameWidth: 48, frameHeight: 48, columns: 3, rows: 4 } };
-  const before = wordLimit(back, pages[7], { paper: "letter", pages });
-  assert.equal(footLinks({ pages }), 1);
-  pages[0].picture = pic("grain");
-  pages[1].picture = pic("pinksea");
-  pages[2].sound = true;
-  assert.equal(footLinks({ pages }), 4); // make, songs, Grain, PinkSea: still two lines
-  assert.equal(wordLimit(back, pages[7], { paper: "letter", pages }), before); // still two lines: no change
-  pages[3].sprite = true;
-  assert.equal(footLinks({ pages, sprite }), 5);
-  assert.equal(footExtraLines({ pages, sprite }), 1);
-  assert.equal(wordLimit(back, { ...pages[7], sprite: true }, { paper: "letter", pages, sprite }), before - 190 - FOOT_LINE_COST); // the sprite lane, and one more footer line
-  // Other pages keep their room; a picture its layout hides isn't credited.
-  const p1 = PAGES.find((p) => p.id === "p1");
-  assert.equal(wordLimit(p1, { layout: "words" }, { paper: "letter", pages, sprite }), wordLimit(p1, { layout: "words" }, { paper: "letter" }));
-  pages[1].layout = "words";
-  assert.equal(footLinks({ pages, sprite }), 4);
 });

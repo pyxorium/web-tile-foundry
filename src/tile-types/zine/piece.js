@@ -1,5 +1,6 @@
 import { copyPaths, pageRefs } from "../../core/published-tile.js";
 import { tileViewUrl } from "../../core/publish.js";
+import { bookReady, bookFiles, bookRecipe } from "./books.js";
 
 // Tiles on zine pages (stage 4, claude/zine-maker-plan.md section 26): one of
 // the creator's own published tiles, copied into the zine byte for byte and
@@ -20,7 +21,7 @@ import { tileViewUrl } from "../../core/publish.js";
 // from one of the tape's own song files) is page.sound + page.clip as usual.
 
 /** The kind of piece each layout holds. */
-export const PIECE_KINDS = Object.freeze({ tile: "tile", tape: "tape" });
+export const PIECE_KINDS = Object.freeze({ tile: "tile", tape: "tape", book: "book" });
 const TAPE_TEXT_MAX = 300;
 
 export const TILE_NAME_MAX = 120;
@@ -38,6 +39,7 @@ export function tilePath(pageId, path) {
 export function pieceReady(page) {
   const t = page && page.piece;
   if (!t || t.status !== "ready" || !Array.isArray(t.files)) return false;
+  if (t.kind === "book") return bookReady(t);
   if (t.kind === "tape") return Boolean(t.tape && Array.isArray(t.tape.sides));
   return t.kind === "tile" && t.files.some((f) => f.path === "/");
 }
@@ -64,8 +66,7 @@ function nameOf(spec) {
 export function pieceProblems(page, spec) {
   const t = page && page.piece;
   const name = nameOf(spec);
-  const tape = PIECE_KINDS[page && page.layout] === "tape";
-  const what = tape ? "tape" : "tile";
+  const what = PIECE_KINDS[page && page.layout] || "tile";
   if (!t || !t.uri || !pieceFits(page)) return [`${name}: choose one of your ${what}s, or pick another layout.`];
   if (t.status === "error") return [`${name}: the ${what} couldn't be copied (${String(t.error || "unknown problem").replace(/[.\s]+$/, "")}). Try again, or choose another.`];
   if (!pieceReady(page)) return [`${name}: the ${what} is still being copied.`];
@@ -75,6 +76,7 @@ export function pieceProblems(page, spec) {
 /** The tile's files as they go into the zine (copied byte for byte, under /tiles/<page id>/). */
 export function pieceFiles(page, pageId) {
   if (!pieceReady(page) || !pieceFits(page)) return [];
+  if (page.piece.kind === "book") return bookFiles(page.piece, pageId);
   return copyPaths(page.piece.files, tileFolder(pageId));
 }
 
@@ -108,6 +110,7 @@ export function tileForReader(page, pageId, src = (path) => tilePath(pageId, pat
 /** A page's tile in the zine's public recipe: what it is, where it came from, where it went. */
 export function pieceRecipe(page, pageId) {
   if (!pieceReady(page) || !pieceFits(page)) return null;
+  if (page.piece.kind === "book") return bookRecipe(page, pageId);
   const t = page.piece;
   const out = { kind: t.kind, uri: t.uri, cid: t.cid, name: oneLine(t.name, TILE_NAME_MAX), folder: tileFolder(pageId) };
   if (t.typeId) out.type = t.typeId;

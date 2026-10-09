@@ -153,7 +153,7 @@ test("a zine with a sound: its file, the reader's config, and the recipe", () =>
   assert.equal(contentTypeFor("/sounds/p2.mp3"), "audio/mpeg");
   assert.equal(f.bytes.length, 5000);
   const config = zineConfig({ title: v.name, handle: v.handle, paper: "letter", pages: v.pages });
-  assert.equal(config.sounds, true);
+  assert.deepEqual(config.credits, [{ what: "Songs", app: "plyr.fm", href: "https://plyr.fm/", pages: "page 2" }]);
   assert.deepEqual(config.pages[2].sound, {
     src: "/sounds/p2.mp3", title: "Drop Top", seconds: 45.5, details: "Parlor Greens at Jam Cruise 2026",
     url: `https://plyr.fm/at/${DID}/fm.plyr.track/3mabcde2xyz`,
@@ -212,7 +212,7 @@ test("the reader loads files once, page by page, and plays sounds", () => {
   assert.ok(!/autoplay/i.test(READER_JS));
   assert.ok(READER_JS.includes(`var STILL_MS = ${LOAD_TIMES.still}, RETRY_MS = ${LOAD_TIMES.retry};`));
   assert.ok(READER_JS.includes('"Stop the sound"'));
-  assert.ok(READER_JS.includes('link("Songs from plyr.fm ↗", "https://plyr.fm/")'));
+  assert.ok(READER_JS.includes("openCredits"));
   assert.ok(READER_CSS.includes(".card .zp .snd-row { display: none; }"));
   // The page stays safe: no inline handlers, no outside addresses beyond links.
   const html = renderZineHtml({ title: "t", config: zineConfig({ title: "t", pages: sample().pages }) });

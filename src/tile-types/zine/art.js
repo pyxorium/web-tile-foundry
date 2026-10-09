@@ -429,6 +429,11 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
     grain(g, x, y, w, h, style, u);
     return;
   }
+  if (page.layout === "book" && page.book) {
+    drawBookPage(g, x, y, w, h, u, page, bitmap, style);
+    grain(g, x, y, w, h, style, u);
+    return;
+  }
   const pad = 22 * u;
   const inner = w - 2 * pad;
   let cy = y + pad;
@@ -531,6 +536,94 @@ function drawJCard(g, x, y, w, h, u, page, bitmap, style) {
 }
 
 /**
+ * A book page (stage 5) as the reader shows it: the cover (the book's own,
+ * framed in the look, or one drawn in the look's colours), the title, author,
+ * stars and status, centred, then the line from the review in italics.
+ */
+function drawBookPage(g, x, y, w, h, u, page, bitmap, style) {
+  const pad = 22 * u;
+  const inner = w - 2 * pad;
+  const bottom = y + h - (page.lane ? 26 + 58 : 26) * u;
+  const book = page.book;
+  let cy = y + pad;
+  const coverH = h * (style.look === "collage" ? 0.34 : 0.38);
+  if (bitmap) {
+    const placed = drawPicture(g, bitmap, { x: x + pad, y: cy, w: inner, h: coverH, top: true }, u, style, TILTS[1], null);
+    cy = placed.y + placed.h + 12 * u;
+  } else {
+    const ch = h * 0.38, cw = (ch * 2) / 3, cx = x + (w - cw) / 2;
+    const bg = style.look === "riso" ? style.riso.b : style.look === "collage" ? style.accent : style.ink;
+    const fg = style.look === "riso" ? style.ink : style.paper;
+    g.fillStyle = bg;
+    g.fillRect(cx, cy, cw, ch);
+    g.fillStyle = "rgba(0,0,0,0.18)";
+    g.fillRect(cx, cy, 6 * u, ch);
+    g.strokeStyle = fg;
+    g.globalAlpha = 0.55;
+    g.lineWidth = 1 * u;
+    g.strokeRect(cx + 3.5 * u, cy + 3.5 * u, cw - 7 * u, ch - 7 * u);
+    g.globalAlpha = 1;
+    g.fillStyle = fg;
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    g.font = `700 ${15 * u}px Georgia, "Times New Roman", serif`;
+    const lines = wrap(g, book.title, cw - 24 * u, 5);
+    const lh = 18 * u;
+    g.font = `${11 * u}px ${SANS}`;
+    const by = book.authors ? wrap(g, book.authors, cw - 24 * u, 2) : [];
+    let ty = cy + (ch - lines.length * lh - (by.length ? 8 * u + by.length * 14 * u : 0)) / 2;
+    g.font = `700 ${15 * u}px Georgia, "Times New Roman", serif`;
+    for (const line of lines) { g.fillText(line, cx + cw / 2, ty); ty += lh; }
+    g.font = `${11 * u}px ${SANS}`;
+    ty += 8 * u;
+    for (const line of by) { g.fillText(line, cx + cw / 2, ty); ty += 14 * u; }
+    g.textAlign = "left";
+    cy += ch + 12 * u;
+  }
+  const centre = (text, font, color, lh) => {
+    g.font = font;
+    g.fillStyle = color;
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    for (const line of wrap(g, text, inner, 2)) { g.fillText(line, x + w / 2, cy); cy += lh; }
+    g.textAlign = "left";
+  };
+  centre(book.title, `${style.look === "photocopy" ? 700 : 750} ${18 * u}px ${style.heading}`, style.ink, 21 * u);
+  cy += 2 * u;
+  if (book.authors) centre(book.authors, `${13 * u}px ${SANS}`, style.soft, 17 * u);
+  if (book.stars) {
+    g.font = `${15 * u}px ${SANS}`;
+    g.textBaseline = "top";
+    const row = "\u2605\u2605\u2605\u2605\u2605";
+    const sw = g.measureText(row).width;
+    const sx = x + (w - sw) / 2;
+    g.fillStyle = style.soft;
+    g.globalAlpha = 0.4;
+    g.fillText(row, sx, cy + 2 * u);
+    g.globalAlpha = 1;
+    g.save();
+    g.beginPath();
+    g.rect(sx, cy, sw * (book.stars / 10), 20 * u);
+    g.clip();
+    g.fillStyle = style.look === "riso" ? style.riso.b : style.look === "collage" ? style.accent : style.look === "photocopy" ? style.ink : "#c8901a";
+    g.fillText(row, sx, cy + 2 * u);
+    g.restore();
+    cy += 20 * u;
+  }
+  if (book.status) centre(book.status.toUpperCase(), `${11 * u}px ${SANS}`, style.soft, 15 * u);
+  if (page.words) {
+    cy += 10 * u;
+    g.font = `italic ${14 * u}px ${SANS}`;
+    g.fillStyle = style.ink;
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    const max = Math.max(0, Math.floor((bottom - cy) / (20 * u)));
+    for (const line of wrap(g, page.words.replace(/\s+/g, " "), inner, max)) { g.fillText(line, x + w / 2, cy); cy += 20 * u; }
+    g.textAlign = "left";
+  }
+}
+
+/**
  * Draws the card pictures. `values` are the panel's values (name, handle,
  * paper, look, ink, pages). Returns { icon, banner }: PNG bytes.
  */
@@ -543,7 +636,10 @@ export async function drawZineArt(values) {
   const handle = String(values.handle || "").replace(/^@/, "");
   const coverPic = await bitmapOf(pages[0].picture && raw[0] && raw[0].picture);
   const tileBanner = (pages[1].tile || pages[1].tape) && raw[1] && raw[1].piece && (raw[1].piece.files || []).find((f) => f.path === "/banner.png");
-  const firstPic = tileBanner ? await bitmapOf({ bytes: tileBanner.bytes, contentType: "image/png" }) : await bitmapOf(pages[1].picture && raw[1] && raw[1].picture);
+  const bookCover = pages[1].book && raw[1] && raw[1].piece && (raw[1].piece.files || [])[0];
+  const firstPic = tileBanner ? await bitmapOf({ bytes: tileBanner.bytes, contentType: "image/png" })
+    : bookCover ? await bitmapOf({ bytes: bookCover.bytes, contentType: bookCover.contentType })
+    : await bitmapOf(pages[1].picture && raw[1] && raw[1].picture);
   const cover = { title, subtitle: pages[0].subtitle, handle, bitmap: coverPic, pic: pages[0].picture };
   const raw0 = raw[0] || {}, raw1 = raw[1] || {};
   const sprite = values.sprite && values.sprite.geometry && values.sprite.bytes ? values.sprite : null;

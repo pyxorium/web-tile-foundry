@@ -26,8 +26,8 @@ export const APP_PICTURE_SOURCES = Object.freeze({
     menuLabel: "From Grain",
     collection: "social.grain.photo",
     noun: "photo",
+    what: "Photos",
     home: "https://grain.social/",
-    credit: "Photos from Grain ↗",
     empty: "Nothing on Grain yet",
   }),
   pinksea: Object.freeze({
@@ -36,8 +36,8 @@ export const APP_PICTURE_SOURCES = Object.freeze({
     menuLabel: "From PinkSea",
     collection: "com.shinolabs.pinksea.oekaki",
     noun: "drawing",
+    what: "Drawings",
     home: "https://pinksea.art/",
-    credit: "Drawings from PinkSea ↗",
     empty: "Nothing on PinkSea yet",
   }),
 });

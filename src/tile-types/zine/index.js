@@ -33,7 +33,7 @@ export const zine = {
   summary: "Make a little zine: eight pages of pictures, words, and more.",
   maxBytes: 20 * 1024 * 1024,
   credits: [
-    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, "."],
+    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, ". Books from ", { text: "Bookhive", href: "https://bookhive.buzz/" }, "."],
     [
       "MP3 encoding by ",
       { text: "lamejs", href: "https://github.com/zhuker/lamejs" },
@@ -58,6 +58,7 @@ export const zine = {
       of(count((p, shows) => p.picture && shows.includes("picture")), "picture"),
       of(count((p, shows) => p.layout === "tile" && p.piece && shows.includes("piece")), "web tile"),
       of(count((p, shows) => p.layout === "tape" && p.piece && shows.includes("piece")), "mixtape"),
+      of(count((p, shows) => p.layout === "book" && p.piece && shows.includes("piece")), "book"),
       of(count((p) => p.sound && p.clip), "sound"),
     ].filter(Boolean).join(" · ");
   },
@@ -108,6 +109,12 @@ export const zine = {
       piece: {
         panel: {
           async mount(element, api) {
+            // "A book" pages pick a Bookhive book; "A web tile" and "A mixtape" pages a tile or tape.
+            const page = api.getPage && api.getPage();
+            if (page && page.layout === "book") {
+              const { mountBookPanel } = await import("./bookpanel.js");
+              return mountBookPanel(element, api);
+            }
             const { mountTilePanel } = await import("./tilepanel.js");
             return mountTilePanel(element, api);
           },

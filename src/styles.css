@@ -557,3 +557,22 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .review-side .input-group-title { display: none; }
 .text::placeholder { color: #9a958a; opacity: 1; }
 .field-help-after { margin: 4px 0 0; font-size: 13px; }
+/* "Your book" panel (Zine Scene stage 5, part 2) */
+.book-panel { display: grid; gap: 8px; }
+.book-list-head { display: flex; align-items: center; gap: 6px; }
+.book-list-title { font-weight: 700; margin-right: auto; }
+.book-list { display: grid; gap: 2px; max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px; background: var(--surface-2); }
+.book-list[hidden], .book-list-head[hidden] { display: none; }
+.book-group { margin: 6px 6px 2px; font-size: 12px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+.book-row { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center; width: 100%; padding: 6px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.book-row:hover, .book-row:focus-visible { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); outline: none; }
+.book-row.on { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+.book-row-cover { width: 34px; height: 50px; border-radius: 3px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); }
+.book-row-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.book-row-cover.none { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #000)); }
+.book-row-text { display: grid; gap: 1px; min-width: 0; }
+.book-row-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-row-sub { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-row-used { font-size: 11.5px; color: var(--accent); }
+.book-card .tile-thumb.book-thumb { width: 48px; height: 72px; aspect-ratio: auto; object-fit: cover; }
+.book-card .tile-about .btn { align-self: flex-start; width: auto; }
