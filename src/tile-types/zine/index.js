@@ -33,7 +33,7 @@ export const zine = {
   summary: "Make a little zine: eight pages of pictures, words, and more.",
   maxBytes: 20 * 1024 * 1024,
   credits: [
-    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, ". Books from ", { text: "Bookhive", href: "https://bookhive.buzz/" }, "."],
+    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, ". Books from ", { text: "Bookhive", href: "https://bookhive.buzz/" }, ". Activities from ", { text: "Treeline", href: "https://treeline.world/" }, "."],
     [
       "MP3 encoding by ",
       { text: "lamejs", href: "https://github.com/zhuker/lamejs" },
@@ -52,13 +52,14 @@ export const zine = {
   reviewSummary(values) {
     const pages = (values && values.pages) || [];
     const count = (fn) => PAGES.filter((spec, i) => pages[i] && fn(pages[i], showsOf(spec, pages[i]))).length;
-    const of = (n, one) => (n ? `${n} ${one}${n === 1 ? "" : "s"}` : "");
+    const of = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : "");
     return [
       `${PAGES.length} pages`,
       of(count((p, shows) => p.picture && shows.includes("picture")), "picture"),
       of(count((p, shows) => p.layout === "tile" && p.piece && shows.includes("piece")), "web tile"),
       of(count((p, shows) => p.layout === "tape" && p.piece && shows.includes("piece")), "mixtape"),
       of(count((p, shows) => p.layout === "book" && p.piece && shows.includes("piece")), "book"),
+      of(count((p, shows) => p.layout === "activity" && p.piece && shows.includes("piece")), "activity", "activities"),
       of(count((p) => p.sound && p.clip), "sound"),
     ].filter(Boolean).join(" · ");
   },
@@ -103,7 +104,7 @@ export const zine = {
       key: "pages",
       kind: "pages",
       label: "Pages",
-      help: "Pick a page to fill it in. Pictures can come from your computer, your Grain photos or your PinkSea drawings; they're made smaller before they're added.",
+      help: "Pick a page to fill it in. Pictures can come from your computer, your Grain photos or your PinkSea drawings (they're made smaller before they're added); pages can also hold a book from Bookhive or an activity from Treeline.",
       sizeLabel: "Pictures, sounds and tiles",
       // "A tile" pages: one of your published tiles, copied in and run on the page.
       piece: {
@@ -114,6 +115,10 @@ export const zine = {
             if (page && page.layout === "book") {
               const { mountBookPanel } = await import("./bookpanel.js");
               return mountBookPanel(element, api);
+            }
+            if (page && page.layout === "activity") {
+              const { mountActivityPanel } = await import("./activitypanel.js");
+              return mountActivityPanel(element, api);
             }
             const { mountTilePanel } = await import("./tilepanel.js");
             return mountTilePanel(element, api);

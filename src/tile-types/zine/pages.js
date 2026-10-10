@@ -1,11 +1,12 @@
 import { APP_PICTURE_SOURCES } from "../../core/app-pictures.js";
 import { describePages } from "../../core/gallery-fill.js";
-import { lookOf, lookColors } from "./looks.js";
+import { lookOf, lookColors, isLightInk } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
 import { soundForReader, soundPath, SOUND_COST, QUOTE_SOUND_COST } from "./sound.js";
 import { tileForReader, tapeForReader } from "./piece.js";
 import { bookForReader, BOOKHIVE } from "./books.js";
+import { activityForReader, TREELINE } from "./activities.js";
 export { cropRect } from "../../core/pictures.js";
 
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
@@ -40,6 +41,9 @@ export const LAYOUTS = Object.freeze([
   // Stage 5, part 2: one of the creator's Bookhive books (cover, title, author,
   // stars, where they are with it) and a line from their review (see books.js).
   { value: "book", label: "A book", shows: ["piece", "words"], labels: { piece: "Your book", words: "Line from your review (optional)" } },
+  // One of the creator's Treeline activities: the route, an elevation profile,
+  // the title, sport, date and stats, and words of their own (see activities.js).
+  { value: "activity", label: "An activity", shows: ["piece", "words"], labels: { piece: "Your activity", words: "Your own words (optional)" } },
 ]);
 
 export const PAGES = Object.freeze([
@@ -89,18 +93,37 @@ export function wordSize(text) {
 export const BOOK_ROOM = Object.freeze({ letter: { page: 560, back: 360 }, a4: { page: 460, back: 280 } });
 export const BOOK_SPRITE_COST = 200;
 export const BOOK_SOUND_COST = 150;
+// "activity": the creator's own words under an activity's route and stats (no
+// heading). Measured Oct 10 in all looks, both papers, page and back, with and
+// without the elevation profile, the sprite's lane and the sound band, with a
+// one-line and a two-line title (256 cases), keeping the route at least 80
+// design px tall; about 5% kept spare. The profile, the sprite's lane and the
+// sound band take their costs from it. (An A4 back page with all three has no
+// room left for words; the route then gives up some height so the page still fits.)
+export const ACTIVITY_ROOM = Object.freeze({ letter: { page: 715, back: 520 }, a4: { page: 575, back: 425 } });
+export const ACTIVITY_SPRITE_COST = 205;
+export const ACTIVITY_SOUND_COST = 155;
+export const ACTIVITY_PROFILE_COST = 205;
+
+/** Whether an activity page shows its elevation profile (on unless switched off, and only with elevations). */
+export function showsProfile(page) {
+  const p = page && page.piece;
+  return Boolean(p && p.kind === "activity" && p.showProfile !== false && p.activity && Array.isArray(p.activity.elevations) && p.activity.elevations.length > 1);
+}
 export const WORD_LIMITS = Object.freeze({
   letter: {
     words: { page: [1380, 1230], back: [1230, 990] }, both: { page: [560, 450], back: [450, 250] },
     overlay: { page: [300, 220], back: [240, 160] }, quote: { page: [180, 180], back: [180, 180] },
     tile: { page: [560, 380], back: [420, 230] },
     book: { page: [BOOK_ROOM.letter.page, BOOK_ROOM.letter.page], back: [BOOK_ROOM.letter.back, BOOK_ROOM.letter.back] },
+    activity: { page: [ACTIVITY_ROOM.letter.page, ACTIVITY_ROOM.letter.page], back: [ACTIVITY_ROOM.letter.back, ACTIVITY_ROOM.letter.back] },
   },
   a4: {
     words: { page: [1230, 1090], back: [1090, 890] }, both: { page: [540, 390], back: [350, 160] },
     overlay: { page: [280, 200], back: [220, 140] }, quote: { page: [180, 180], back: [180, 180] },
     tile: { page: [510, 320], back: [320, 180] },
     book: { page: [BOOK_ROOM.a4.page, BOOK_ROOM.a4.page], back: [BOOK_ROOM.a4.back, BOOK_ROOM.a4.back] },
+    activity: { page: [ACTIVITY_ROOM.a4.page, ACTIVITY_ROOM.a4.page], back: [ACTIVITY_ROOM.a4.back, ACTIVITY_ROOM.a4.back] },
   },
 });
 
@@ -126,11 +149,13 @@ export function wordLimit(spec, page, values = {}) {
   const fills = layout === "words" || layout === "both" || layout === "tile";
   // A book page (stage 5) loses room for its line from the review in the same way (measured).
   const book = layout === "book";
-  const lane = (fills || book) && page && page.sprite && usableSprite(values.sprite) ? (book ? BOOK_SPRITE_COST : SPRITE_COST) : 0;
+  const act = layout === "activity";
+  const lane = (fills || book || act) && page && page.sprite && usableSprite(values.sprite) ? (book ? BOOK_SPRITE_COST : act ? ACTIVITY_SPRITE_COST : SPRITE_COST) : 0;
   // The sound band (stage 3) takes its room the same way, as soon as the switch
   // is on; a big quote loses a little; words over a picture keep theirs (measured).
-  const band = page && page.sound ? (fills ? SOUND_COST : book ? BOOK_SOUND_COST : layout === "quote" ? QUOTE_SOUND_COST : 0) : 0;
-  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane - band);
+  const band = page && page.sound ? (fills ? SOUND_COST : book ? BOOK_SOUND_COST : act ? ACTIVITY_SOUND_COST : layout === "quote" ? QUOTE_SOUND_COST : 0) : 0;
+  const profile = act && showsProfile(page) ? ACTIVITY_PROFILE_COST : 0;
+  return Math.max(0, WORD_LIMITS[paper][layout][where][heading] - lane - band - profile);
 }
 
 /** Letter in the Americas where it's the usual paper, A4 elsewhere. */
@@ -231,6 +256,8 @@ export function zinePages(pages, src = picturePath, { paper, look, sprite = fals
       if (tape) out.tape = tape;
       const book = p.layout === "book" ? bookForReader(p, spec.id, at) : null;
       if (book) out.book = book;
+      const activity = p.layout === "activity" ? activityForReader(p, paper) : null;
+      if (activity) out.activity = activity;
     }
     const marks = cleanMarks(p.marks, PAGE_SIZES[paper] || PAGE_SIZES.letter);
     if (marks.length) out.marks = marks;
@@ -279,6 +306,7 @@ export function zineCredits(pages, shown, withSprite) {
     add(s.what, s.app, s.home, (z, raw) => z.picture && raw.picture && raw.picture.source && raw.picture.source.app === a);
   }
   add("Books", BOOKHIVE.app, BOOKHIVE.home, (z) => z.book);
+  add("Activities", TREELINE.app, TREELINE.home, (z) => z.activity);
   return out;
 }
 
@@ -303,7 +331,7 @@ export function zineConfig({ title, handle, paper, look, ink, pages, made, src, 
     config.sprite = { src: spriteSrc, frameWidth: g.frameWidth, frameHeight: g.frameHeight, columns: g.columns, rows: g.rows };
   }
   const colors = lookColors(config.look, ink);
-  if (colors) config.ink = colors;
+  if (colors) config.ink = isLightInk(colors.b) ? { ...colors, light: true } : colors;
   // Stickers and drawing: the shapes of the stickers used, and the colours for the look.
   if (config.pages.some((p) => p.marks)) {
     config.stickers = stickersUsed(config.pages);

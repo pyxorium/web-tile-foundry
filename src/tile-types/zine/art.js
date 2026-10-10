@@ -1,6 +1,7 @@
 import { PAGE_SIZES, RISO_CURVES } from "./runtime/reader.js";
 import { zinePages, cleanText, TITLE_MAX } from "./pages.js";
-import { lookOf, lookColors, hexToRgb } from "./looks.js";
+import { lookOf, lookColors, hexToRgb, isLightInk } from "./looks.js";
+import { mapLayout } from "./activities.js";
 import { cropRect } from "../../core/pictures.js";
 import { marksSvg, markColors } from "./marks.js";
 
@@ -434,6 +435,11 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
     grain(g, x, y, w, h, style, u);
     return;
   }
+  if (page.layout === "activity" && page.activity) {
+    drawActivityPage(g, x, y, w, h, u, page, style);
+    grain(g, x, y, w, h, style, u);
+    return;
+  }
   const pad = 22 * u;
   const inner = w - 2 * pad;
   let cy = y + pad;
@@ -620,6 +626,197 @@ function drawBookPage(g, x, y, w, h, u, page, bitmap, style) {
     const max = Math.max(0, Math.floor((bottom - cy) / (20 * u)));
     for (const line of wrap(g, page.words.replace(/\s+/g, " "), inner, max)) { g.fillText(line, x + w / 2, cy); cy += 20 * u; }
     g.textAlign = "left";
+  }
+}
+
+/** `amount` of colour `a` over colour `b` (both "#rrggbb"), as "#rrggbb". */
+function mixHex(a, b, amount) {
+  const p = (h) => [1, 3, 5].map((i) => parseInt(String(h).slice(i, i + 2), 16));
+  const x = p(a), y = p(b);
+  return "#" + x.map((v, i) => Math.round(v * amount + y[i] * (1 - amount)).toString(16).padStart(2, "0")).join("");
+}
+
+/** The numbers in a path made of "M x y" and "L x y" steps, as points. */
+export function pathPoints(d) {
+  const out = [];
+  const re = /[ML]\s*(-?[\d.]+)\s+(-?[\d.]+)/g;
+  let m;
+  while ((m = re.exec(String(d || "")))) out.push([Number(m[1]), Number(m[2])]);
+  return out;
+}
+
+/**
+ * An activity page (Treeline) as the reader shows it: what and when, the
+ * title, the route drawn in the look, the elevation profile, the stats, and
+ * the creator's words.
+ */
+function drawActivityPage(g, x, y, w, h, u, page, style) {
+  const pad = 22 * u;
+  const inner = w - 2 * pad;
+  const bottom = y + h - (page.lane ? 26 + 58 : 26) * u;
+  const a = page.activity;
+  const light = style.look === "riso" && isLightInk(style.riso.b);
+  const routeColor = style.look === "riso" && !light ? style.riso.b : style.look === "collage" ? style.accent : style.ink;
+  const labelColor = style.look === "riso" && !light ? style.riso.b : style.soft;
+  let cy = y + pad;
+  g.textBaseline = "top";
+  g.font = `${10.5 * u}px ${SANS}`;
+  g.fillStyle = style.soft;
+  const head = [a.sport, a.date].filter(Boolean).join(" \u00b7 ").toUpperCase();
+  g.fillText(wrap(g, head, inner, 1)[0] || "", x + pad, cy);
+  cy += 18 * u;
+  cy = drawHeading(g, x + pad, cy, inner, u, a.title, style);
+  // What goes below the route, from the bottom up: words, stats, profile.
+  g.font = `${14 * u}px ${SANS}`;
+  const words = page.words ? wrap(g, page.words.replace(/\s+/g, " "), inner, 4) : [];
+  const statsH = a.stats && a.stats.length ? 44 * u : 0;
+  const profH = a.profile ? 70 * u : 0;
+  const low = bottom - words.length * 20 * u - (words.length ? 4 * u : 0);
+  const statsY = low - statsH;
+  const profY = statsY - profH;
+  const routeBox = { x: x + pad, y: cy + 2 * u, w: inner, h: Math.max(60 * u, profY - cy - 10 * u) };
+  // The map: map paper, a faint grid, the route, a compass rose and a scale bar (placed by mapLayout, as in the reader).
+  const pts = a.route ? pathPoints(a.route.d) : [];
+  if (pts.length > 1) {
+    let mx = routeBox.x, my = routeBox.y, mw = routeBox.w, mh = routeBox.h;
+    if (style.look === "collage") {
+      g.save();
+      g.shadowColor = "rgba(40,25,5,0.25)";
+      g.shadowBlur = 6 * u;
+      g.shadowOffsetY = 2 * u;
+      g.fillStyle = "#fff";
+      g.fillRect(mx + 4 * u, my + 6 * u, mw - 8 * u, mh - 10 * u);
+      g.restore();
+      mx += 12 * u; my += 14 * u; mw -= 24 * u; mh -= 26 * u;
+    }
+    const paperTint = style.look === "photocopy" ? "#e4e3de" : style.look === "collage" ? "#eef0e2" : style.look === "riso" ? mixHex(style.riso.b, style.paper, 0.12) : "#eef2e6";
+    g.fillStyle = paperTint;
+    g.fillRect(mx, my, mw, mh);
+    if (style.look === "photocopy") {
+      g.save();
+      g.setLineDash([5 * u, 4 * u]);
+      g.strokeStyle = style.ink;
+      g.lineWidth = 1.5 * u;
+      g.strokeRect(mx, my, mw, mh);
+      g.restore();
+    }
+    const L = mapLayout(a.route, mw / u, mh / u, a.route.unit || "mi");
+    g.save();
+    g.beginPath();
+    g.rect(mx, my, mw, mh);
+    g.clip();
+    if (L.grid > 6) {
+      g.strokeStyle = style.look === "riso" ? style.riso.b : "#000";
+      g.globalAlpha = style.look === "riso" ? 0.35 : style.look === "photocopy" ? 0.13 : 0.08;
+      g.lineWidth = 1 * u;
+      g.beginPath();
+      for (let k = L.x % L.grid; k <= mw / u; k += L.grid) { g.moveTo(mx + k * u, my); g.lineTo(mx + k * u, my + mh); }
+      for (let k = L.y % L.grid; k <= mh / u; k += L.grid) { g.moveTo(mx, my + k * u); g.lineTo(mx + mw, my + k * u); }
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+    const at = (p) => [mx + (L.x + p[0] * L.s) * u, my + (L.y + p[1] * L.s) * u];
+    const trace = () => { g.beginPath(); pts.forEach((p, i) => { const [px, py] = at(p); if (i) g.lineTo(px, py); else g.moveTo(px, py); }); };
+    g.lineJoin = "round";
+    g.lineCap = "round";
+    trace();
+    g.strokeStyle = paperTint;
+    g.lineWidth = 7 * u;
+    g.stroke();
+    trace();
+    g.strokeStyle = routeColor;
+    g.lineWidth = 3 * u;
+    g.stroke();
+    const [sx0, sy0] = at(pts[0]), [ex, ey] = at(pts[pts.length - 1]);
+    g.beginPath(); g.arc(sx0, sy0, 4.5 * u, 0, Math.PI * 2); g.fillStyle = paperTint; g.fill(); g.lineWidth = 2 * u; g.strokeStyle = routeColor; g.stroke();
+    g.beginPath(); g.arc(ex, ey, 4 * u, 0, Math.PI * 2); g.fillStyle = routeColor; g.fill();
+    // The compass rose.
+    const ink = style.ink;
+    const cx = mx + (L.rose.x + L.rose.w / 2) * u, cy = my + (L.rose.y + 16) * u;
+    g.fillStyle = paperTint;
+    g.globalAlpha = 0.9;
+    g.beginPath(); g.arc(cx, cy, 15 * u, 0, Math.PI * 2); g.fill();
+    g.fillRect(cx - 6 * u, cy + 17 * u, 12 * u, 12 * u);
+    g.globalAlpha = 1;
+    g.strokeStyle = ink;
+    g.lineWidth = 1 * u;
+    g.globalAlpha = 0.4;
+    g.beginPath(); g.arc(cx, cy, 14 * u, 0, Math.PI * 2); g.stroke();
+    g.globalAlpha = 0.55;
+    g.beginPath(); g.moveTo(cx - 13 * u, cy); g.lineTo(cx, cy - 2.5 * u); g.lineTo(cx + 13 * u, cy); g.lineTo(cx, cy + 2.5 * u); g.closePath(); g.stroke();
+    g.globalAlpha = 1;
+    g.beginPath(); g.moveTo(cx, cy - 13 * u); g.lineTo(cx + 3.5 * u, cy); g.lineTo(cx, cy + 13 * u); g.lineTo(cx - 3.5 * u, cy); g.closePath(); g.stroke();
+    g.fillStyle = ink;
+    g.beginPath(); g.moveTo(cx, cy - 13 * u); g.lineTo(cx + 3.5 * u, cy); g.lineTo(cx - 3.5 * u, cy); g.closePath(); g.fill();
+    g.font = `700 ${9.5 * u}px ${style.look === "photocopy" ? MONO : SANS}`;
+    g.textAlign = "center";
+    g.textBaseline = "alphabetic";
+    g.fillText("N", cx, cy + 26 * u);
+    g.textAlign = "left";
+    // The scale bar.
+    if (L.scale) {
+      const sc = L.scale, bx = mx + (sc.x + 5) * u, by = my + (sc.y + 4) * u;
+      g.fillStyle = paperTint;
+      g.globalAlpha = 0.9;
+      g.fillRect(mx + sc.x * u, my + sc.y * u, sc.w * u, sc.h * u);
+      g.globalAlpha = 1;
+      g.fillStyle = ink;
+      g.fillRect(bx, by, (sc.bar / 2) * u, 5 * u);
+      g.strokeStyle = ink;
+      g.lineWidth = 1 * u;
+      g.strokeRect(bx + 0.5 * u, by + 0.5 * u, (sc.bar - 1) * u, 4 * u);
+      g.fillText(sc.label, bx, by + 15 * u);
+    }
+    g.restore();
+  }
+  // The elevation profile.
+  if (a.profile) {
+    const line = pathPoints(a.profile.line);
+    const ph = 54 * u;
+    const px = (p) => x + pad + (p[0] / 1000) * inner;
+    const py = (p) => profY + (p[1] / 200) * ph;
+    g.beginPath();
+    line.forEach((p, i) => (i ? g.lineTo(px(p), py(p)) : g.moveTo(px(p), py(p))));
+    g.lineTo(x + pad + inner, profY + ph);
+    g.lineTo(x + pad, profY + ph);
+    g.closePath();
+    g.fillStyle = style.look === "riso" ? style.riso.b : style.look === "collage" ? style.accent : style.look === "photocopy" ? style.ink : style.soft;
+    g.globalAlpha = style.look === "riso" ? 0.55 : style.look === "collage" ? 0.28 : style.look === "photocopy" ? 0.18 : 0.22;
+    g.fill();
+    g.globalAlpha = 1;
+    g.beginPath();
+    line.forEach((p, i) => (i ? g.lineTo(px(p), py(p)) : g.moveTo(px(p), py(p))));
+    g.strokeStyle = style.ink;
+    g.lineWidth = 1.5 * u;
+    g.stroke();
+    g.font = `${9.5 * u}px ${SANS}`;
+    g.fillStyle = style.soft;
+    g.textBaseline = "top";
+    g.fillText(`Low ${a.profile.low}`, x + pad, profY + ph + 3 * u);
+    g.textAlign = "right";
+    g.fillText(`High ${a.profile.high}`, x + pad + inner, profY + ph + 3 * u);
+    g.textAlign = "left";
+  }
+  // The stats.
+  if (statsH) {
+    g.fillStyle = style.look === "riso" ? style.riso.b : "rgba(0,0,0,0.12)";
+    g.fillRect(x + pad, statsY + 2 * u, inner, 1 * u);
+    const cw = inner / a.stats.length;
+    a.stats.forEach((s, i) => {
+      const sx = x + pad + i * cw;
+      g.font = `${style.look === "riso" ? 700 : 400} ${9.5 * u}px ${SANS}`;
+      g.fillStyle = labelColor;
+      g.fillText(s.label.toUpperCase(), sx, statsY + 9 * u);
+      g.font = `700 ${16 * u}px ${style.look === "photocopy" ? MONO : SANS}`;
+      g.fillStyle = style.ink;
+      g.fillText(wrap(g, s.value, cw - 4 * u, 1)[0] || "", sx, statsY + 22 * u);
+    });
+  }
+  if (words.length) {
+    g.font = `${14 * u}px ${SANS}`;
+    g.fillStyle = style.ink;
+    let wy = statsY + statsH + 4 * u;
+    for (const line of words) { g.fillText(line, x + pad, wy); wy += 20 * u; }
   }
 }
 

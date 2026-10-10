@@ -576,6 +576,15 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .book-row-used { font-size: 11.5px; color: var(--accent); }
 .book-card .tile-thumb.book-thumb { width: 48px; height: 72px; aspect-ratio: auto; object-fit: cover; }
 .book-card .tile-about .btn { align-self: flex-start; width: auto; }
+/* Zine Scene: the "Your activity" panel on an "An activity" page (a Treeline activity). */
+.activity-row-route { display: flex; align-items: center; justify-content: center; color: var(--accent); background: var(--surface); }
+.activity-route-svg { display: block; width: 100%; height: 100%; }
+.activity-thumb { flex: none; display: flex; width: 72px; height: 72px; padding: 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--accent); }
+.activity-thumb.none { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #000)); }
+.activity-link { font-size: 13px; color: var(--accent); }
+.activity-profile-row { margin-top: 2px; }
+.activity-profile-row[hidden] { display: none; }
+.activity-profile-row .field-help { margin: 2px 0 0; }
 /* A whole Grain gallery onto the pages (Zine Scene stage 5, part 3) */
 .link-button { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
 .link-button:disabled { color: var(--ink-2); cursor: default; text-decoration: none; }

@@ -1,6 +1,7 @@
 import { cropRect } from "../../../core/pictures.js";
 import { marksDefs, marksMarkup } from "../marks.js";
 import { SOUND_ROW } from "../sound.js";
+import { mapLayout } from "../activities.js";
 
 // The Zine Scene reader: the program and styles built into every zine tile's
 // page. Plain JavaScript (no bundler), kept as text so it can go straight into
@@ -19,7 +20,10 @@ import { SOUND_ROW } from "../sound.js";
 //   heading, subtitle, words, picture: { src, width, height, alt } | null,
 //   sound?: { src, title, details?, url?, seconds },
 //   tile?: { name, by, url?, page, refs: [{ ref, src }], poster? },
-//   tape?: { name, title, url?, poster?, sides: [{ name, songs }], dedication? } }], sounds?: true }
+//   tape?: { name, title, url?, poster?, sides: [{ name, songs }], dedication? },
+//   book?: { title, authors, stars?, starsLabel?, status?, cover? },
+//   activity?: { title, sport, date, url, stats: [{ label, value }], route?: { w, h, d, start, end },
+//                profile?: { line, area, low, high } } }], credits?: [...] }
 //
 // Tiles on a page (stage 4, layout "tile"): one of the creator's own tiles, its
 // files copied into the zine. Its banner shows with a play button; a tap fetches
@@ -43,7 +47,9 @@ export const SOUND_ROW_PX = SOUND_ROW; // the sound band's row: 8 + 32 + 6 desig
 // "Still loading…", then Try again (pictures and sounds are small, so sooner than
 // the Mixtape's 10 and 20 s); and how often the zine nudges its loader awake.
 export const LOAD_TIMES = Object.freeze({ still: 4000, retry: 8000, keepAlive: 20000 });
-export const WORDS_MIN_SCALE = 0.8; // long words shrink to fit, down to this much of the normal size
+export const WORDS_MIN_SCALE = 0.8;
+export const ACT_ROUTE_MIN = 80; // an activity's route keeps at least this much height (design px)
+export const ACT_PROFILE_H = 46; // and its elevation profile this much
 
 /** Which layout the reader uses for a space (pure, for tests). */
 export function chooseLayout(width, height, paper = "letter") {
@@ -305,6 +311,57 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 .zp .book-status { margin: 2px 0 0; font-size: 11.5px; color: var(--soft); text-transform: uppercase; letter-spacing: .06em; }
 .zp.book-page .words.review { margin-top: 10px; font-style: italic; text-align: center; }
 .zp.book-page .book-empty { flex: none; height: calc(var(--ph) * 0.38); display: flex; align-items: center; justify-content: center; border: 1.5px dashed var(--line); color: var(--soft); font-size: 13px; margin: 0 0 10px; }
+/* An activity (Treeline): the route drawn in the look, an elevation profile, the stats, words of the creator's own. */
+.zp.activity-page .act-head { flex: none; display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; font-size: 10.5px; line-height: 1.3; color: var(--soft); text-transform: uppercase; letter-spacing: .06em; }
+.zp .act-head .act-kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zp .act-head a { margin-left: auto; flex: none; color: var(--accent); text-decoration: none; text-transform: none; letter-spacing: 0; }
+.zp .act-head a:hover { text-decoration: underline; }
+.zp .act-head a:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
+.zp.activity-page h2.act-title { flex: none; }
+.zp .act-title .t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.zp .act-route { position: relative; flex: 1 1 0; min-height: var(--route-min, ${ACT_ROUTE_MIN}px); margin: 2px 0 6px; display: flex; align-items: center; justify-content: center; }
+.zp .act-route { --map-paper: #eef2e6; --grid: rgba(0,0,0,.08); }
+.zp .act-route svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.zp .act-route .m-paper { fill: var(--map-paper); }
+.zp .act-route .m-grid { stroke: var(--grid); stroke-width: 1px; fill: none; }
+.zp .act-route .r-halo { fill: none; stroke: var(--map-paper); stroke-width: 7px; stroke-linejoin: round; stroke-linecap: round; }
+.zp .act-route .r-line { fill: none; stroke: var(--route, var(--ink)); stroke-width: 3px; stroke-linejoin: round; stroke-linecap: round; }
+.zp .act-route .r-start { fill: var(--map-paper); stroke: var(--route, var(--ink)); stroke-width: 2px; }
+.zp .act-route .r-end { fill: var(--route, var(--ink)); stroke: var(--map-paper); stroke-width: 1.5px; }
+.zp .act-route .m-plate { fill: var(--map-paper); fill-opacity: .9; }
+.zp .act-route .m-ink { fill: var(--map-ink, var(--ink)); }
+.zp .act-route .m-line { fill: none; stroke: var(--map-ink, var(--ink)); }
+.zp .act-route .m-text { fill: var(--map-ink, var(--ink)); font: 700 9.5px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.zp .act-route .r-none { color: var(--soft); font-size: 12px; }
+.zp .act-profile { flex: none; margin: 0 0 6px; }
+.zp .act-profile svg { display: block; width: 100%; height: ${ACT_PROFILE_H}px; }
+.zp .act-profile .p-area { fill: var(--p-fill, color-mix(in srgb, var(--soft) 22%, transparent)); stroke: none; }
+.zp .act-profile .p-line { fill: none; stroke: var(--ink); stroke-width: 1.5px; stroke-linejoin: round; }
+.zp .act-profile .p-range { display: flex; justify-content: space-between; margin: 2px 0 0; font-size: 9.5px; line-height: 1.2; color: var(--soft); }
+.zp .act-stats { flex: none; display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 6px; margin: 0 0 6px; padding: 6px 0 0; border-top: 1px solid var(--line); }
+.zp .act-stats div { min-width: 0; }
+.zp .act-stats dt { margin: 0; font-size: 9.5px; line-height: 1.2; color: var(--soft); text-transform: uppercase; letter-spacing: .06em; }
+.zp .act-stats dd { margin: 1px 0 0; font-size: 16px; line-height: 1.2; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zp.activity-page .words.act-words { flex: 0 1 auto; }
+.zp .act-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; border: 1.5px dashed var(--line); color: var(--soft); font-size: 13px; margin: 0 0 10px; }
+[data-look="photocopy"] .zp .act-route { border: 1.5px dashed var(--ink); --map-paper: #e4e3de; --grid: rgba(0,0,0,.13); }
+[data-look="photocopy"] .zp .act-route .m-text { font-family: "Courier New", Courier, "Liberation Mono", ui-monospace, monospace; }
+[data-look="photocopy"] .zp .act-head a { color: var(--ink); text-decoration: underline; }
+[data-look="photocopy"] .zp .act-stats dd { font-family: "Courier New", Courier, "Liberation Mono", ui-monospace, monospace; font-size: 14px; letter-spacing: -.04em; }
+[data-look="photocopy"] .zp .act-profile { --p-fill: color-mix(in srgb, var(--ink) 18%, transparent); }
+[data-look="collage"] .zp .act-route { --route: var(--accent); background: #fff; padding: 8px; box-shadow: 0 2px 6px rgba(40,25,5,.25); transform: rotate(var(--tilt, -1.5deg)); margin: 8px 4px 12px; }
+[data-look="collage"] .zp .act-route::before { content: ""; position: absolute; z-index: 1; top: -8px; left: 50%; width: 56px; height: 16px; margin-left: -28px; background: rgba(239,226,189,.82); transform: rotate(-3deg); }
+[data-look="collage"] .zp .act-route { --map-paper: #eef0e2; --grid: rgba(0,0,0,.09); }
+[data-look="collage"] .zp .act-route svg { inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px); }
+[data-look="collage"] .zp .act-profile { --p-fill: color-mix(in srgb, var(--accent) 28%, transparent); }
+[data-look="riso"] .zp .act-route { --route: var(--ink-b); --map-paper: color-mix(in srgb, var(--ink-b) 12%, var(--paper)); --grid: color-mix(in srgb, var(--ink-b) 35%, transparent); }
+[data-ink-light] .zp .act-route { --route: var(--ink); }
+[data-ink-light][data-look="riso"] .zp .act-route .r-line, [data-ink-light][data-look="riso"] .zp .act-route .r-end { mix-blend-mode: normal; }
+[data-ink-light][data-look="riso"] .zp .act-stats dt { color: var(--ink); mix-blend-mode: normal; }
+[data-look="riso"] .zp .act-route .r-line, [data-look="riso"] .zp .act-route .r-end { mix-blend-mode: multiply; }
+[data-look="riso"] .zp .act-profile { --p-fill: color-mix(in srgb, var(--ink-b) 55%, transparent); }
+[data-look="riso"] .zp .act-profile .p-area { mix-blend-mode: multiply; }
+[data-look="riso"] .zp .act-stats dt { color: var(--ink-b); mix-blend-mode: multiply; font-weight: 700; }
 /* The back page's credits (stage 5): a button in the footer, and the sheet it opens. */
 .zp .foot button.credits-open { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
 .zp .foot button.credits-open:hover { text-decoration: underline; }
@@ -828,6 +885,7 @@ export const READER_JS = String.raw`
     var html = document.documentElement;
     ["--paper", "--ink", "--soft", "--ink-b"].forEach(function (v) { html.style.removeProperty(v); });
     html.setAttribute("data-look", config.look || "clean");
+    if (config.ink && config.ink.light) html.setAttribute("data-ink-light", ""); else html.removeAttribute("data-ink-light");
     risoFilters();
   }
   function has(list, x) { return list && list.indexOf(x) >= 0; }
@@ -876,6 +934,11 @@ export const READER_JS = String.raw`
       e.classList.add("book-page");
       bookBlock(page).forEach(function (n) { e.appendChild(n); });
       if (hasWords) { e.classList.add("has-words"); var rv = wordsBlock(page.words); rv.classList.add("review"); e.appendChild(rv); }
+    } else if (page.layout === "activity") {
+      // An activity: the route, the elevation profile, the stats, then words of the creator's own.
+      e.classList.add("activity-page");
+      activityBlock(page).forEach(function (n) { e.appendChild(n); });
+      if (hasWords) { e.classList.add("has-words"); var aw = wordsBlock(page.words); aw.classList.add("act-words"); e.appendChild(aw); }
     } else if (page.layout === "quote") {
       // Big quote: the words set large (shrunk to fit if long), who said it below.
       e.classList.add("quote");
@@ -915,6 +978,123 @@ export const READER_JS = String.raw`
       e.appendChild(el("span", "num", String(i)));
     }
     return e;
+  }
+
+  // An activity page's top part: what and when, the title, the route (its shape
+  // only, drawn in the look), the elevation profile (an honest scale, made in
+  // the Foundry), and the stats in the creator's units.
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs) {
+    var n = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+  // The map (drawn once the page is laid out, so it knows its box): map paper,
+  // a faint grid whose squares match the scale bar, the route, a compass rose
+  // and a true scale bar, each in a corner the route leaves free (mapLayout).
+  var mapLayout = ${mapLayout.toString()};
+  var routeOf = new WeakMap();
+  function drawMap(pageEl) {
+    var box = pageEl.querySelector(".act-route");
+    var r = box && routeOf.get(box);
+    if (!r) return;
+    var old = box.querySelector("svg");
+    if (old) old.remove();
+    var inset = (config.look === "collage") ? 8 : 0;
+    var W = box.clientWidth - 2 * inset, H = box.clientHeight - 2 * inset;
+    if (!(W > 20 && H > 20)) return;
+    var L = mapLayout(r, W, H, r.unit || "mi");
+    var s = svgEl("svg", { viewBox: "0 0 " + W + " " + H, "aria-hidden": "true" });
+    s.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, "class": "m-paper" }));
+    if (L.grid > 6) {
+      var g = "", gx = L.x % L.grid, gy = L.y % L.grid, k;
+      for (k = gx; k <= W; k += L.grid) g += "M" + k.toFixed(1) + " 0V" + H;
+      for (k = gy; k <= H; k += L.grid) g += "M0 " + k.toFixed(1) + "H" + W;
+      s.appendChild(svgEl("path", { d: g, "class": "m-grid" }));
+    }
+    var t = "translate(" + L.x.toFixed(2) + " " + L.y.toFixed(2) + ") scale(" + L.s.toFixed(5) + ")";
+    var route = svgEl("g", { transform: t });
+    route.appendChild(svgEl("path", { d: r.d, "class": "r-halo", "vector-effect": "non-scaling-stroke" }));
+    route.appendChild(svgEl("path", { d: r.d, "class": "r-line", "vector-effect": "non-scaling-stroke" }));
+    if (r.start) route.appendChild(svgEl("circle", { cx: r.start[0], cy: r.start[1], r: 4.5 / L.s, "class": "r-start", "vector-effect": "non-scaling-stroke" }));
+    if (r.end) route.appendChild(svgEl("circle", { cx: r.end[0], cy: r.end[1], r: 4 / L.s, "class": "r-end", "vector-effect": "non-scaling-stroke" }));
+    s.appendChild(route);
+    // The compass rose: a ring, a needle (north filled), "N" below.
+    var ro = L.rose, cx = ro.x + ro.w / 2, cy = ro.y + 16;
+    var rose = svgEl("g", {});
+    rose.appendChild(svgEl("circle", { cx: cx, cy: cy, r: 15, "class": "m-plate" }));
+    rose.appendChild(svgEl("circle", { cx: cx, cy: cy, r: 14, "class": "m-line", "stroke-opacity": ".4" }));
+    rose.appendChild(svgEl("path", { d: "M" + (cx - 13) + " " + cy + "L" + cx + " " + (cy - 2.5) + "L" + (cx + 13) + " " + cy + "L" + cx + " " + (cy + 2.5) + "Z", "class": "m-line", "stroke-opacity": ".55" }));
+    rose.appendChild(svgEl("path", { d: "M" + cx + " " + (cy - 13) + "L" + (cx + 3.5) + " " + cy + "L" + cx + " " + (cy + 13) + "L" + (cx - 3.5) + " " + cy + "Z", "class": "m-line" }));
+    rose.appendChild(svgEl("path", { d: "M" + cx + " " + (cy - 13) + "L" + (cx + 3.5) + " " + cy + "L" + (cx - 3.5) + " " + cy + "Z", "class": "m-ink" }));
+    var n = svgEl("text", { x: cx, y: cy + 26, "text-anchor": "middle", "class": "m-text" });
+    n.textContent = "N";
+    rose.appendChild(svgEl("rect", { x: cx - 6, y: cy + 17, width: 12, height: 12, rx: 2, "class": "m-plate" }));
+    rose.appendChild(n);
+    s.appendChild(rose);
+    if (L.scale) {
+      var sc = L.scale, sg = svgEl("g", {});
+      sg.appendChild(svgEl("rect", { x: sc.x, y: sc.y, width: sc.w, height: sc.h, rx: 2, "class": "m-plate" }));
+      var bx = sc.x + 5, by = sc.y + 4;
+      sg.appendChild(svgEl("rect", { x: bx, y: by, width: sc.bar / 2, height: 5, "class": "m-ink" }));
+      sg.appendChild(svgEl("rect", { x: bx + 0.5, y: by + 0.5, width: sc.bar - 1, height: 4, "class": "m-line" }));
+      var lt = svgEl("text", { x: bx, y: by + 15, "class": "m-text" });
+      lt.textContent = sc.label;
+      sg.appendChild(lt);
+      s.appendChild(sg);
+    }
+    box.appendChild(s);
+  }
+
+  function activityBlock(p) {
+    var a = p.activity;
+    if (!a) return [el("div", "act-empty", "Your activity goes here")];
+    var out = [];
+    var head = el("p", "act-head");
+    head.appendChild(el("span", "act-kind", [a.sport, a.date].filter(Boolean).join(" · ")));
+    if (a.url) {
+      var link = el("a", null, "Treeline ↗");
+      link.href = a.url; link.target = "_blank"; link.rel = "noopener";
+      link.setAttribute("aria-label", "See " + a.title + " on Treeline (opens a new tab)");
+      head.appendChild(link);
+    }
+    out.push(head);
+    var h = el("h2", "act-title");
+    h.appendChild(el("span", "t", a.title));
+    out.push(h);
+    var box = el("div", "act-route");
+    if (a.route && a.route.d) {
+      box.setAttribute("role", "img");
+      box.setAttribute("aria-label", "A map of the route of " + a.title);
+      routeOf.set(box, a.route);
+    } else {
+      box.appendChild(el("span", "r-none", "No route recorded"));
+    }
+    out.push(box);
+    if (a.profile) {
+      var pr = el("div", "act-profile");
+      var ps = svgEl("svg", { viewBox: "0 0 1000 200", preserveAspectRatio: "none", role: "img", "aria-label": "Elevation from " + a.profile.low + " to " + a.profile.high });
+      ps.appendChild(svgEl("path", { d: a.profile.area, "class": "p-area" }));
+      ps.appendChild(svgEl("path", { d: a.profile.line, "class": "p-line", "vector-effect": "non-scaling-stroke" }));
+      pr.appendChild(ps);
+      var range = el("p", "p-range");
+      range.appendChild(el("span", null, "Low " + a.profile.low));
+      range.appendChild(el("span", null, "High " + a.profile.high));
+      pr.appendChild(range);
+      out.push(pr);
+    }
+    if (a.stats && a.stats.length) {
+      var dl = el("dl", "act-stats");
+      dl.style.setProperty("--cols", String(a.stats.length));
+      a.stats.forEach(function (st) {
+        var d = el("div");
+        d.appendChild(el("dt", null, st.label));
+        d.appendChild(el("dd", null, st.value));
+        dl.appendChild(d);
+      });
+      out.push(dl);
+    }
+    return out;
   }
 
   // A book page's top part (stage 5): the cover (the book's own, framed in the
@@ -1287,6 +1467,22 @@ export const READER_JS = String.raw`
     }
   }
 
+  // An activity page fits the same way: its words shrink first; if the page is
+  // still too full (a long title, the sprite's lane, a sound and the profile on
+  // a small page), the route gives up some of its height, step by step.
+  var ROUTE_STEPS = [${ACT_ROUTE_MIN}, 64, 48, 32];
+  function fitActivity(pageEl) {
+    if (!pageEl.classList.contains("activity-page")) return;
+    var w = pageEl.querySelector(".words.act-words");
+    for (var k = 0; k < ROUTE_STEPS.length; k++) {
+      pageEl.style.setProperty("--route-min", ROUTE_STEPS[k] + "px");
+      fitWords(pageEl);
+      var full = (w && w.scrollHeight > w.clientHeight + 1) || pageEl.scrollHeight > pageEl.clientHeight + 1;
+      if (!full) break;
+    }
+    drawMap(pageEl);
+  }
+
   function fitWords(pageEl) {
     var w = pageEl.querySelector(".words");
     if (!w || !w.firstChild) return;
@@ -1327,7 +1523,7 @@ export const READER_JS = String.raw`
       // A picture takes its room only once it has loaded: fit the words again then.
       // (Pictures arrive as their page comes near: see wantPage.)
       Array.prototype.forEach.call(e.querySelectorAll("img.la"), function (img) {
-        img.addEventListener("load", function () { fitWords(e); fitBook(e); });
+        img.addEventListener("load", function () { fitWords(e); fitBook(e); fitActivity(e); });
       });
       return e;
     });
@@ -1343,6 +1539,7 @@ export const READER_JS = String.raw`
     nextBtn.addEventListener("click", function () { turn(1); });
     pageEls.forEach(fitWords);
     pageEls.forEach(fitBook);
+    pageEls.forEach(fitActivity);
     pageEls.forEach(fitQuote);
     pageEls.forEach(fitTape);
     drawSound();

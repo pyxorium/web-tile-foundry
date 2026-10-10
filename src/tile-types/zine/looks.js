@@ -108,3 +108,13 @@ function inkSwatch(pair) {
 
 export const LOOK_OPTIONS = Object.freeze(LOOKS.map((l) => ({ ...l, image: miniPage(l.value) })));
 export const INK_OPTIONS = Object.freeze(RISO_INKS.map((p) => ({ value: p.value, label: p.label, image: inkSwatch(p) })));
+
+/** Whether a Riso ink is light (yellow, sunflower): too pale for thin lines and small labels on its own tint. */
+export function isLightInk(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return false;
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const n = parseInt(m[1], 16);
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return L > 0.45;
+}

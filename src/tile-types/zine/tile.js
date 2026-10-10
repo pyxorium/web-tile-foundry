@@ -52,6 +52,7 @@ export function zineRecipe({ paper, look, ink, pages, sprite = null }) {
       if (z.tile) out.tile = pieceRecipe(byId.get(z.id), z.id);
       if (z.tape) out.tape = pieceRecipe(byId.get(z.id), z.id);
       if (z.book) out.book = pieceRecipe(byId.get(z.id), z.id);
+      if (z.activity) out.activity = pieceRecipe(byId.get(z.id), z.id);
       return out;
     }),
   };
