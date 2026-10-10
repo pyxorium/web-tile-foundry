@@ -3,5 +3,5 @@ dist/
 .DS_Store
 *.log
 
-# Backups made by scripts/revise-tape.mjs
+# Backups made by scripts/revise-tape.mjs and scripts/set-tile-screenshot.mjs
 scripts/backups/
