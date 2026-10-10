@@ -17,6 +17,8 @@ export const CONTENT_TYPES = Object.freeze({
   ".jpg": "image/jpeg",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
 });
 
 const encoder = new TextEncoder();

@@ -59,7 +59,7 @@ export function blobCidOf(src) {
 
 /**
  * Reads a published tile: { uri, cid, did, handle, pds, manifest, files, recipe }.
- * `files` is [{ path, bytes, contentType }] exactly as published (bytes checked
+ * `files` is [{ path, bytes, contentType, storedType }] exactly as published (bytes checked
  * against their addresses); `recipe` is the parsed /foundry.json, or null for a
  * tile the Foundry didn't make. With `only` (a list of paths), just those files
  * are downloaded (a tape's songs are big and not needed for its J-card).
@@ -89,7 +89,11 @@ export async function fetchPublishedTile(address, { fetchImpl = fetch, only = nu
     if (!blob) throw new Error(`The tile's file ${path} has no address.`);
     const bytes = await fetchPublicBlob(did, pds, blob, fetchImpl);
     if ((await rawCid(bytes)) !== blob) throw new Error(`The tile's file ${path} didn't match its address. Please try again.`);
-    files.push({ path, bytes, contentType: String((entry && entry["content-type"]) || "") });
+    // storedType: the type the account's server holds these bytes under (the
+    // record's blob reference). A copy uploaded to the same account must use it,
+    // or the server refuses the new record ("InvalidMimeType").
+    const storedType = typeof (entry && entry.src && entry.src.mimeType) === "string" ? entry.src.mimeType : "";
+    files.push({ path, bytes, contentType: String((entry && entry["content-type"]) || ""), storedType });
   }
   let recipe = null;
   const recipeFile = files.find((f) => f.path === "/foundry.json");
@@ -120,7 +124,7 @@ export function copyPaths(files, folder) {
     if (f.contentType && f.contentType !== type) {
       throw new Error(`The tile's file ${f.path} is stored as ${f.contentType}, so it can't be copied as ${type}.`);
     }
-    return { from: f.path, path: to, bytes: f.bytes, contentType: type };
+    return { from: f.path, path: to, bytes: f.bytes, contentType: type, ...(f.storedType ? { storedType: f.storedType } : {}) };
   });
 }
 

@@ -112,7 +112,9 @@ export async function publishTile({ xrpc, fetchBlob, did, result, destination = 
     let res;
     const what = file.path === "/" ? "the tile" : file.path;
     try {
-      res = await xrpc("com.atproto.repo.uploadBlob", { method: "POST", body: file.bytes, contentType: file.contentType });
+      // A file copied from another tile in the same account goes up under the
+      // type the server already holds those bytes under (see published-tile.js).
+      res = await xrpc("com.atproto.repo.uploadBlob", { method: "POST", body: file.bytes, contentType: file.storedType || file.contentType });
     } catch (err) {
       if (isTooLarge(err)) {
         const mb = (file.bytes.length / 1024 / 1024).toFixed(1);
