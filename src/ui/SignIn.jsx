@@ -114,7 +114,6 @@ export function SignIn({ account, onSignIn, accounts = [], onSwitch }) {
       </div>
       <p className="fineprint">
         No atproto account yet? One way to get one is <a href="https://bsky.app/" target="_blank" rel="noopener">Bluesky</a>.
-        Your character sprite comes from <a href="https://rpg.actor/" target="_blank" rel="noopener">rpg.actor</a>.
       </p>
     </div>
   );
