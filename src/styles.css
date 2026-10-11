@@ -14,7 +14,7 @@
   --ink: #1f1d33;
   --ink-2: #57536e;
   --line: #dccbbe;
-  --accent: #3f3a86;
+  --accent: #712b13; /* brick, from thunderbird.cafe */
   --accent-ink: #ffffff;
   --gold: #b9832e;
   --gold-soft: #f6e5c3;
@@ -61,7 +61,25 @@ a { color: var(--accent); }
 
 /* The sign (like a painted sign on a brick wall): white stripe, black band, white stripe. */
 .sign { background: var(--sign); border-top: 6px solid var(--sign-stripe); border-bottom: 6px solid var(--sign-stripe); }
-.sign-inner { max-width: 1040px; margin: 0 auto; padding: 16px 16px 18px; }
+.sign-inner { max-width: 1040px; margin: 0 auto; padding: 16px 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sign-words { min-width: 0; }
+
+/* The menu at the right of the sign. */
+.site-menu { position: relative; flex: none; }
+.site-menu-button {
+  display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+  padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #ffffff; cursor: pointer;
+}
+.site-menu-button:hover, .site-menu-button[aria-expanded="true"] { border-color: rgba(255, 255, 255, 0.35); }
+.site-menu-button:focus-visible { outline: 2px solid var(--sign-gold); outline-offset: 2px; }
+.site-menu-bars { display: flex; flex-direction: column; gap: 5px; width: 22px; }
+.site-menu-bars span { display: block; height: 2px; border-radius: 1px; background: currentColor; }
+.site-menu-list {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; min-width: 120px; white-space: nowrap; margin: 0; padding: 6px; list-style: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.site-menu-list a { display: block; padding: 9px 12px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 15px; }
+.site-menu-list a:hover, .site-menu-list a:focus-visible { background: var(--surface-2); outline: none; }
 .sign .kicker, .sign h1 { font-family: "Oswald Sign", Impact, "Arial Narrow", sans-serif; font-weight: 500; text-transform: uppercase; margin: 0; }
 .sign .kicker { font-size: 15px; letter-spacing: 0.16em; color: var(--sign-gold); }
 .sign h1 { margin-top: 2px; font-size: clamp(32px, 6vw, 50px); line-height: 1.1; letter-spacing: 0.08em; color: #ffffff; }
@@ -246,8 +264,10 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .account-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
 .account-bar-wrap .account-bar + * { margin-top: 2px; }
 .account-current label { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.account-add-link { white-space: nowrap; }
+.account-sep { margin: 0 8px; color: var(--ink-2); }
 .account-pick { font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; max-width: 100%; }
-.account-actions { display: inline-flex; gap: 14px; flex-wrap: wrap; }
+.account-actions { display: inline-flex; gap: 14px; flex-wrap: wrap; margin-left: auto; }
 .account-note { margin: 0 4px; font-size: 13px; color: var(--ink-2); }
 .account-add { max-width: 520px; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .account-add .field-help { margin: 0; }

@@ -14,6 +14,7 @@ import { PublishPanel } from "./ui/PublishPanel.jsx";
 import { useTileBuild, useFileUrls } from "./ui/useTileBuild.js";
 import { useAccount, useOwnSprite, useOtherAccounts } from "./ui/useAccount.js";
 import { DEBUG } from "./ui/debug.js";
+import { SiteMenu } from "./ui/SiteMenu.jsx";
 
 // The Foundry, kept as simple as possible for first-time users:
 //   sign in -> (pick a tile type, only once there is more than one)
@@ -152,8 +153,11 @@ export default function App() {
     {/* The sign: a white stripe, a black band and a white stripe, edge to edge. */}
     <header className="sign">
       <div className="sign-inner">
-        <p className="kicker">thunderbird.cafe</p>
-        <h1>Web Tile Foundry</h1>
+        <div className="sign-words">
+          <p className="kicker">thunderbird.cafe</p>
+          <h1>Web Tile Foundry</h1>
+        </div>
+        <SiteMenu />
       </div>
     </header>
     <div className="page">

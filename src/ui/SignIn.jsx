@@ -165,11 +165,14 @@ export function AccountBar({ account, accounts = [], adding = { state: "idle" },
           ) : (
             <>Signed in as <strong>{current}</strong></>
           )}
+          {onAdd && !open && (
+            <span className="account-add-link">
+              <span className="account-sep" aria-hidden="true">·</span>
+              <button type="button" className="linklike" onClick={() => setOpen(true)} disabled={account.busy}>Add another account</button>
+            </span>
+          )}
         </span>
         <span className="account-actions">
-          {onAdd && !open && (
-            <button type="button" className="linklike" onClick={() => setOpen(true)} disabled={account.busy}>Add another account</button>
-          )}
           <button type="button" className="linklike" onClick={onSignOut} disabled={account.busy || waiting}>Sign out</button>
         </span>
       </div>
