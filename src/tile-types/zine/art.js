@@ -1,5 +1,5 @@
 import { PAGE_SIZES, RISO_CURVES } from "./runtime/reader.js";
-import { zinePages, cleanText, TITLE_MAX } from "./pages.js";
+import { zinePages, cleanText, TITLE_MAX, pagesInUse } from "./pages.js";
 import { lookOf, lookColors, hexToRgb, isLightInk } from "./looks.js";
 import { mapLayout } from "./activities.js";
 import { cropRect } from "../../core/pictures.js";
@@ -827,8 +827,10 @@ function drawActivityPage(g, x, y, w, h, u, page, style) {
 export async function drawZineArt(values) {
   const size = PAGE_SIZES[values.paper] || PAGE_SIZES.letter;
   const style = artStyle(values.look, values.ink);
-  const pages = zinePages(values.pages || [], () => "", { paper: values.paper, look: values.look });
-  const raw = values.pages || [];
+  // Only the pages in use: the banner shows the cover and the next page (page 1,
+  // or the back of a 2-page zine, owner Oct 11).
+  const pages = zinePages(values.pages || [], () => "", { paper: values.paper, look: values.look, count: values.pageCount });
+  const raw = pagesInUse(values.pages || [], values.pageCount);
   const title = cleanText(values.name, TITLE_MAX).replace(/\n+/g, " ");
   const handle = String(values.handle || "").replace(/^@/, "");
   const coverPic = await bitmapOf(pages[0].picture && raw[0] && raw[0].picture);
@@ -842,7 +844,7 @@ export async function drawZineArt(values) {
   const sprite = values.sprite && values.sprite.geometry && values.sprite.bytes ? values.sprite : null;
   const sheet = sprite && (raw0.sprite || raw1.sprite) ? await bitmapOf({ bytes: sprite.bytes, contentType: "image/png" }) : null;
 
-  // Banner: the zine open at its cover and page 1.
+  // Banner: the zine open at its cover and page 1 (a 2-page zine: its cover and back side by side).
   const banner = canvas(1280, 720);
   let g = banner.getContext("2d");
   g.fillStyle = style.desk;

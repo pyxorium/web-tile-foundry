@@ -2,7 +2,7 @@ import { cleanPictureSource } from "../../core/app-pictures.js";
 import { makeFile } from "../../core/fileset.js";
 import { renderZineHtml } from "./runtime/template.js";
 import { lookOf, inkOf } from "./looks.js";
-import { zineConfig, zinePages, picturePath, showsOf, usesSprite, SPRITE_PATH, PAGES, TITLE_MAX, DESCRIPTION_MAX, cleanText } from "./pages.js";
+import { zineConfig, zinePages, picturePath, showsOf, usesSprite, SPRITE_PATH, PAGES, TITLE_MAX, DESCRIPTION_MAX, cleanText, pageCountOf, pagesFor, pagesInUse } from "./pages.js";
 import { soundReady, soundPath, soundRecipe } from "./sound.js";
 import { pieceFiles, pieceRecipe } from "./piece.js";
 
@@ -10,25 +10,33 @@ import { pieceFiles, pieceRecipe } from "./piece.js";
 // type (index.js) so the tests can run it in Node: the card pictures (`art`)
 // are handed in, drawn in the browser by art.js.
 //
-// Files: "/" (the page with the reader and the zine), one file per picture
+// Only the pages in use (the page count: 8, 4 or 2) go in; put-aside pages stay
+// in the Foundry. Files: "/" (the page with the reader and the zine), one file per picture
 // (/pictures/<page id>.webp or .jpg), one per sound (/sounds/<page id>.mp3),
 // a page's tile under /tiles/<page id>/ (its files exactly as published),
 // /icon.png and /banner.png when `art` is given.
 
+// The end of the default description, by page count (owner, Oct 11).
+const COUNT_WORDS = Object.freeze({ 8: "eight pages to flip through", 4: "four pages to flip through", 2: "front and back" });
+
 /** The card description when the creator leaves it empty. */
-export function defaultDescription(title, handle) {
+export function defaultDescription(title, handle, pageCount) {
   const t = cleanText(title, TITLE_MAX).replace(/\n+/g, " ");
   const h = String(handle || "").replace(/^@/, "").trim();
-  return `${t ? `“${t}”, a` : "A"} little zine${h ? ` by @${h}` : ""}, eight pages to flip through.`;
+  return `${t ? `“${t}”, a` : "A"} little zine${h ? ` by @${h}` : ""}, ${COUNT_WORDS[pageCountOf(pageCount)]}.`;
 }
 
 /** The recipe (public): the choices and words, and where each picture went. Never file names. */
-export function zineRecipe({ paper, look, ink, pages, sprite = null }) {
-  const withSprite = usesSprite(pages, sprite);
-  const shown = zinePages(pages, undefined, { paper, look, sprite: withSprite });
-  const byId = new Map((pages || []).map((p, i) => [PAGES[i] && PAGES[i].id, p]));
+export function zineRecipe({ paper, look, ink, pages, pageCount, sprite = null }) {
+  const count = pageCountOf(pageCount);
+  const withSprite = usesSprite(pages, sprite, count);
+  const shown = zinePages(pages, undefined, { paper, look, count, sprite: withSprite });
+  // Only the pages in use: put-aside pages stay in the Foundry, never in the recipe.
+  const used = pagesInUse(pages, count);
+  const byId = new Map(pagesFor(count).map((spec, i) => [spec.id, used[i]]));
   const l = lookOf(look);
   return {
+    pageCount: count,
     paper,
     look: l,
     ...(l === "riso" ? { ink: inkOf(ink).value } : {}),
@@ -65,27 +73,29 @@ function spriteRecipe(sprite) {
   return { cid: sprite.cid, origin, width: sprite.width, height: sprite.height, ...sprite.geometry };
 }
 
-export function makeZineTile({ name, description = "", handle = "", paper = "letter", look = "clean", ink = "", pages, sprite = null, made = "", art = null }) {
+export function makeZineTile({ name, description = "", handle = "", paper = "letter", look = "clean", ink = "", pages, pageCount, sprite = null, made = "", art = null }) {
   const title = cleanText(name, TITLE_MAX).replace(/\n+/g, " ");
   if (!title) throw new Error("The zine needs a title.");
   if (!Array.isArray(pages) || pages.length !== PAGES.length) throw new Error("The zine's pages are missing.");
-  const config = zineConfig({ title, handle, paper, look, ink, pages, made, sprite });
+  const count = pageCountOf(pageCount);
+  const config = zineConfig({ title, handle, paper, look, ink, pages, pageCount: count, made, sprite });
   const files = [makeFile("/", renderZineHtml({ title, config }))];
   if (config.sprite) files.push(makeFile(SPRITE_PATH, sprite.bytes));
-  PAGES.forEach((spec, i) => {
-    const p = pages[i];
+  const used = pagesInUse(pages, count);
+  pagesFor(count).forEach((spec, i) => {
+    const p = used[i];
     if (p && p.picture && showsOf(spec, p).includes("picture")) files.push(makeFile(picturePath({ ...p, id: spec.id }), p.picture.bytes));
     if (soundReady(p)) files.push(makeFile(soundPath(spec.id), p.clip.bytes));
     if (showsOf(spec, p).includes("piece")) for (const f of pieceFiles(p, spec.id)) files.push(makeFile(f.path, f.bytes));
   });
   if (art) files.push(makeFile("/icon.png", art.icon), makeFile("/banner.png", art.banner));
-  const desc = cleanText(description, DESCRIPTION_MAX).replace(/\n+/g, " ") || defaultDescription(title, handle);
+  const desc = cleanText(description, DESCRIPTION_MAX).replace(/\n+/g, " ") || defaultDescription(title, handle, count);
   return {
     name: title,
     description: desc,
     files,
     icons: art ? [{ src: "/icon.png" }] : [],
     screenshots: art ? [{ src: "/banner.png" }] : [],
-    recipeInputs: zineRecipe({ paper: config.paper, look: config.look, ink, pages, sprite }),
+    recipeInputs: zineRecipe({ paper: config.paper, look: config.look, ink, pages, pageCount: count, sprite }),
   };
 }

@@ -15,7 +15,8 @@ import { mapLayout } from "../activities.js";
 //   spread  two pages side by side, when that doesn't make pages much smaller
 // Arrows, swipe and the arrow keys turn pages.
 //
-// Config (JSON in #zine-config): { version, paper, look, title, handle, made,
+// Config (JSON in #zine-config): { version, pageCount (8, 4 or 2: the pages listed
+//   are only those in use), paper, look, title, handle, made,
 //   makeUrl, pages: [{ id, kind: "cover"|"page"|"back", label, shows,
 //   heading, subtitle, words, picture: { src, width, height, alt } | null,
 //   sound?: { src, title, details?, url?, seconds },
@@ -51,15 +52,18 @@ export const WORDS_MIN_SCALE = 0.8;
 export const ACT_ROUTE_MIN = 80; // an activity's route keeps at least this much height (design px)
 export const ACT_PROFILE_H = 46; // and its elevation profile this much
 
-/** Which layout the reader uses for a space (pure, for tests). */
-export function chooseLayout(width, height, paper = "letter") {
+/**
+ * Which layout the reader uses for a space (pure, for tests). A 2-page zine
+ * (stage 6) never opens as a spread: it flips like a card, one side at a time.
+ */
+export function chooseLayout(width, height, paper = "letter", count = 8) {
   const { w, h } = PAGE_SIZES[paper] || PAGE_SIZES.letter;
   const pad = 16, gap = 14;
   if (width < 260 || height < 230) return { mode: "card", scale: Math.min(width / w, height / h) };
   const room = height - READER_NAV - pad;
   const single = Math.min((width - pad * 2) / w, room / h, 2.4);
   const spread = Math.min((width - pad * 2 - gap) / (2 * w), room / h, 2.4);
-  if (spread * h >= 300 && spread >= 0.85 * single) return { mode: "spread", scale: spread };
+  if (count > 2 && spread * h >= 300 && spread >= 0.85 * single) return { mode: "spread", scale: spread };
   if (single * h < 200) return { mode: "card", scale: Math.min(width / w, height / h) };
   return { mode: "single", scale: single };
 }
@@ -1554,7 +1558,8 @@ export const READER_JS = String.raw`
     var room = height - NAV - pad;
     var single = Math.min((width - pad * 2) / w, room / h, 2.4);
     var spread = Math.min((width - pad * 2 - gap) / (2 * w), room / h, 2.4);
-    if (spread * h >= 300 && spread >= 0.85 * single) return { mode: "spread", scale: spread };
+    // A 2-page zine flips like a card: one side at a time, never a spread.
+    if (pageEls.length > 2 && spread * h >= 300 && spread >= 0.85 * single) return { mode: "spread", scale: spread };
     if (single * h < 200) return { mode: "card", scale: Math.min(width / w, height / h) };
     return { mode: "single", scale: single };
   }

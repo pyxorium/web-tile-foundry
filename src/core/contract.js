@@ -20,6 +20,8 @@
 //                        shown as a grid of pictures: each option's `image` (a picture's
 //                        address, made ahead of time), or else drawn by optionPreview (below).
 //                        Pictures are drawn as pixel art unless the input has smooth: true.
+//                        note(values) -> sentence | null, optional: a small line shown
+//                        under the choice while it applies (e.g. what a choice put aside).
 //               text     a line or box of text (maxLength, multiline)
 //               palette  several colors ticked from `colors` ([{ value: "#rrggbb", label }]);
 //                        the value is a list of "#rrggbb", at least `min` (default 1)
@@ -96,6 +98,9 @@
 //                          hide(page) -> true where the switch isn't offered (its problems
 //                            and bytes still count if the page has it on).
 //                        sizeLabel, optional: what the size meter counts (default "Pictures").
+//                        inUse(spec, values) -> boolean, optional: false for a page that
+//                          is put aside (a shorter book: the value keeps it, but the
+//                          editor hides it and its problems and bytes don't count).
 //                        piece: { panel, problems?, bytes? }, needed when a layout (or a
 //                        page's fields) shows "piece": something the type manages itself
 //                        and keeps in page.piece (Zine Scene: one of the creator's tiles).
@@ -216,6 +221,9 @@ export function checkTileType(type) {
     if (input.kind === "choice" && (!Array.isArray(input.options) || input.options.length === 0)) {
       throw new Error(`${where}: choice input "${input.key}" needs options.`);
     }
+    if (input.kind === "choice" && input.note !== undefined && typeof input.note !== "function") {
+      throw new Error(`${where}: choice input "${input.key}": note must be a function.`);
+    }
     if ((input.kind === "palette" || input.kind === "brush") && (!Array.isArray(input.colors) || input.colors.length === 0 || !input.colors.every((c) => c && HEX.test(c.value)))) {
       throw new Error(`${where}: ${input.kind} input "${input.key}" needs colors, each { value: "#rrggbb" }.`);
     }
@@ -311,6 +319,7 @@ function checkPagesInput(where, input) {
   if (input.wordSize !== undefined && typeof input.wordSize !== "function") throw new Error(`${name}: wordSize must be a function.`);
   if (input.onSelect !== undefined && typeof input.onSelect !== "function") throw new Error(`${name}: onSelect must be a function.`);
   if (input.pictureFrame !== undefined && typeof input.pictureFrame !== "function") throw new Error(`${name}: pictureFrame must be a function.`);
+  if (input.inUse !== undefined && typeof input.inUse !== "function") throw new Error(`${name}: inUse must be a function.`);
   for (const f of ["galleryPage", "blankPage"]) {
     if (input[f] !== undefined && typeof input[f] !== "function") throw new Error(`${name}: ${f} must be a function.`);
   }
@@ -353,6 +362,11 @@ export function pageShows(input, page, value) {
   return layout.shows;
 }
 
+/** Whether a page of a "pages" input is in use (not put aside); every page is, unless the input says. */
+export function pageInUse(input, spec, values = {}) {
+  return !input.inUse || Boolean(input.inUse(spec, values));
+}
+
 /** How full a page's words make it, in percent (0 when it has no limit). */
 export function pageFullness(input, spec, page, values = {}) {
   if (!input.wordLimit) return 0;
@@ -370,6 +384,7 @@ export function pageProblems(input, pages, values = {}) {
   input.pages.forEach((spec, i) => {
     const p = pages[i];
     const name = spec.label || spec.id;
+    if (p && p.id === spec.id && !pageInUse(input, spec, values)) return; // put aside: kept, not checked
     if (!p || p.id !== spec.id) {
       out.push(`${name} is out of place.`);
       return;
@@ -409,12 +424,13 @@ export function pageProblems(input, pages, values = {}) {
   return out;
 }
 
-/** The bytes a pages input's value adds up to: pictures, plus whatever switched-on page toggles add. */
-export function pagesBytes(input, pages) {
+/** The bytes a pages input's value adds up to: pictures, plus whatever switched-on page toggles add (pages in use only). */
+export function pagesBytes(input, pages, values = {}) {
   let n = 0;
   (Array.isArray(pages) ? pages : []).forEach((p, i) => {
     if (!p) return;
     const spec = input.pages[i];
+    if (spec && !pageInUse(input, spec, values)) return;
     const shows = spec ? pageShows(input, spec, p) : [];
     if (p.picture && p.picture.bytes && (!spec || shows.includes("picture"))) n += p.picture.bytes.length;
     if (shows.includes("piece") && input.piece && input.piece.bytes) n += Number(input.piece.bytes(p)) || 0;

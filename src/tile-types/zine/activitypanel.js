@@ -5,7 +5,7 @@ import {
   TREELINE, activityFromRecord, isPublicActivity, activityPiece, groupActivities, unitsFromPreferences, unitsFor,
   distanceText, heightText, treelineUrl,
 } from "./activities.js";
-import { PAGES, wordLimit } from "./pages.js";
+import { PAGES, wordLimit, pageInUse } from "./pages.js";
 
 // The "Your activity" panel on an "An activity" page: a list of your public
 // Treeline activities from all your accounts (public reads), newest first,
@@ -142,6 +142,7 @@ export function mountActivityPanel(root, { getPage, patchPage, values, context }
     const pages = (lastValues && lastValues.pages) || [];
     for (let i = 0; i < PAGES.length; i++) {
       const p = pages[i];
+      if (!pageInUse(PAGES[i], lastValues)) continue; // put aside by a shorter zine
       if (!p || p.id === page.id || p.layout !== "activity" || !p.piece || p.piece.uri !== uri) continue;
       const s = PAGES[i];
       return s.kind === "back" ? "the back" : s.label.toLowerCase();

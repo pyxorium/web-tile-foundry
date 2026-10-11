@@ -74,6 +74,7 @@ export function previewConfig(values) {
     look: values.look,
     ink: values.ink,
     pages: values.pages || [],
+    pageCount: values.pageCount,
     made: madeLabel(),
     src: pictureSrc,
     sprite: values.sprite || null,

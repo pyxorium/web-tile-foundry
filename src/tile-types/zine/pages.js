@@ -12,7 +12,8 @@ export { cropRect } from "../../core/pictures.js";
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
 // config made from them. Kept free of the browser so the tests can use it.
 //
-// The classic 8-page mini-zine: cover, pages 1 to 6, back.
+// The classic 8-page mini-zine: cover, pages 1 to 6, back (or, since stage 6,
+// 4 pages: cover, 1, 2, back; or 2: cover and back; see PAGE_COUNTS).
 //   Cover: the zine's title (from the card title) and "by @handle" are added
 //          automatically; the creator adds an optional picture and short line.
 //   Pages 1 to 6 and the back: a layout (picture and words / picture / words /
@@ -57,6 +58,63 @@ export const PAGES = Object.freeze([
     note: "A small footer is added at the bottom: Made by @you, the month, a “Make your own zine” link, and Credits when something came from another app.",
   },
 ]);
+
+// Page counts (stage 6, owner Oct 11): 8 (the classic one-sheet booklet), 4 (a
+// card: the cover, pages 1 and 2, the back) or 2 (front and back: the cover and
+// the back). The panel's values always keep all eight pages; a shorter zine
+// puts the others aside (kept, so switching back restores them, but not shown,
+// counted, published or put in the recipe).
+export const PAGE_COUNTS = Object.freeze([8, 4, 2]);
+export const DEFAULT_PAGE_COUNT = 8;
+const KEPT = Object.freeze({ 4: ["cover", "p1", "p2", "back"], 2: ["cover", "back"] });
+export const PAGE_COUNT_OPTIONS = Object.freeze(PAGE_COUNTS.map((n) => ({ value: n, label: `${n} pages` })));
+
+/** A page count made safe: 2, 4 or 8 (older zines, with none, are 8). */
+export function pageCountOf(count) {
+  const n = Number(count);
+  return PAGE_COUNTS.includes(n) ? n : DEFAULT_PAGE_COUNT;
+}
+
+/** The page specs a zine of this many pages uses, in reading order. */
+export function pagesFor(count) {
+  const keep = KEPT[pageCountOf(count)];
+  return keep ? PAGES.filter((spec) => keep.includes(spec.id)) : PAGES.slice();
+}
+
+/** Whether a page is part of the zine (not put aside by a shorter page count). */
+export function pageInUse(spec, values) {
+  const id = typeof spec === "string" ? spec : spec && spec.id;
+  return pagesFor(values && values.pageCount).some((s) => s.id === id);
+}
+
+/** The panel's pages that are in use, in the same order as pagesFor(count). */
+export function pagesInUse(pages, count) {
+  return pagesFor(count).map((spec) => (pages || [])[PAGES.indexOf(spec)] || { id: spec.id });
+}
+
+/** Whether a page has anything on it (as the page strip marks it). */
+export function pageHasContent(p) {
+  return Boolean(p && (p.picture || String(p.heading || "").trim() || String(p.words || "").trim() || String(p.subtitle || "").trim()
+    || p.sprite || p.sound || (Array.isArray(p.marks) && p.marks.length > 0) || (p.piece && p.piece.uri)));
+}
+
+/**
+ * The line under the page choice while work is put aside, or null:
+ * "Pages 3 to 6 are put aside, not published. Switch back to 8 to get them back."
+ * It names only the put-aside pages with something on them, and the smallest
+ * count that would bring them all back.
+ */
+export function asideNote(values) {
+  const count = pageCountOf(values && values.pageCount);
+  const pages = (values && values.pages) || [];
+  const aside = PAGES.filter((spec, i) => !pageInUse(spec, values) && pageHasContent(pages[i]));
+  if (!aside.length) return null;
+  const back = PAGE_COUNTS.slice().reverse().find((n) => n > count && aside.every((spec) => pagesFor(n).includes(spec))) || DEFAULT_PAGE_COUNT;
+  const where = describePages(aside.map((spec) => spec.id), PAGES);
+  const one = aside.length === 1;
+  const name = where.charAt(0).toUpperCase() + where.slice(1);
+  return `${name} ${one ? "is" : "are"} put aside, not published. Switch back to ${back} to get ${one ? "it" : "them"} back.`;
+}
 
 export const HEADING_MAX = 60;
 export const SUBTITLE_MAX = 80;
@@ -236,9 +294,10 @@ export function cleanCrop(crop) {
  * cleaned. `src(page)` gives a picture's address (its tile path, or in the
  * Foundry preview a data: address). `paper` and `look` size filled pictures.
  */
-export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id), tileSrc = null } = {}) {
-  return PAGES.map((spec, i) => {
-    const p = pages[i] || { id: spec.id };
+export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id), tileSrc = null, count } = {}) {
+  const used = pagesInUse(pages, count);
+  return pagesFor(count).map((spec, i) => {
+    const p = used[i] || { id: spec.id };
     const shows = showsOf(spec, p);
     const out = { id: spec.id, kind: spec.kind, label: spec.label, shows: shows.slice() };
     if (spec.layouts) out.layout = p.layout;
@@ -282,8 +341,8 @@ export const CONFIG_VERSION = 1;
 export const SPRITE_PATH = "/sprite.png";
 
 /** Whether any page shows the creator's sprite. */
-export function usesSprite(pages, sprite) {
-  return usableSprite(sprite) && (pages || []).some((p) => p && p.sprite);
+export function usesSprite(pages, sprite, count) {
+  return usableSprite(sprite) && pagesInUse(pages, count).some((p) => p && p.sprite);
 }
 
 /**
@@ -292,9 +351,11 @@ export function usesSprite(pages, sprite) {
  * ("the cover, pages 1 to 5 and the back", as describePages in src/core/gallery-fill.js words it).
  * `shown` are the pages as the reader gets them (zinePages).
  */
-export function zineCredits(pages, shown, withSprite) {
+export function zineCredits(pages, shown, withSprite, count) {
   const out = [];
-  const where = (fn) => describePages(PAGES.filter((spec, i) => fn(shown[i] || {}, (pages && pages[i]) || {})).map((spec) => spec.id), PAGES);
+  const specs = pagesFor(count);
+  const used = pagesInUse(pages, count);
+  const where = (fn) => describePages(specs.filter((spec, i) => fn(shown[i] || {}, used[i] || {})).map((spec) => spec.id), specs);
   const add = (what, app, href, fn) => {
     const at = where(fn);
     if (at) out.push({ what, app, href, pages: at });
@@ -310,21 +371,23 @@ export function zineCredits(pages, shown, withSprite) {
   return out;
 }
 
-export function zineConfig({ title, handle, paper, look, ink, pages, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, tileSrc, preview = false }) {
-  const withSprite = usesSprite(pages, sprite);
+export function zineConfig({ title, handle, paper, look, ink, pages, pageCount, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, tileSrc, preview = false }) {
+  const count = pageCountOf(pageCount);
+  const withSprite = usesSprite(pages, sprite, count);
   const config = {
     version: CONFIG_VERSION,
+    pageCount: count,
     paper: paper === "a4" ? "a4" : "letter",
     look: lookOf(look),
     title: cleanText(title, TITLE_MAX).replace(/\n+/g, " "),
     handle: String(handle || "").replace(/^@/, "").trim(),
     made: made || "",
     makeUrl: MAKE_URL,
-    pages: zinePages(pages, src, { paper, look, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}), ...(tileSrc ? { tileSrc } : {}) }),
+    pages: zinePages(pages, src, { paper, look, count, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}), ...(tileSrc ? { tileSrc } : {}) }),
   };
   // Credits (stage 5): what came from other apps, and on which pages. The back
   // page's footer has a "Credits" button that opens them as a sheet.
-  const credits = zineCredits(pages, config.pages, withSprite);
+  const credits = zineCredits(pages, config.pages, withSprite, count);
   if (credits.length) config.credits = credits;
   if (withSprite) {
     const g = sprite.geometry;

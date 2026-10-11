@@ -2,6 +2,7 @@ import { makeZineTile } from "./tile.js";
 import {
   PAGES, LAYOUTS, PAPERS, HEADING_MAX, SUBTITLE_MAX, TITLE_MAX, DESCRIPTION_MAX,
   emptyPages, defaultPaper, wordLimit, wordSize, madeLabel, fillFrame, FILL_ZOOM_MAX, usableSprite, showsOf,
+  PAGE_COUNT_OPTIONS, DEFAULT_PAGE_COUNT, pageCountOf, pagesFor, pagesInUse, pageInUse, asideNote,
 } from "./pages.js";
 import { LOOK_OPTIONS, INK_OPTIONS, DEFAULT_LOOK, DEFAULT_INK } from "./looks.js";
 import { soundProblems, soundBytes } from "./sound.js";
@@ -10,7 +11,8 @@ import { pieceProblems, pieceBytes } from "./piece.js";
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || "/";
 
 // Tile type: Zine Scene.
-// A little zine, the classic 8-page mini-zine (cover, pages 1 to 6, back),
+// A little zine, the classic 8-page mini-zine (cover, pages 1 to 6, back), or
+// since stage 6 a 4-page card (cover, 1, 2, back) or 2 pages (cover and back),
 // made in the Foundry and kept in the creator's own repo. Each page has a
 // picture and words; the reader inside the tile shows the cover, one page at a
 // time, or a two-page spread, whichever suits the space the host gives.
@@ -30,7 +32,7 @@ export const zine = {
   id: "zine",
   version: 1,
   title: "Zine Scene",
-  summary: "Make a little zine: eight pages of pictures, words, and more.",
+  summary: "Make a little zine: 2, 4 or 8 pages of pictures, words, and more.",
   maxBytes: 20 * 1024 * 1024,
   credits: [
     ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, ". Books from ", { text: "Bookhive", href: "https://bookhive.buzz/" }, ". Activities from ", { text: "Treeline", href: "https://treeline.world/" }, "."],
@@ -50,11 +52,12 @@ export const zine = {
 
   // For the Publish step's review, next to the size: "8 pages · 3 pictures · 1 web tile · 2 sounds".
   reviewSummary(values) {
-    const pages = (values && values.pages) || [];
-    const count = (fn) => PAGES.filter((spec, i) => pages[i] && fn(pages[i], showsOf(spec, pages[i]))).length;
+    const specs = pagesFor(values && values.pageCount);
+    const pages = pagesInUse((values && values.pages) || [], values && values.pageCount);
+    const count = (fn) => specs.filter((spec, i) => pages[i] && fn(pages[i], showsOf(spec, pages[i]))).length;
     const of = (n, one, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : "");
     return [
-      `${PAGES.length} pages`,
+      `${specs.length} pages`,
       of(count((p, shows) => p.picture && shows.includes("picture")), "picture"),
       of(count((p, shows) => p.layout === "tile" && p.piece && shows.includes("piece")), "web tile"),
       of(count((p, shows) => p.layout === "tape" && p.piece && shows.includes("piece")), "mixtape"),
@@ -80,6 +83,17 @@ export const zine = {
       help: "Sets the shape of the pages, on screen and when printed.",
       required: true,
       options: PAPERS,
+    },
+    {
+      // Stage 6 (owner, Oct 11): 8, 4 or 2 pages. Pages a shorter zine doesn't
+      // use are put aside: kept, so switching back restores them, never published.
+      key: "pageCount",
+      kind: "choice",
+      label: "How many pages",
+      help: "8 is the classic folded booklet. 4 keeps the cover, pages 1 and 2, and the back. 2 is the cover and the back, front and back of one card.",
+      // Not required: a zine without a count (made before stage 6) has 8.
+      options: PAGE_COUNT_OPTIONS,
+      note: asideNote,
     },
     {
       key: "look",
@@ -128,6 +142,8 @@ export const zine = {
         bytes: pieceBytes,
       },
       pages: PAGES,
+      // Pages a shorter zine doesn't use (stage 6) are kept but put aside.
+      inUse: (spec, values) => pageInUse(spec, values),
       layouts: LAYOUTS,
       headingMax: HEADING_MAX,
       subtitleMax: SUBTITLE_MAX,
@@ -179,13 +195,13 @@ export const zine = {
       label: "These are my plyr.fm uploads, and I'm happy to publish clips of them in this zine.",
       help: "A copy of each clip goes into the zine in your account, and stays there even if you later delete the song from plyr.fm.",
       mustBeOn: "Confirm that the sounds are from your own plyr.fm uploads before publishing.",
-      showIf: (v) => (v.pages || []).some((p) => p && p.sound),
+      showIf: (v) => pagesInUse(v.pages || [], v.pageCount).some((p) => p && p.sound),
     },
     {
       key: "description",
       kind: "text",
       label: "Description (optional)",
-      help: "Leave it empty to use: “Title”, a little zine by @you, eight pages to flip through.",
+      help: "Leave it empty to use: “Title”, a little zine by @you, and its pages (eight or four pages to flip through, or front and back).",
       maxLength: DESCRIPTION_MAX,
       multiline: true,
       group: "card",
@@ -197,6 +213,7 @@ export const zine = {
     return {
       name: context.handle ? `@${context.handle}'s zine` : "My zine",
       paper: defaultPaper(),
+      pageCount: DEFAULT_PAGE_COUNT,
       look: DEFAULT_LOOK,
       ink: DEFAULT_INK,
       pages: emptyPages(),
@@ -228,6 +245,7 @@ export const zine = {
       description: inputs.description,
       handle: inputs.handle,
       paper: inputs.paper,
+      pageCount: pageCountOf(inputs.pageCount),
       look: inputs.look,
       ink: inputs.ink,
       pages: inputs.pages,

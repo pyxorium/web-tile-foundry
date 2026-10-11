@@ -5,7 +5,7 @@ import { DEBUG } from "./debug.js";
 import { cropRect, clampCrop } from "../core/pictures.js";
 import { PictureMenu, AppPictureGrid } from "./AppPictures.jsx";
 import { planGalleryFill, leftOver, describePages } from "../core/gallery-fill.js";
-import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout, pagesBytes } from "../core/contract.js";
+import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout, pagesBytes, pageInUse } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
 // (see INPUT_KINDS in src/core/contract.js).
@@ -183,7 +183,8 @@ function SwatchChoice({ input, value, onChange, type, values }) {
 
 function ChoiceInput(props) {
   if (props.input.display === "swatches") return <SwatchChoice {...props} />;
-  const { input, value, onChange } = props;
+  const { input, value, onChange, values } = props;
+  const note = input.note ? input.note(values || {}) : null;
   return (
     <fieldset className="field">
       <legend className="field-label">{input.label}</legend>
@@ -197,6 +198,7 @@ function ChoiceInput(props) {
         ))}
       </div>
       {input.help && <p className="field-help">{input.help}</p>}
+      {note && <p className="field-help field-note" aria-live="polite">{note}</p>}
     </fieldset>
   );
 }
@@ -661,9 +663,13 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
   const valuesRef = useRef(values);
   valuesRef.current = values;
 
-  const spec = input.pages.find((p) => p.id === openId) || input.pages[0];
-  const index = input.pages.indexOf(spec);
-  const page = pages[index] || { id: spec.id };
+  // A shorter book puts some pages aside (inUse): they're kept in the value but
+  // not shown in the strip, offered for a gallery, or counted.
+  const usable = input.pages.filter((s) => pageInUse(input, s, values));
+  const valueOf = (s) => pages[input.pages.indexOf(s)];
+  const spec = usable.find((p) => p.id === openId) || usable[0];
+  const index = usable.indexOf(spec);
+  const page = valueOf(spec) || { id: spec.id };
   const shows = pageShows(input, spec, page);
   const layout = pageLayout(input, spec, page);
   const labelFor = (field, fallback) => (layout && layout.labels && layout.labels[field]) || fallback;
@@ -737,6 +743,7 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
     for (let i = 0; i < input.pages.length; i++) {
       const s = input.pages[i];
       const p = pages[i];
+      if (!pageInUse(input, s, values)) continue;
       if (s.id === spec.id || !p || !p.picture || !p.picture.source || p.picture.source.uri !== uri) continue;
       if (!pageShows(input, s, p).includes("picture")) continue;
       return s.label.toLowerCase().startsWith("page") ? s.label.toLowerCase() : `the ${s.label.toLowerCase()}`;
@@ -751,11 +758,12 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
     setBrowsing(null);
     setFillNote(null);
     if (!items.length || !input.galleryPage) return;
-    const specs = input.pages;
-    const plan = planGalleryFill(specs, latest.current, items.length, mode, (p) => !has(p));
+    const specs = input.pages.filter((s) => pageInUse(input, s, valuesRef.current));
+    const plan = planGalleryFill(specs, specs.map((s) => latest.current[input.pages.indexOf(s)]), items.length, mode, (p) => !has(p));
     if (!plan.length) return;
     if (mode === "replace") {
-      const fresh = specs.map((spec) => (input.blankPage ? input.blankPage(spec) : { id: spec.id }));
+      // Only the pages in use start over; put-aside pages stay as they were.
+      const fresh = input.pages.map((spec, i) => (specs.includes(spec) ? (input.blankPage ? input.blankPage(spec) : { id: spec.id }) : latest.current[i]));
       latest.current = fresh;
       onChange(fresh);
     }
@@ -795,7 +803,7 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
   }
   const galleryOk = Boolean(input.galleryPage);
 
-  const pictureBytes = pagesBytes(input, pages);
+  const pictureBytes = pagesBytes(input, pages, values);
   const limit = type && type.maxBytes;
   const has = (p) => p && (p.picture || (p.heading || "").trim() || (p.words || "").trim() || (p.subtitle || "").trim() || (input.pageToggles || []).some((t) => p[t.key]) || (Array.isArray(p.marks) && p.marks.length > 0) || (p.piece && p.piece.uri));
   const fullness = input.wordLimit ? pageFullness(input, spec, page, values) : null;
@@ -806,13 +814,13 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
       <legend className="field-label">{input.label}</legend>
       {input.help && <p className="field-help">{input.help}</p>}
       <div className="page-strip" role="tablist" aria-label="Pages">
-        {input.pages.map((p, i) => (
+        {usable.map((p) => (
           <button
             key={p.id}
             type="button"
             role="tab"
             aria-selected={p.id === spec.id}
-            className={`page-tab ${p.id === spec.id ? "on" : ""} ${has(pages[i]) ? "filled" : ""}`}
+            className={`page-tab ${p.id === spec.id ? "on" : ""} ${has(valueOf(p)) ? "filled" : ""}`}
             onClick={() => open(p.id)}
             title={p.label}
           >
@@ -920,7 +928,7 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
                 usedOn={usedOn}
                 onChoose={chooseFromApp}
                 onClose={() => setBrowsing(null)}
-                gallery={galleryOk && browsing.app === "grain" ? { emptyCount: input.pages.filter((sp, i) => !has(pages[i])).length, pageCount: input.pages.length, onFill: fillFromGallery } : null}
+                gallery={galleryOk && browsing.app === "grain" ? { emptyCount: usable.filter((sp) => !has(valueOf(sp))).length, pageCount: usable.length, onFill: fillFromGallery } : null}
               />
             )}
             {pictureError[spec.id] && <p className="field-error">{pictureError[spec.id]}</p>}
@@ -983,8 +991,8 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
           </div>
         )}
         <div className="page-nav">
-          <button type="button" className="btn btn-quiet btn-small" disabled={index === 0} onClick={() => open(input.pages[index - 1].id)}>← {index > 0 ? input.pages[index - 1].label : ""}</button>
-          <button type="button" className="btn btn-quiet btn-small" disabled={index === input.pages.length - 1} onClick={() => open(input.pages[index + 1].id)}>{index < input.pages.length - 1 ? input.pages[index + 1].label : ""} →</button>
+          <button type="button" className="btn btn-quiet btn-small" disabled={index === 0} onClick={() => open(usable[index - 1].id)}>← {index > 0 ? usable[index - 1].label : ""}</button>
+          <button type="button" className="btn btn-quiet btn-small" disabled={index === usable.length - 1} onClick={() => open(usable[index + 1].id)}>{index < usable.length - 1 ? usable[index + 1].label : ""} →</button>
         </div>
       </div>
       <p className="page-size">

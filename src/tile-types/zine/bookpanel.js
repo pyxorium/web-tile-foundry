@@ -3,7 +3,7 @@ import { rawCid } from "../../core/cid.js";
 import { myAccounts, nameOf } from "../../core/my-accounts.js";
 import { formatSize } from "../../core/fileset.js";
 import { BOOKHIVE, bookFromRecord, groupBooks, authorsText, starsText, statusLine, reviewExcerpt } from "./books.js";
-import { PAGES, wordLimit } from "./pages.js";
+import { PAGES, wordLimit, pageInUse } from "./pages.js";
 
 // The "Your book" panel on an "A book" page (stage 5, part 2): a list of your
 // Bookhive books from all your accounts (public reads), grouped Finished,
@@ -152,6 +152,7 @@ export function mountBookPanel(root, { getPage, patchPage, values, context }) {
     const pages = (lastValues && lastValues.pages) || [];
     for (let i = 0; i < PAGES.length; i++) {
       const p = pages[i];
+      if (!pageInUse(PAGES[i], lastValues)) continue; // put aside by a shorter zine
       if (!p || p.id === page.id || p.layout !== "book" || !p.piece || p.piece.uri !== uri) continue;
       const s = PAGES[i];
       return s.kind === "back" ? "the back" : s.label.toLowerCase();
