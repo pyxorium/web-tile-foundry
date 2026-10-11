@@ -1,7 +1,7 @@
 import { fetchPublishedTile, jsonFile, TILE_COLLECTION } from "../../core/published-tile.js";
 import { listTileTypes } from "../../core/registry.js";
 import { formatSize } from "../../core/fileset.js";
-import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS } from "./piece.js";
+import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS, isAtmosynthTile, atmoPatchInfo } from "./piece.js";
 import { myAccounts, nameOf } from "../../core/my-accounts.js";
 
 // The "Your tile" / "Your tape" panel on an "A tile" or "A tape" page (stage 4):
@@ -19,6 +19,9 @@ import { myAccounts, nameOf } from "../../core/my-accounts.js";
 // your other accounts on this browser (src/core/my-accounts.js), every
 // ing.dasl.masl record, with its recipe (/foundry.json) read to see what kind of
 // tile it is. Tiles that can't go on this kind of page are listed with the reason.
+// ATMOSYNTH tiles (v0.24.0) have no recipe; they're known by the generator in
+// their manifest, and their patch.json is read when copied (whose modules and
+// samples it uses; other people's modules make the reader wall it off).
 
 const lists = new Map(); // did -> Promise<entries>
 const recipes = new Map(); // blob cid -> Promise<recipe | null>
@@ -98,7 +101,8 @@ function tilesOf(a) {
             owner: { did: a.did, pds: a.pds, handle: a.handle || null },
             rkey: String(r.uri || "").split("/").pop(),
             name: String(tile.name || "Untitled tile"),
-            banner: cidOf(res["/banner.png"]),
+            banner: cidOf(res["/banner.png"]) || cidOf(res["/screenshot.png"]),
+            generator: typeof tile.generator === "string" ? tile.generator : "",
             createdAt: (r.value && r.value.createdAt) || "",
             recipe: await recipeOf(a, cidOf(res["/foundry.json"])),
           };
@@ -119,7 +123,12 @@ function copyOf(kind, uri, cid) {
   if (!copies.has(key)) {
     const p = fetchPublishedTile(uri, kind === "tape" ? { only: TAPE_FILES } : {}).then((pub) => {
       if (cid && pub.cid && pub.cid !== cid) throw new Error("it changed while it was being copied; choose it again");
-      if (kind !== "tape") return { pub, files: pub.files };
+      if (kind !== "tape") {
+        if (!isAtmosynthTile(pub.manifest)) return { pub, files: pub.files };
+        const patch = jsonFile(pub.files, "/patch.json");
+        if (!patch) throw new Error("its patch couldn't be read");
+        return { pub, files: pub.files, atmo: atmoPatchInfo(patch) };
+      }
       const tape = tapeFromJson(jsonFile(pub.files, "/tape.json"));
       if (!tape) throw new Error("its song list couldn't be read");
       return { pub, tape, files: pub.files.filter((f) => f.path === "/banner.png") };
@@ -223,7 +232,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
   }
 
   const getType = (id) => listTileTypes().find((t) => t.id === id);
-  const placementOf = (t) => tilePlacement(t.recipe, getType, want);
+  const placementOf = (t) => tilePlacement(t.recipe, getType, want, t.generator);
 
   // Every account's list; one that can't be read is left out, with a note.
   async function allTiles(list) {
@@ -319,10 +328,11 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
 
   function copy(uri, cid) {
     copyOf(kind, uri, cid).then(
-      ({ pub, tape, files }) => patchPage((pg) => (pg.piece && pg.piece.uri === uri && pg.piece.kind === kind ? {
+      ({ pub, tape, files, atmo }) => patchPage((pg) => (pg.piece && pg.piece.uri === uri && pg.piece.kind === kind ? {
         piece: {
           ...pg.piece, status: "ready", error: undefined, cid: pub.cid || pg.piece.cid, name: (pub.manifest && pub.manifest.name) || pg.piece.name,
           handle: pub.handle || pg.piece.handle, did: pub.did, own: true, files, ...(tape ? { tape } : {}),
+          ...(atmo ? { maker: "atmosynth", atmo, ...(pub.manifest && pub.manifest.sizing ? { sizing: pub.manifest.sizing } : {}) } : {}),
         },
       } : null)),
       (err) => patchPage((pg) => (pg.piece && pg.piece.uri === uri ? { piece: { ...pg.piece, status: "error", error: err.message || String(err) } } : null)),
@@ -335,10 +345,12 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     const p = piece();
     if (p && p.uri === t.uri && p.status !== "error") return;
     const r = t.recipe || {};
+    const atmo = isAtmosynthTile(t.generator) && !r.madeWith;
     const change = {
       piece: {
         kind, uri: t.uri, cid: t.cid, name: t.name, did: t.owner.did, handle: t.owner.handle, own: true,
-        typeId: r.type, typeVersion: r.typeVersion, foundryVersion: r.foundryVersion, banner: t.banner, status: "loading",
+        ...(atmo ? { maker: "atmosynth" } : { typeId: r.type, typeVersion: r.typeVersion, foundryVersion: r.foundryVersion }),
+        banner: t.banner, status: "loading",
       },
     };
     // A taste belongs to its tape: a new tape starts without one.
@@ -364,12 +376,12 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     const t = tiles && tiles.get(p.uri);
     title.textContent = p.name || `Untitled ${noun}`;
     const pl = t && placementOf(t);
-    const typeTitle = (pl && pl.type && pl.type.title) || p.typeId || "";
+    const typeTitle = (pl && pl.type && pl.type.title) || (p.maker === "atmosynth" ? "ATMOSYNTH patch" : p.typeId) || "";
     const songs = p.tape ? p.tape.sides.reduce((n, s) => n + s.tracks.length, 0) : 0;
     typeLine.textContent = [typeTitle, p.tape ? `${songs} song${songs === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
     // The banner: the zine's own copy once it's here; before that, from the
     // account the tile or tape is in (not necessarily the one in use).
-    const copied = Array.isArray(p.files) && p.files.find((f) => f.path === "/banner.png");
+    const copied = Array.isArray(p.files) && (p.files.find((f) => f.path === "/banner.png") || p.files.find((f) => f.path === "/screenshot.png"));
     const banner = p.banner || (t && t.banner);
     const owner = (t && t.owner) || (accounts || []).find((a) => a.did === p.did);
     let src = "";
@@ -392,6 +404,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     } else if (p.status === "ready" && Array.isArray(p.files)) {
       const bytes = p.files.reduce((n, f) => n + f.bytes.length, 0);
       made.textContent = kind === "tape" ? `Ready: its J-card (the banner is ${formatSize(bytes)}).` : `Copied: ${p.files.length} files, ${formatSize(bytes)}.`;
+      if (p.maker === "atmosynth" && p.atmo && p.atmo.others) made.textContent += " It uses other people's modules, so it runs walled off on the page.";
     } else {
       made.textContent = kind === "tape" ? "Reading the tape…" : "Copying it into the zine…";
     }

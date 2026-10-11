@@ -86,7 +86,13 @@ export function makeZineTile({ name, description = "", handle = "", paper = "let
     const p = used[i];
     if (p && p.picture && showsOf(spec, p).includes("picture")) files.push(makeFile(picturePath({ ...p, id: spec.id }), p.picture.bytes));
     if (soundReady(p)) files.push(makeFile(soundPath(spec.id), p.clip.bytes));
-    if (showsOf(spec, p).includes("piece")) for (const f of pieceFiles(p, spec.id)) files.push(makeFile(f.path, f.bytes));
+    // A copied tile's file keeps the type its account's server already holds its
+    // bytes under (ATMOSYNTH tiles published through appmosphe.re store their text
+    // files as application/octet-stream): uploading the same bytes under another
+    // type to that account is refused (src/core/publish.js, fileset.js).
+    if (showsOf(spec, p).includes("piece")) {
+      for (const f of pieceFiles(p, spec.id)) files.push(f.storedType ? { ...makeFile(f.path, f.bytes), storedType: f.storedType } : makeFile(f.path, f.bytes));
+    }
   });
   if (art) files.push(makeFile("/icon.png", art.icon), makeFile("/banner.png", art.banner));
   const desc = cleanText(description, DESCRIPTION_MAX).replace(/\n+/g, " ") || defaultDescription(title, handle, count);

@@ -35,7 +35,7 @@ export const zine = {
   summary: "Make a little zine: 2, 4 or 8 pages of pictures, words, and more.",
   maxBytes: 20 * 1024 * 1024,
   credits: [
-    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, ". Books from ", { text: "Bookhive", href: "https://bookhive.buzz/" }, ". Activities from ", { text: "Treeline", href: "https://treeline.world/" }, "."],
+    ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, ". Books from ", { text: "Bookhive", href: "https://bookhive.buzz/" }, ". Activities from ", { text: "Treeline", href: "https://treeline.world/" }, ". Synth patches from ", { text: "ATMOSYNTH", href: "https://atmosynth.at/" }, "."],
     [
       "MP3 encoding by ",
       { text: "lamejs", href: "https://github.com/zhuker/lamejs" },

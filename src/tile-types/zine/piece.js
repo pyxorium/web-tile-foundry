@@ -21,6 +21,111 @@ import { activityReady, activityRecipe } from "./activities.js";
 // The tape's songs aren't copied; a page's optional taste (stage 3's sound, cut
 // from one of the tape's own song files) is page.sound + page.clip as usual.
 
+// ATMOSYNTH tiles (Foundry v0.24.0; claude/atmosynth-collab.md, "Host test"):
+// the creator's own synth patches, exported from atmosynth.at as Web Tiles,
+// go on "A web tile" pages too. They have no /foundry.json; the exporter marks
+// its tiles with `generator: "ATMOSYNTH"` in the tile's manifest. Their page
+// loads its files by relative address ("./tile.js"), the player fetches
+// ./patch.json, ./tile.json and ./samples.json itself, and its script names one
+// file from the tile's root ("/assets/mark.svg"). The reader handles all three
+// (runtime/reader.js, startTile). A page's ATMOSYNTH tile keeps, beside the
+// usual piece fields:
+//   maker: "atmosynth", atmo: { patchId?, creator?, modules: [did], samples: [did], forkedFrom?, others }
+// `others`: the patch uses other people's modules (their own code), so the
+// reader runs it walled off (a sealed frame; owner's decision, Oct 10).
+
+export const ATMOSYNTH = "ATMOSYNTH";
+export const ATMOSYNTH_HOME = "https://atmosynth.at/";
+// The account ATMOSYNTH's built-in modules are published from (the platform).
+export const ATMOSYNTH_PLATFORM = "did:plc:fzjkahpwapmoqxybwdjb6ysf";
+/** The files the ATMOSYNTH player fetches for itself, by "./name.json". */
+export const ATMO_FETCHED = Object.freeze(["/patch.json", "/tile.json", "/samples.json"]);
+const DID_LIKE = /^did:[a-z]+:[A-Za-z0-9._:%-]{1,200}$/;
+const PATCH_ID = /^[A-Za-z0-9._~-]{1,100}$/;
+
+/** Whether a tile's manifest (or its generator) says ATMOSYNTH made it. */
+export function isAtmosynthTile(manifestOrGenerator) {
+  const g = manifestOrGenerator && typeof manifestOrGenerator === "object" ? manifestOrGenerator.generator : manifestOrGenerator;
+  return String(g || "").trim().toUpperCase() === ATMOSYNTH;
+}
+
+export function isAtmoPiece(piece) {
+  return Boolean(piece && piece.kind === "tile" && piece.maker === "atmosynth");
+}
+
+/**
+ * What the zine keeps about an ATMOSYNTH patch, from the tile's /patch.json
+ * ({ creatorDid, patchId, patch: { moduleInstances, forkedFrom, … }, … }):
+ * who made it, whose modules and samples it uses (for fuller credits later),
+ * and whether any module is someone else's. Never throws; odd parts are skipped.
+ */
+export function atmoPatchInfo(json) {
+  const out = { modules: [], samples: [], others: false };
+  if (!json || typeof json !== "object") return out;
+  const creator = typeof json.creatorDid === "string" && DID_LIKE.test(json.creatorDid) ? json.creatorDid : "";
+  if (creator) out.creator = creator;
+  if (typeof json.patchId === "string" && PATCH_ID.test(json.patchId)) out.patchId = json.patchId;
+  const patch = json.patch && typeof json.patch === "object" ? json.patch : {};
+  const modules = new Set(), samples = new Set();
+  const instances = Array.isArray(patch.moduleInstances) ? patch.moduleInstances.slice(0, 500) : [];
+  for (const m of instances) {
+    const author = m && m.module && m.module.authorDid;
+    if (typeof author === "string" && DID_LIKE.test(author) && author !== ATMOSYNTH_PLATFORM) modules.add(author);
+  }
+  // Sample makers: any "ownerDid" in the patch's sample fills and slots (looked for a few levels deep).
+  const seen = { n: 0 };
+  (function walk(v, depth) {
+    if (!v || typeof v !== "object" || depth > 6 || seen.n++ > 5000) return;
+    if (typeof v.ownerDid === "string" && DID_LIKE.test(v.ownerDid) && v.ownerDid !== ATMOSYNTH_PLATFORM) samples.add(v.ownerDid);
+    for (const k of Object.keys(v)) walk(v[k], depth + 1);
+  })({ fills: instances.map((m) => m && m.sampleSlotFills), slots: json.slots }, 0);
+  out.modules = [...modules].slice(0, 50);
+  out.samples = [...samples].slice(0, 50);
+  const from = patch.forkedFrom;
+  const fromUri = typeof from === "string" ? from : from && typeof from.uri === "string" ? from.uri : "";
+  if (fromUri.startsWith("at://") && fromUri.length < 600) out.forkedFrom = fromUri;
+  out.others = out.modules.some((d) => d !== creator);
+  return out;
+}
+
+/** The patch's page on atmosynth.at (or the site, when the patch id is unknown). */
+export function atmoPatchUrl(atmo) {
+  return atmo && atmo.patchId ? `${ATMOSYNTH_HOME}patch/${encodeURIComponent(atmo.patchId)}` : ATMOSYNTH_HOME;
+}
+
+/**
+ * The tile's own files its page loads by address, as written in the page:
+ * [{ ref: "./tile.js", path: "/tile.js" }, …]. Relative ("./x", "x") and root ("/x") forms.
+ */
+export function atmoPageRefs(html, paths) {
+  const out = [];
+  for (const path of paths) {
+    if (path === "/") continue;
+    for (const ref of [`.${path}`, path, path.slice(1)]) {
+      if (html.includes(`"${ref}"`) || html.includes(`'${ref}'`)) out.push({ ref, path });
+    }
+  }
+  return out;
+}
+
+/** The size a tile asks for (its manifest's `sizing`), within sensible bounds; ATMOSYNTH's 720 x 520 when missing. */
+export function tileSize(sizing) {
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
+  const w = num(sizing && (sizing.width ?? sizing.w ?? sizing[0]));
+  const h = num(sizing && (sizing.height ?? sizing.h ?? sizing[1]));
+  const ok = (v) => Number.isFinite(v) && v >= 100 && v <= 4000;
+  return { w: ok(w) ? Math.round(w) : 720, h: ok(h) ? Math.round(h) : 520 };
+}
+
+/** The picture shown until the tile is started: its banner, else its PNG screenshot, else its SVG one. */
+export function tilePosterPath(files) {
+  const has = (p) => (files || []).some((f) => f.path === p);
+  return ["/banner.png", "/screenshot.png", "/screenshot.svg"].find(has) || null;
+}
+
+/** How an ATMOSYNTH tile is named in the tile list (it isn't a Foundry type). */
+export const ATMO_TYPE = Object.freeze({ id: "atmosynth", title: "ATMOSYNTH patch", zinePage: "live" });
+
 /** The kind of piece each layout holds. */
 export const PIECE_KINDS = Object.freeze({ tile: "tile", tape: "tape", book: "book", activity: "activity" });
 const PLURAL = { tile: "tiles", tape: "tapes", book: "books", activity: "activities" };
@@ -44,7 +149,9 @@ export function pieceReady(page) {
   if (t.kind === "book") return bookReady(t);
   if (t.kind === "activity") return activityReady(t);
   if (t.kind === "tape") return Boolean(t.tape && Array.isArray(t.tape.sides));
-  return t.kind === "tile" && t.files.some((f) => f.path === "/");
+  if (t.kind !== "tile" || !t.files.some((f) => f.path === "/")) return false;
+  // An ATMOSYNTH tile needs the patch its player plays.
+  return !isAtmoPiece(t) || t.files.some((f) => f.path === "/patch.json");
 }
 
 /** Whether the page's piece is the kind its layout holds. */
@@ -98,6 +205,7 @@ export function tileForReader(page, pageId, src = (path) => tilePath(pageId, pat
   if (!pieceReady(page) || page.piece.kind !== "tile") return null;
   const t = page.piece;
   const html = new TextDecoder().decode(t.files.find((f) => f.path === "/").bytes);
+  if (isAtmoPiece(t)) return atmoForReader(t, html, src);
   const refs = pageRefs(html, t.files.map((f) => f.path));
   const out = {
     name: oneLine(t.name, TILE_NAME_MAX) || "Untitled tile",
@@ -111,6 +219,36 @@ export function tileForReader(page, pageId, src = (path) => tilePath(pageId, pat
   return out;
 }
 
+/**
+ * An ATMOSYNTH tile as the reader gets it:
+ *   { name, by, url, page, atmo: true, made: "ATMOSYNTH", patchUrl, sealed?,
+ *     refs: [{ ref, path }], files: [{ path, src, type }], fetched: [path], poster? }
+ * `refs` are the addresses in its page; `files` every file but the page (the
+ * reader swaps the root addresses in its script and stylesheet for copies, and
+ * answers the player's own fetches of `fetched` from copies).
+ */
+function atmoForReader(t, html, src) {
+  const paths = t.files.map((f) => f.path).filter((p) => p !== "/");
+  const atmo = t.atmo || {};
+  const out = {
+    name: oneLine(t.name, TILE_NAME_MAX) || "Untitled patch",
+    by: t.handle && !t.own ? `@${oneLine(t.handle, 253)}` : "",
+    page: src("/"),
+    atmo: true,
+    made: ATMOSYNTH,
+    patchUrl: atmoPatchUrl(atmo),
+    refs: atmoPageRefs(html, paths),
+    files: t.files.filter((f) => f.path !== "/").map((f) => ({ path: f.path, src: src(f.path), type: f.contentType || "" })),
+    fetched: ATMO_FETCHED.filter((p) => paths.includes(p)),
+    size: tileSize(t.sizing),
+  };
+  if (atmo.others) out.sealed = true;
+  try { out.url = tileViewUrl(t.uri, null); } catch { /* no link for an odd address */ }
+  const poster = tilePosterPath(t.files);
+  if (poster) out.poster = src(poster);
+  return out;
+}
+
 /** A page's tile in the zine's public recipe: what it is, where it came from, where it went. */
 export function pieceRecipe(page, pageId) {
   if (!pieceReady(page) || !pieceFits(page)) return null;
@@ -121,6 +259,16 @@ export function pieceRecipe(page, pageId) {
   if (t.typeId) out.type = t.typeId;
   if (t.typeVersion) out.typeVersion = t.typeVersion;
   if (t.foundryVersion) out.foundryVersion = t.foundryVersion;
+  if (isAtmoPiece(t)) {
+    // Made with ATMOSYNTH: the patch, and whose modules and samples it uses (kept for fuller credits later).
+    const a = t.atmo || {};
+    out.generator = ATMOSYNTH;
+    out.patch = { modules: a.modules || [], samples: a.samples || [] };
+    if (a.patchId) out.patch.id = a.patchId;
+    if (a.creator) out.patch.creator = a.creator;
+    if (a.forkedFrom) out.patch.forkedFrom = a.forkedFrom;
+    if (a.others) out.sealed = true;
+  }
   return out;
 }
 
@@ -129,7 +277,12 @@ export function pieceRecipe(page, pageId) {
  * Foundry's types (getType(id) -> type or undefined):
  *   { ok: true, type } or { ok: false, reason }
  */
-export function tilePlacement(recipe, getType, want = "live") {
+export function tilePlacement(recipe, getType, want = "live", generator = "") {
+  // ATMOSYNTH's own tiles (no recipe; marked by the generator in their manifest).
+  if (isAtmosynthTile(generator) && !(recipe && recipe.madeWith === "Web Tile Foundry")) {
+    if (want === "live") return { ok: true, type: ATMO_TYPE };
+    return { ok: false, reason: "ATMOSYNTH tiles go on “A web tile” pages.", type: ATMO_TYPE };
+  }
   if (!recipe || recipe.madeWith !== "Web Tile Foundry" || typeof recipe.type !== "string") {
     return { ok: false, reason: "Not made with the Foundry, so it can't go on a page yet." };
   }

@@ -4,7 +4,7 @@ import { lookOf, lookColors, isLightInk } from "./looks.js";
 import { PAGE_SIZES } from "./runtime/reader.js";
 import { cleanMarks, stickersUsed, markColors } from "./marks.js";
 import { soundForReader, soundPath, SOUND_COST, QUOTE_SOUND_COST } from "./sound.js";
-import { tileForReader, tapeForReader } from "./piece.js";
+import { tileForReader, tapeForReader, ATMOSYNTH_HOME } from "./piece.js";
 import { bookForReader, BOOKHIVE } from "./books.js";
 import { activityForReader, TREELINE } from "./activities.js";
 export { cropRect } from "../../core/pictures.js";
@@ -368,6 +368,7 @@ export function zineCredits(pages, shown, withSprite, count) {
   }
   add("Books", BOOKHIVE.app, BOOKHIVE.home, (z) => z.book);
   add("Activities", TREELINE.app, TREELINE.home, (z) => z.activity);
+  add("Synth patches", "ATMOSYNTH", ATMOSYNTH_HOME, (z) => z.tile && z.tile.atmo);
   return out;
 }
 

@@ -138,7 +138,7 @@ test("a zine with a tile: its files, the reader's config, the preview's addresse
 test("the reader: tap to start, files handed over, stop off the page, frames per look", () => {
   assert.doesNotThrow(() => new Function(READER_JS));
   assert.ok(READER_JS.includes('page.layout === "tile"') && READER_JS.includes("function startTile(p)") && READER_JS.includes("function stopTilesOffPage()"));
-  assert.ok(READER_JS.includes('URL.createObjectURL(new Blob([swapRefs(made.html, map)], { type: "text/html" }))'), "way C: the frame gets blob: copies");
+  assert.ok(READER_JS.includes("{ html: swapRefs(html, map) }") && READER_JS.includes('URL.createObjectURL(new Blob([made.html], { type: "text/html" }))'), "way C: the frame gets blob: copies");
   assert.ok(READER_JS.includes("var SEALED = location.origin === \"null\";") && READER_JS.includes("f.srcdoc = made.srcdoc;"), "sealed (the Foundry preview): files written into the frame");
   assert.ok(!READER_JS.includes("</script"), "nothing in the reader ends its script early");
   assert.ok(READER_JS.includes("stopTilesOffPage();"), "leaving the page stops the tile");

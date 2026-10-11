@@ -834,7 +834,9 @@ export async function drawZineArt(values) {
   const title = cleanText(values.name, TITLE_MAX).replace(/\n+/g, " ");
   const handle = String(values.handle || "").replace(/^@/, "");
   const coverPic = await bitmapOf(pages[0].picture && raw[0] && raw[0].picture);
-  const tileBanner = (pages[1].tile || pages[1].tape) && raw[1] && raw[1].piece && (raw[1].piece.files || []).find((f) => f.path === "/banner.png");
+  // A tile's banner, or an ATMOSYNTH tile's PNG screenshot.
+  const pieceFile = (p) => ((raw[1] && raw[1].piece && raw[1].piece.files) || []).find((f) => f.path === p);
+  const tileBanner = (pages[1].tile || pages[1].tape) && (pieceFile("/banner.png") || pieceFile("/screenshot.png"));
   const bookCover = pages[1].book && raw[1] && raw[1].piece && (raw[1].piece.files || [])[0];
   const firstPic = tileBanner ? await bitmapOf({ bytes: tileBanner.bytes, contentType: "image/png" })
     : bookCover ? await bitmapOf({ bytes: bookCover.bytes, contentType: bookCover.contentType })

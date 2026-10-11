@@ -245,7 +245,9 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 .now[hidden], .card .now { display: none; }
 /* A tile on the page (stage 4): its banner and a play button, then the tile itself. */
 .zp.tile-page .tilebox { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; margin: 0 0 8px; }
-.zp.tile-page.has-words .tilebox { flex: 0 0 auto; height: calc(var(--ph) * 0.5); }
+/* With words, the tile takes whatever room they leave, never less than half the page (v0.24.0). */
+.zp.tile-page.has-words .tilebox { flex: 1 1 auto; min-height: calc(var(--ph) * 0.5); }
+.zp.tile-page.has-words .words { flex: 0 1 auto; }
 .zp .tileframe { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #111; border: 1px solid var(--line); border-radius: 4px; }
 .zp .tileframe img.poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .zp .tileframe iframe { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%; border: 0; background: #111; }
@@ -1238,7 +1240,13 @@ export const READER_JS = String.raw`
     if (t.by && t.by !== "@" + config.handle) cap.appendChild(el("span", "tile-by", "by " + t.by));
     cap.appendChild(note);
     cap.appendChild(again);
-    if (t.url) {
+    if (t.atmo && t.patchUrl) {
+      // An ATMOSYNTH patch: the credit links to the patch on atmosynth.at.
+      var m = el("a", "tile-made", "made with ATMOSYNTH ↗");
+      m.href = t.patchUrl; m.target = "_blank"; m.rel = "noopener";
+      m.setAttribute("aria-label", "“" + t.name + "”, made with ATMOSYNTH: open the patch on atmosynth.at (opens a new tab)");
+      cap.appendChild(m);
+    } else if (t.url) {
       var a = el("a", null, "Open it ↗");
       a.href = t.url; a.target = "_blank"; a.rel = "noopener";
       a.setAttribute("aria-label", "Open “" + t.name + "” on its own page (opens a new tab)");
@@ -1381,6 +1389,110 @@ export const READER_JS = String.raw`
       return swapRefs(html, data);
     });
   }
+  // ATMOSYNTH tiles (v0.24.0). Their page asks for "./tile.js" and "./tile.css";
+  // the player fetches ./patch.json, ./tile.json and ./samples.json itself and
+  // names "/assets/mark.svg" from the tile's root. So: every file is fetched
+  // through the zine's queue; root addresses inside the script and stylesheet
+  // are swapped for the copies; a small helper written into the page before the
+  // player answers its own fetches from the copies. Normally the frame gets
+  // blob: copies (way C of the host test). Walled off (a patch with other
+  // people's modules, or the Foundry's sealed preview) everything is written
+  // into the page itself: the script and stylesheet inline, the rest as data:
+  // addresses, and the frame sealed (way D).
+  var BACKTICK = String.fromCharCode(96);
+  function atmoHelper(map) {
+    return "(function(){var M=" + JSON.stringify(map).split("<").join("\\u003c") + ";var F=window.fetch;" +
+      "window.fetch=function(i,o){var u=typeof i===\"string\"?i:(i&&i.url)||\"\";var k=u.split(\"?\")[0].replace(/^\\.\\//,\"/\");if(k.charAt(0)!==\"/\")k=\"/\"+k;" +
+      "if(Object.prototype.hasOwnProperty.call(M,k))return F.call(window,M[k],o);return F.apply(window,arguments);};})();";
+  }
+  function swapRoots(text, addr) {
+    Object.keys(addr).forEach(function (path) {
+      ['"', "'", BACKTICK].forEach(function (q) { text = text.split(q + path + q).join(q + addr[path] + q); });
+    });
+    return text;
+  }
+  function headInsert(html, extra) {
+    var m = /<head[^>]*>/i.exec(html);
+    if (m) return html.slice(0, m.index + m[0].length) + extra + html.slice(m.index + m[0].length);
+    return extra + html;
+  }
+  function escRe(s) { return s.replace(/[.*+?^$(){}|[\]\\\/]/g, "\\$&"); }
+  function blobText(u) { return fetch(u).then(function (res) { return res.text(); }); }
+  function makeAtmo(t, walled, me) {
+    var isCode = function (f) { return /\.(js|css)$/i.test(f.path); };
+    var got = {}; // path -> blob: address of the zine's own kept copy
+    return Promise.all(t.files.map(function (f) { return fileUrl(f.src, true).then(function (u) { got[f.path] = u; }); }))
+      .then(function () { return fileUrl(t.page, true).then(blobText); })
+      .then(function (html) {
+        var addr = {}, code = {};
+        function address(text, type) {
+          if (walled) return Promise.resolve("data:" + type + ";charset=utf-8," + encodeURIComponent(text));
+          var u = URL.createObjectURL(new Blob([text], { type: type }));
+          me.urls.push(u);
+          return Promise.resolve(u);
+        }
+        // The plain files first (pictures, JSON), then the script and stylesheet with their root addresses swapped.
+        return Promise.all(t.files.filter(function (f) { return !isCode(f); }).map(function (f) {
+          if (!walled) {
+            // A blob: copy in the file's own type (the kept copy may carry the host's type).
+            return fetch(got[f.path]).then(function (r) { return r.blob(); }).then(function (b) {
+              var u = URL.createObjectURL(new Blob([b], { type: f.type || b.type }));
+              me.urls.push(u);
+              addr[f.path] = u;
+            });
+          }
+          return dataOfUrl(got[f.path]).then(function (d) {
+            // data: addresses carry the file's own type.
+            addr[f.path] = f.type ? d.replace(/^data:[^;,]*/, "data:" + f.type) : d;
+          });
+        })).then(function () {
+          var plain = {}; Object.keys(addr).forEach(function (k) { plain[k] = addr[k]; });
+          return Promise.all(t.files.filter(isCode).map(function (f) {
+            return blobText(got[f.path]).then(function (text) {
+              code[f.path] = swapRoots(text, plain);
+              return address(code[f.path], f.type || (/\.css$/i.test(f.path) ? "text/css" : "text/javascript")).then(function (a) { addr[f.path] = a; });
+            });
+          }));
+        }).then(function () {
+          var map = {};
+          t.fetched.forEach(function (path) { if (addr[path]) map[path] = addr[path]; });
+          var helper = "<script>" + atmoHelper(map) + END_TAG + ">";
+          if (!walled) {
+            t.refs.forEach(function (r) { if (addr[r.path]) html = html.split('"' + r.ref + '"').join('"' + addr[r.path] + '"').split("'" + r.ref + "'").join("'" + addr[r.path] + "'"); });
+            return { html: headInsert(html, helper) };
+          }
+          t.refs.forEach(function (r) {
+            var q = "[\"']" + escRe(r.ref) + "[\"']";
+            if (/\.js$/i.test(r.path) && code[r.path] != null) {
+              html = html.replace(new RegExp("<script([^>]*?)\\s+src=" + q + "([^>]*)>\\s*" + END_TAG + ">", "i"), function (all, a, b) {
+                var attrs = (a + b).replace(/\s+crossorigin(=["'][^"']*["'])?/i, "");
+                return "<script" + attrs + ">" + code[r.path].split(END_TAG).join("<\\/script") + END_TAG + ">";
+              });
+            } else if (/\.css$/i.test(r.path) && code[r.path] != null) {
+              html = html.replace(new RegExp("<link[^>]*href=" + q + "[^>]*>", "i"), function () { return "<style>" + code[r.path].split("</style").join("<\\/style") + "</style>"; });
+            } else if (addr[r.path]) {
+              html = html.split('"' + r.ref + '"').join('"' + addr[r.path] + '"').split("'" + r.ref + "'").join("'" + addr[r.path] + "'");
+            }
+          });
+          return { srcdoc: headInsert(html, helper), sealed: Boolean(t.sealed) };
+        });
+      });
+  }
+  // The ATMOSYNTH player lays itself out for its own size (its export asks for
+  // about 720 x 520) and doesn't shrink to a short box: its knobs would fall off
+  // the bottom. So its frame gets at least the player's height (and a minimum
+  // width) and is scaled down to fit the box, like a picture set to Fit; taps
+  // and drags still reach it. Fitted again whenever the box changes size.
+  var ATMO_MIN_W = 360;
+  function fitAtmo(box, f, size) {
+    var bw = box.clientWidth, bh = box.clientHeight;
+    if (!bw || !bh) return;
+    var s = Math.min(1, bh / size.h, bw / ATMO_MIN_W);
+    f.style.width = (bw / s) + "px";
+    f.style.height = (bh / s) + "px";
+    f.style.transformOrigin = "0 0";
+    f.style.transform = s < 1 ? "scale(" + s + ")" : "";
+  }
   function startTile(p) {
     var t = p.tile;
     stopTile(p.id, true);
@@ -1394,25 +1506,34 @@ export const READER_JS = String.raw`
     var map = {};
     // The tile's files come through the zine's queue (kept, each asked for once),
     // then go to the tile's frame as its own blob: copies.
-    Promise.all(t.refs.map(function (r) { return fileUrl(r.src, true).then(function (u) { map[r.ref] = u; }); }))
+    var making = t.atmo ? makeAtmo(t, SEALED || Boolean(t.sealed), me) :
+      Promise.all(t.refs.map(function (r) { return fileUrl(r.src, true).then(function (u) { map[r.ref] = u; }); }))
       .then(function () { return fileUrl(t.page, true); })
       .then(textOfUrl)
-      .then(function (html) { return SEALED ? inlinePage(html, t.refs, map).then(function (h) { return { srcdoc: h }; }) : { html: html }; })
+      .then(function (html) { return SEALED ? inlinePage(html, t.refs, map).then(function (h) { return { srcdoc: h }; }) : { html: swapRefs(html, map) }; });
+    making
       .then(function (made) {
         if (tilesOn[p.id] !== me) return;
         var box = root.querySelector('.tileframe[data-tile="' + p.id + '"]');
         if (!box) { stopTile(p.id, true); return; }
         var f = document.createElement("iframe");
         f.title = t.name;
+        // Walled off: scripts only, plus new tabs for its own links (owner's decision, Oct 10).
+        if (made.sealed) f.setAttribute("sandbox", "allow-scripts allow-popups allow-popups-to-escape-sandbox");
         if (made.srcdoc != null) {
           f.srcdoc = made.srcdoc;
         } else {
-          var u = URL.createObjectURL(new Blob([swapRefs(made.html, map)], { type: "text/html" }));
+          var u = URL.createObjectURL(new Blob([made.html], { type: "text/html" }));
           me.urls.push(u);
           f.src = u;
         }
         box.appendChild(f);
         me.frame = f;
+        if (t.atmo) {
+          var size = t.size || { w: 720, h: 520 };
+          fitAtmo(box, f, size);
+          if (window.ResizeObserver) { me.ro = new ResizeObserver(function () { fitAtmo(box, f, size); }); me.ro.observe(box); }
+        }
         me.state = "running";
         me.timers.forEach(clearTimeout);
         drawTile(p.id);
@@ -1429,6 +1550,7 @@ export const READER_JS = String.raw`
     if (!me) return;
     delete tilesOn[id];
     (me.timers || []).forEach(clearTimeout);
+    if (me.ro) me.ro.disconnect();
     if (me.frame) me.frame.remove();
     me.urls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
     if (!quiet) drawTile(id);
