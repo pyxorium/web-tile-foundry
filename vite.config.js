@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { productionClientMetadata, CLIENT_METADATA_FILE } from "./src/auth/client-config.js";
 import { bundleRuntime as bundleLantern } from "./src/tile-types/glass-lantern/runtime/bundle.js";
@@ -88,5 +89,13 @@ export default defineConfig({
     // (see sprite-walker/walker-runtime.js). That works in a minified build
     // because those functions are self-contained; the tests check it.
     target: "es2020",
+    // Two pages: the Foundry itself, and the About page (about/index.html,
+    // served at /about/). Vite builds each with its own assets.
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        about: fileURLToPath(new URL("./about/index.html", import.meta.url)),
+      },
+    },
   },
 });

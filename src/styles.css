@@ -80,9 +80,9 @@ a { color: var(--accent); }
 }
 .site-menu-list a { display: block; padding: 9px 12px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 15px; }
 .site-menu-list a:hover, .site-menu-list a:focus-visible { background: var(--surface-2); outline: none; }
-.sign .kicker, .sign h1 { font-family: "Oswald Sign", Impact, "Arial Narrow", sans-serif; font-weight: 500; text-transform: uppercase; margin: 0; }
+.sign .kicker, .sign h1, .sign .sign-title { font-family: "Oswald Sign", Impact, "Arial Narrow", sans-serif; font-weight: 500; text-transform: uppercase; margin: 0; }
 .sign .kicker { font-size: 15px; letter-spacing: 0.16em; color: var(--sign-gold); }
-.sign h1 { margin-top: 2px; font-size: clamp(32px, 6vw, 50px); line-height: 1.1; letter-spacing: 0.08em; color: #ffffff; }
+.sign h1, .sign .sign-title { margin-top: 2px; font-size: clamp(32px, 6vw, 50px); line-height: 1.1; letter-spacing: 0.08em; color: #ffffff; }
 
 /* Masthead: the line under the sign, and the version */
 .page { padding-top: 20px; }
@@ -623,3 +623,20 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .gallery-actions .link-button { margin-left: auto; }
 .gallery-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); font-size: 14px; }
 .gallery-status.is-error { background: color-mix(in srgb, var(--danger, #b3261e) 10%, var(--surface)); }
+
+/* About page (about/index.html): the sign, then a reading column. */
+.sign-cta {
+  flex: none; display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.45); color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600;
+}
+.sign-cta:hover { border-color: #ffffff; }
+.sign-cta:focus-visible { outline: 2px solid var(--sign-gold); outline-offset: 2px; }
+.about { max-width: 1040px; padding-bottom: 64px; }
+.about > * { max-width: 680px; }
+.about h1 { margin: 12px 0 8px; font-family: inherit; font-size: clamp(26px, 4vw, 32px); font-weight: 700; letter-spacing: 0; }
+.about h2 { margin: 32px 0 8px; font-size: 20px; }
+.about p { margin: 0 0 12px; line-height: 1.6; }
+.about-lede { font-size: 18px; color: var(--ink-2); }
+.about ul, .about ol { margin: 0 0 12px; padding-left: 22px; line-height: 1.6; }
+.about li { margin-bottom: 6px; }
+.about-make { margin-top: 32px; }

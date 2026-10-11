@@ -4,6 +4,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 export const SITE_MENU_LINKS = [
+  { label: "About", href: "/about/" },
   { label: "Blog", href: "https://thunderbird.cafe/blog/" },
 ];
 
