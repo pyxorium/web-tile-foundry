@@ -67,7 +67,10 @@ export const PAGES = Object.freeze([
 export const PAGE_COUNTS = Object.freeze([8, 4, 2]);
 export const DEFAULT_PAGE_COUNT = 8;
 const KEPT = Object.freeze({ 4: ["cover", "p1", "p2", "back"], 2: ["cover", "back"] });
-export const PAGE_COUNT_OPTIONS = Object.freeze(PAGE_COUNTS.map((n) => ({ value: n, label: `${n} pages` })));
+// Offered in the panel (owner, Oct 12): 8 and 4. The 2-page zine is set aside,
+// not removed: its code stays (and any zine made with it still reads its count).
+export const OFFERED_PAGE_COUNTS = Object.freeze([8, 4]);
+export const PAGE_COUNT_OPTIONS = Object.freeze(OFFERED_PAGE_COUNTS.map((n) => ({ value: n, label: `${n} pages` })));
 
 /** A page count made safe: 2, 4 or 8 (older zines, with none, are 8). */
 export function pageCountOf(count) {

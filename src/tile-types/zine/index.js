@@ -32,7 +32,7 @@ export const zine = {
   id: "zine",
   version: 1,
   title: "Zine Scene",
-  summary: "Make a little zine: 2, 4 or 8 pages of pictures, words, and more.",
+  summary: "Make a little zine: 4 or 8 pages of pictures, words, and more.",
   maxBytes: 20 * 1024 * 1024,
   credits: [
     ["Sprites from ", { text: "rpg.actor", href: "https://rpg.actor/" }, ". Songs from ", { text: "plyr.fm", href: "https://plyr.fm/" }, ". Photos from ", { text: "Grain", href: "https://grain.social/" }, ". Drawings from ", { text: "PinkSea", href: "https://pinksea.art/" }, ". Books from ", { text: "Bookhive", href: "https://bookhive.buzz/" }, ". Activities from ", { text: "Treeline", href: "https://treeline.world/" }, ". Synth patches from ", { text: "ATMOSYNTH", href: "https://atmosynth.at/" }, "."],
@@ -85,12 +85,12 @@ export const zine = {
       options: PAPERS,
     },
     {
-      // Stage 6 (owner, Oct 11): 8, 4 or 2 pages. Pages a shorter zine doesn't
+      // Stage 6 (owner, Oct 11): 8 or 4 pages offered (2 set aside, Oct 12). Pages a shorter zine doesn't
       // use are put aside: kept, so switching back restores them, never published.
       key: "pageCount",
       kind: "choice",
       label: "How many pages",
-      help: "8 is the classic folded booklet. 4 keeps the cover, pages 1 and 2, and the back. 2 is the cover and the back, front and back of one card.",
+      help: "8-page classic folded booklet, or 4-page mini.",
       // Not required: a zine without a count (made before stage 6) has 8.
       options: PAGE_COUNT_OPTIONS,
       note: asideNote,
@@ -101,7 +101,7 @@ export const zine = {
       display: "swatches",
       smooth: true,
       label: "Look",
-      help: "How the whole zine is printed. Your pictures stay as they are; the look is applied as the zine is shown.",
+      help: "Choose a print theme. The live preview shows the look.",
       options: LOOK_OPTIONS,
     },
     {
@@ -118,7 +118,7 @@ export const zine = {
       key: "pages",
       kind: "pages",
       label: "Pages",
-      help: "Pick a page to fill it in. Pictures can come from your computer, your Grain photos or your PinkSea drawings (they're made smaller before they're added); pages can also hold a book from Bookhive or an activity from Treeline.",
+      help: "Pick a page to fill in. Pages 1 to 6 and the back can hold pictures, words, web tiles, mixtapes, books and more.",
       sizeLabel: "Pictures, sounds and tiles",
       // "A tile" pages: one of your published tiles, copied in and run on the page.
       piece: {
@@ -173,8 +173,8 @@ export const zine = {
         },
         {
           key: "sound",
-          label: "Add a sound",
-          help: "Up to a minute of one of your plyr.fm songs, on a band near the bottom of the page. Readers tap to play it; it plays on as they turn the pages.",
+          label: "Add a sound clip",
+          help: "Up to a minute of one of your plyr.fm songs, on a ribbon near the bottom of the page.",
           panel: {
             async mount(element, api) {
               const { mountSoundPanel } = await import("./soundpanel.js");
@@ -201,7 +201,7 @@ export const zine = {
       key: "description",
       kind: "text",
       label: "Description (optional)",
-      help: "Leave it empty to use: “Title”, a little zine by @you, and its pages (eight or four pages to flip through, or front and back).",
+      help: "Leave it empty to use: “Title”, a little zine by @you, and its pages (eight or four pages to flip through).",
       maxLength: DESCRIPTION_MAX,
       multiline: true,
       group: "card",

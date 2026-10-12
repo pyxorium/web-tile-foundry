@@ -207,7 +207,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
   const tasteTrack = el("span", "toggle-track");
   tasteTrack.setAttribute("aria-hidden", "true");
   tasteLabel.append(tasteBox, tasteTrack, el("span", null, "Add a taste"));
-  const tasteHelp = el("p", "field-help", "Up to a minute of one of the tape's songs, on a band near the bottom of the page. Readers tap to play it; it plays on as they turn the pages.");
+  const tasteHelp = el("p", "field-help", "Up to a minute of one of the tape's songs, on a ribbon near the bottom of the page.");
   const tasteSlot = el("div", "tape-taste-panel");
   taste.append(tasteLabel, tasteHelp, tasteSlot);
   if (kind === "tape") box.append(taste);

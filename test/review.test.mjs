@@ -23,7 +23,7 @@ test("a zine's summary counts what's on its pages", () => {
   pages[2] = { ...pages[2], layout: "tape", piece: { kind: "tape" }, sound: true, clip: {} };
   pages[3] = { ...pages[3], layout: "words", picture: { bytes: new Uint8Array(1) }, sound: true, clip: {} };
   assert.equal(zine.reviewSummary({ pages }), "8 pages · 1 picture · 1 web tile · 1 mixtape · 2 sounds", "a picture on a words page isn't shown, so isn't counted");
-  assert.equal(zine.summary, "Make a little zine: 2, 4 or 8 pages of pictures, words, and more.");
+  assert.equal(zine.summary, "Make a little zine: 4 or 8 pages of pictures, words, and more.");
 });
 
 test("a tape's summary: songs and each side's length", () => {

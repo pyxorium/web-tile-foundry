@@ -4,7 +4,7 @@ import { checkInputs, pageProblems, pagesBytes, isShown } from "../src/core/cont
 import { buildTile } from "../src/core/build.js";
 import { zine } from "../src/tile-types/zine/index.js";
 import {
-  PAGES, PAGE_COUNTS, emptyPages, pageCountOf, pagesFor, pageInUse, pagesInUse, asideNote, zineConfig,
+  PAGES, PAGE_COUNTS, PAGE_COUNT_OPTIONS, emptyPages, pageCountOf, pagesFor, pageInUse, pagesInUse, asideNote, zineConfig,
 } from "../src/tile-types/zine/pages.js";
 import { makeZineTile, defaultDescription } from "../src/tile-types/zine/tile.js";
 import { chooseLayout, viewsFor } from "../src/tile-types/zine/runtime/reader.js";
@@ -32,6 +32,8 @@ function full(pageCount) {
 
 test("page counts: 8 by default, 4 keeps cover, 1, 2, back; 2 keeps cover and back", () => {
   assert.deepEqual(PAGE_COUNTS, [8, 4, 2]);
+  // The panel offers 8 and 4 (owner, Oct 12); 2 is set aside but still read.
+  assert.deepEqual(PAGE_COUNT_OPTIONS.map((o) => o.value), [8, 4]);
   assert.equal(pageCountOf(undefined), 8);
   assert.equal(pageCountOf("4"), 4);
   assert.equal(pageCountOf(6), 8);
@@ -47,7 +49,7 @@ test("page counts: 8 by default, 4 keeps cover, 1, 2, back; 2 keeps cover and ba
   // The choice: three buttons, with Paper and Look; a zine made before (no count) still builds.
   const keys = zine.inputs.map((i) => i.key);
   assert.ok(keys.indexOf("pageCount") === keys.indexOf("paper") + 1);
-  assert.deepEqual(countInput.options.map((o) => o.label), ["8 pages", "4 pages", "2 pages"]);
+  assert.deepEqual(countInput.options.map((o) => o.label), ["8 pages", "4 pages"]);
   assert.equal(zine.defaults({}).pageCount, 8);
   assert.deepEqual(checkInputs(zine, { ...full(undefined) }), []);
 });
