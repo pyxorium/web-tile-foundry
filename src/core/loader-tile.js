@@ -1,7 +1,13 @@
 import { TILE_CSP } from "./policy.js";
 
-/** The tile server the real-loader previews use (runtime, service worker, sandbox). */
-export const LOAD_DOMAIN = "load.tiles.thunderbird.cafe";
+/**
+ * The tile server the real-loader previews use (runtime, service worker, sandbox).
+ * load.tiles.lexicographer.space gives each tile its own random name (since
+ * Oct 2026; the old load.tiles.thunderbird.cafe rotated five fixed names, where
+ * two tiles could break each other). Same server as the blog and gallery; see
+ * claude/tile-loading-findings.md.
+ */
+export const LOAD_DOMAIN = "load.tiles.lexicographer.space";
 
 // Turns a built tile into the shape @dasl/tile-loader's MemoryTileLoader takes,
 // so the tile can run through the real loading pipeline (tile server runtime,
