@@ -205,15 +205,19 @@ export async function deleteTile({ xrpc, did, rkey }) {
   });
 }
 
+/** The open tile viewer: a page and a link card for any public tile. */
+export const TILE_VIEWER = "https://lexicographer.space";
+
 /**
- * The appmosphe.re page for one tile, from its at:// address:
- * https://appmosphe.re/@<handle or DID>/<record key>. Uses the handle when
- * it's known (a friendlier link); the DID form works too, even after a
- * handle changes.
+ * The tile's own page on the viewer, from its at:// address:
+ * https://lexicographer.space/@<handle or DID>/<record key>. Uses the handle when
+ * it's known (a friendlier link, and the one Bluesky shows a card for); the DID
+ * form works too, even after a handle changes. The viewer's bar links on to the
+ * same tile on appmosphe.re (full record and more).
  */
 export function tileViewUrl(uri, handle) {
   const m = /^at:\/\/([^/]+)\/[^/]+\/([^/]+)$/.exec(uri);
   if (!m) throw new Error(`Not a tile address: ${uri}`);
   const [, did, rkey] = m;
-  return `https://appmosphe.re/@${handle || did}/${rkey}`;
+  return `${TILE_VIEWER}/@${handle ? handle.toLowerCase() : did}/${rkey}`;
 }

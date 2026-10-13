@@ -162,9 +162,9 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
           <p className="publish-title">{state.deleted ? "Test tile deleted." : "Your tile is published!"}</p>
           {!state.deleted && (
             <>
-              <p>“{state.name}” is now in {who}. Open it on appmosphe.re to see it the way others will.</p>
+              <p>“{state.name}” is now in {who}.</p>
               <div className="button-row">
-                <a className="btn" href={link} target="_blank" rel="noopener">View on appmosphe.re</a>
+                <a className="btn" href={link} target="_blank" rel="noopener">View on lexicographer.space</a>
                 <button type="button" className="btn btn-quiet" onClick={() => setState({ phase: "idle" })}>Make another tile</button>
               </div>
               <div className="share">

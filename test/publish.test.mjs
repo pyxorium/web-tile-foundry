@@ -122,9 +122,10 @@ test("publishing uploads, creates one new record, and verifies it all", async ()
   assert.deepEqual(steps.filter((s) => s.endsWith(":done")), ["upload:done", "create:done", "verify:done"]);
   const rkey = out.uri.split("/").pop();
   const did = out.uri.split("/")[2];
-  assert.equal(tileViewUrl(out.uri), `https://appmosphe.re/@${did}/${rkey}`);
-  assert.equal(tileViewUrl(out.uri, "someone.bsky.social"), `https://appmosphe.re/@someone.bsky.social/${rkey}`);
-  assert.equal(tileViewUrl("at://did:web:tiles.example.com/ing.dasl.masl/3abc"), "https://appmosphe.re/@did:web:tiles.example.com/3abc");
+  assert.equal(tileViewUrl(out.uri), `https://lexicographer.space/@${did}/${rkey}`);
+  assert.equal(tileViewUrl(out.uri, "someone.bsky.social"), `https://lexicographer.space/@someone.bsky.social/${rkey}`);
+  assert.equal(tileViewUrl(out.uri, "Someone.Bsky.Social"), `https://lexicographer.space/@someone.bsky.social/${rkey}`);
+  assert.equal(tileViewUrl("at://did:web:tiles.example.com/ing.dasl.masl/3abc"), "https://lexicographer.space/@did:web:tiles.example.com/3abc");
 });
 
 test("a file stored earlier under another type: adopt the server's type and retry once", async () => {
