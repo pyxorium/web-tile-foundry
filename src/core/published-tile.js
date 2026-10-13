@@ -17,6 +17,7 @@ const RKEY_RE = /^[A-Za-z0-9._~:-]{1,512}$/;
  * Reads a tile address in any of the forms people copy:
  *   at://<did or handle>/ing.dasl.masl/<rkey>
  *   https://appmosphe.re/@<handle or did>/<rkey>
+ *   https://lexicographer.space/@<handle or did>/<rkey>   (the open tile viewer)
  *   https://webtil.es/browser/#url=at://…
  * Returns { repo, rkey } (repo is a DID or a handle) or null.
  */
@@ -30,7 +31,7 @@ export function parseTileAddress(text) {
     if (m[2] !== TILE_COLLECTION) return null;
     return checked(decodeURIComponent(m[1]), m[3]);
   }
-  m = /^https:\/\/(?:www\.)?appmosphe\.re\/@([^/]+)\/([^/?#]+)\/?$/.exec(s);
+  m = /^https:\/\/(?:www\.)?(?:appmosphe\.re|lexicographer\.space)\/@([^/]+)\/([^/?#]+)\/?$/.exec(s);
   if (m) return checked(decodeURIComponent(m[1]), m[2]);
   return null;
 }
@@ -66,7 +67,7 @@ export function blobCidOf(src) {
  */
 export async function fetchPublishedTile(address, { fetchImpl = fetch, only = null } = {}) {
   const where = parseTileAddress(address);
-  if (!where) throw new Error("That doesn't look like a tile address. Paste its at:// address or its appmosphe.re link.");
+  if (!where) throw new Error("That doesn't look like a tile address. Paste its at:// address, or its lexicographer.space or appmosphe.re link.");
   const did = await resolveRepo(where.repo, fetchImpl);
   const doc = await resolveDidDocument(did, fetchImpl);
   const pds = pdsFromDidDocument(doc);

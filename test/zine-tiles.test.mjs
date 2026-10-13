@@ -100,7 +100,7 @@ test("a page's tile: problems, size, files copied byte for byte, the reader's vi
   assert.deepEqual(r, {
     name: "Glass lantern", by: "@thunderbirdwine.bsky.social", page: "/tiles/p1/index.html",
     refs: [{ ref: "/lantern.js", src: "/tiles/p1/lantern.js" }],
-    url: `https://appmosphe.re/@${DID}/3mlantern`, poster: "/tiles/p1/banner.png",
+    url: `https://lexicographer.space/@${DID}/3mlantern`, poster: "/tiles/p1/banner.png",
   });
   assert.deepEqual(pieceRecipe(page, "p1"), { kind: "tile", uri: piece().uri, cid: "bafyreirec", name: "Glass lantern", folder: "/tiles/p1", type: "glass-lantern", typeVersion: 1, foundryVersion: "0.9.0" });
 });
@@ -210,7 +210,7 @@ test("a tape page: problems, only the banner copied, the reader's J-card, the re
   assert.deepEqual(r, {
     name: "Parlor Greens at Jam Cruise", title: "Parlor Greens at Jam Cruise",
     sides: [{ name: "A", songs: ["Drop Top", "Jolene"] }, { name: "B", songs: ["Parlor <Strut>"] }],
-    dedication: "For the boat.", url: "https://appmosphe.re/@did:plc:rqbqpaaluty5v47jwciowpik/3mtape", poster: "/tiles/p2/banner.png",
+    dedication: "For the boat.", url: "https://lexicographer.space/@did:plc:rqbqpaaluty5v47jwciowpik/3mtape", poster: "/tiles/p2/banner.png",
   });
   assert.equal(pieceRecipe(page, "p2").kind, "tape");
   assert.equal(tileForReader(page, "p2"), null);

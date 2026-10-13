@@ -43,10 +43,13 @@ async function standIn({ tamper = false } = {}) {
   return { fetchImpl, calls };
 }
 
-test("tile addresses: at://, appmosphe.re and webtil.es forms", () => {
+test("tile addresses: at://, appmosphe.re, lexicographer.space and webtil.es forms", () => {
   assert.deepEqual(parseTileAddress(`at://${DID}/ing.dasl.masl/3mlantern`), { repo: DID, rkey: "3mlantern" });
   assert.deepEqual(parseTileAddress("https://appmosphe.re/@thunderbird.cafe/3mlantern"), { repo: "thunderbird.cafe", rkey: "3mlantern" });
   assert.deepEqual(parseTileAddress(`https://appmosphe.re/@${DID}/3mlantern`), { repo: DID, rkey: "3mlantern" });
+  assert.deepEqual(parseTileAddress("https://lexicographer.space/@thunderbird.cafe/3mlantern"), { repo: "thunderbird.cafe", rkey: "3mlantern" });
+  assert.deepEqual(parseTileAddress(`https://www.lexicographer.space/@${DID}/3mlantern/`), { repo: DID, rkey: "3mlantern" });
+  assert.equal(parseTileAddress("https://lexicographer.space/takedowns"), null);
   assert.deepEqual(parseTileAddress(`https://webtil.es/browser/#url=${encodeURIComponent(`at://${DID}/ing.dasl.masl/3mlantern`)}`), { repo: DID, rkey: "3mlantern" });
   assert.equal(parseTileAddress(`at://${DID}/app.bsky.feed.post/3m`), null);
   assert.equal(parseTileAddress("https://example.com/@x/3m"), null);

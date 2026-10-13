@@ -195,7 +195,7 @@ test("the reader gets every file, the fetched JSON, the credit link and the post
   assert.deepEqual(t.files.find((f) => f.path === "/assets/mark.svg"), { path: "/assets/mark.svg", src: "/tiles/p1/assets/mark.svg", type: "image/svg+xml" });
   assert.equal(t.files.some((f) => f.path === "/"), false);
   assert.equal(t.sealed, undefined);
-  assert.equal(t.url, "https://appmosphe.re/@did:plc:rqbqpaaluty5v47jwciowpik/3mxjqmsmemcl3");
+  assert.equal(t.url, "https://lexicographer.space/@did:plc:rqbqpaaluty5v47jwciowpik/3mxjqmsmemcl3");
 
   const walled = tileForReader({ layout: "tile", piece: (await atmoPiece({ others: true })).piece }, "p1");
   assert.equal(walled.sealed, true);
