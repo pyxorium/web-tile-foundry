@@ -19,18 +19,73 @@ export const CONTENT_TYPES = Object.freeze({
   ".webm": "video/webm",
   ".css": "text/css",
   ".svg": "image/svg+xml",
+  // Fonts, sounds and notes that other apps' tiles carry (ATMOSYNTH's direct
+  // publish, Foundry v0.27.0): web fonts and their licence, FLAC samples.
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".flac": "audio/flac",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".txt": "text/plain",
+});
+
+// Other names in common use for the same kinds of file. Only for COPYING a
+// tile someone already published (src/core/published-tile.js, copyPaths): its
+// app may have declared a font or sound under an older or vendor name. The
+// Foundry's own files always use the one type in CONTENT_TYPES. A file is
+// never accepted under a name from another family (a .woff2 can't be a script).
+export const COPY_ALIASES = Object.freeze({
+  ".woff2": Object.freeze(["application/font-woff2"]),
+  ".woff": Object.freeze(["application/font-woff", "application/x-font-woff"]),
+  ".ttf": Object.freeze(["application/x-font-ttf", "application/x-font-truetype", "application/font-sfnt", "font/sfnt"]),
+  ".otf": Object.freeze(["application/x-font-otf", "application/x-font-opentype", "application/font-sfnt", "font/sfnt", "font/opentype"]),
+  ".flac": Object.freeze(["audio/x-flac"]),
+  ".wav": Object.freeze(["audio/x-wav", "audio/wave", "audio/vnd.wave"]),
+  ".ogg": Object.freeze(["application/ogg", "audio/x-ogg"]),
 });
 
 const encoder = new TextEncoder();
 
+/** A tile path's extension (".png"), lower case; "" when it has none. "/" is the page. */
+export function extensionOf(path) {
+  if (path === "/") return ".html";
+  const name = String(path).slice(String(path).lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot).toLowerCase() : "";
+}
+
+/** Whether the Foundry has a type for this path's kind of file. */
+export function hasContentType(path) {
+  return Object.prototype.hasOwnProperty.call(CONTENT_TYPES, extensionOf(path));
+}
+
 /** The fixed content type for a tile path. "/" is the tile's HTML page. */
 export function contentTypeFor(path) {
   if (path === "/") return CONTENT_TYPES[".html"];
-  const dot = path.lastIndexOf(".");
-  const ext = dot >= 0 ? path.slice(dot).toLowerCase() : "";
-  const type = CONTENT_TYPES[ext];
+  const ext = extensionOf(path);
+  const type = Object.prototype.hasOwnProperty.call(CONTENT_TYPES, ext) ? CONTENT_TYPES[ext] : undefined;
   if (!type) throw new Error(`No content type is defined for "${path}". Add its extension to CONTENT_TYPES.`);
   return type;
+}
+
+/** A declared type without its parameters, in lower case ("Text/Plain; charset=utf-8" -> "text/plain"). */
+export function bareType(type) {
+  return String(type || "").split(";")[0].trim().toLowerCase();
+}
+
+/**
+ * Whether a file of a published tile, declared as `declared`, can be copied
+ * to `path`: the declared type is the Foundry's type for that kind of file,
+ * or one of its other names (COPY_ALIASES).
+ */
+export function copyTypeAccepts(path, declared) {
+  const want = contentTypeFor(path);
+  const got = bareType(declared);
+  if (got === want) return true;
+  const other = COPY_ALIASES[extensionOf(path)];
+  return Boolean(other && other.includes(got));
 }
 
 /**

@@ -44,7 +44,7 @@ test("content types are fixed by extension, never chosen case by case", () => {
   assert.equal(contentTypeFor("/icon.png"), "image/png");
   assert.equal(contentTypeFor("/foundry.json"), "application/json");
   assert.equal(contentTypeFor("/model.glb"), "model/gltf-binary");
-  assert.throws(() => contentTypeFor("/notes.txt"));
+  assert.throws(() => contentTypeFor("/notes.docx"));
   assert.throws(() => makeFile("relative.png", new Uint8Array(1)));
 });
 
@@ -113,7 +113,7 @@ test("buildTile adds the recipe and the address of every file", async () => {
   assert.deepEqual(out.files.map((f) => f.path), ["/", "/icon.png", "/foundry.json"]);
   assert.equal(out.files[1].cid, SAMPLE_RECORD.spriteSheet.ref.$link);
   const recipe = JSON.parse(new TextDecoder().decode(out.files[2].bytes));
-  assert.deepEqual(recipe, { madeWith: "Web Tile Foundry", foundryVersion: "0.26.0", type: "fake-tile", typeVersion: 1, inputs: { hello: "world" } });
+  assert.deepEqual(recipe, { madeWith: "Web Tile Foundry", foundryVersion: "0.27.0", type: "fake-tile", typeVersion: 1, inputs: { hello: "world" } });
 });
 
 test("the recipe is deterministic, so identical inputs give identical bytes", () => {

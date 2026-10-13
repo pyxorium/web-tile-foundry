@@ -1389,27 +1389,56 @@ export const READER_JS = String.raw`
       return swapRefs(html, data);
     });
   }
-  // ATMOSYNTH tiles (v0.24.0). Their page asks for "./tile.js" and "./tile.css";
-  // the player fetches ./patch.json, ./tile.json and ./samples.json itself and
-  // names "/assets/mark.svg" from the tile's root. So: every file is fetched
-  // through the zine's queue; root addresses inside the script and stylesheet
-  // are swapped for the copies; a small helper written into the page before the
-  // player answers its own fetches from the copies. Normally the frame gets
-  // blob: copies (way C of the host test). Walled off (a patch with other
-  // people's modules, or the Foundry's sealed preview) everything is written
-  // into the page itself: the script and stylesheet inline, the rest as data:
-  // addresses, and the frame sealed (way D).
+  // ATMOSYNTH tiles (v0.24.0; v0.27.0). Their page asks for "./tile.js" and
+  // "./tile.css"; the player fetches its own files (./patch.json, ./tile.json,
+  // and in the older export ./samples.json; in the direct publish from
+  // atmosynth.at each sample as its own file, ./samples/<cid>.flac); the
+  // stylesheet loads fonts with url(./fonts/…); the script names
+  // "/assets/mark.svg" from the tile's root. So: every file is fetched through
+  // the zine's queue; root addresses inside the script and stylesheet, and every
+  // url(…) in the stylesheet that names one of the tile's files, are swapped for
+  // the copies; a small helper written into the page before the player answers
+  // its fetches for ANY of the tile's other files from the copies. Normally the
+  // frame gets blob: copies (way C of the host test). Walled off (a patch with
+  // other people's modules, or the Foundry's sealed preview) everything is
+  // written into the page itself: the script and stylesheet inline, the rest as
+  // data: addresses, and the frame sealed (way D).
   var BACKTICK = String.fromCharCode(96);
   function atmoHelper(map) {
-    return "(function(){var M=" + JSON.stringify(map).split("<").join("\\u003c") + ";var F=window.fetch;" +
-      "window.fetch=function(i,o){var u=typeof i===\"string\"?i:(i&&i.url)||\"\";var k=u.split(\"?\")[0].replace(/^\\.\\//,\"/\");if(k.charAt(0)!==\"/\")k=\"/\"+k;" +
-      "if(Object.prototype.hasOwnProperty.call(M,k))return F.call(window,M[k],o);return F.apply(window,arguments);};})();";
+    return "(function(){var M=" + JSON.stringify(map).split("<").join("\\u003c") + ";var F=window.fetch;var H=Object.prototype.hasOwnProperty;" +
+      "function K(u){u=String(u||\"\").split(\"#\")[0].split(\"?\")[0];" +
+      "if(/^[a-z][a-z0-9+.-]*:/i.test(u)){if(/^(blob|data):/i.test(u))return \"\";try{u=new URL(u).pathname;}catch(e){return \"\";}try{u=decodeURI(u);}catch(e){}" +
+      "for(var k in M){if(H.call(M,k)&&u.length>=k.length&&u.slice(u.length-k.length)===k)return k;}return \"\";}" +
+      "u=u.replace(/^(\\.\\/)+/,\"/\");if(u.charAt(0)!==\"/\")u=\"/\"+u;try{u=decodeURI(u);}catch(e){}return u;}" +
+      "window.fetch=function(i,o){var k=K(i&&typeof i===\"object\"?(i.url||i.href||\"\"):i);" +
+      "if(k&&H.call(M,k))return F.call(window,M[k],o);return F.apply(window,arguments);};})();";
   }
   function swapRoots(text, addr) {
     Object.keys(addr).forEach(function (path) {
       ['"', "'", BACKTICK].forEach(function (q) { text = text.split(q + path + q).join(q + addr[path] + q); });
     });
     return text;
+  }
+  // A file's address as the tile names it ("./fonts/a.woff2", "fonts/a.woff2",
+  // "/fonts/a.woff2", "../x"), read from the folder dir ("/"), as the tile's own
+  // path ("/fonts/a.woff2"); "" for anything outside the tile (https:, data:, #id).
+  function tilePathOf(dir, ref) {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.charAt(0) === "#" || ref.slice(0, 2) === "//") return "";
+    var p = (ref.charAt(0) === "/" ? ref : dir + ref).split("#")[0].split("?")[0];
+    var out = [];
+    p.split("/").forEach(function (part) { if (part === "..") out.pop(); else if (part !== "." && part !== "") out.push(part); });
+    var path = "/" + out.join("/");
+    try { path = decodeURI(path); } catch (e) {}
+    return path;
+  }
+  // Every url(…) in a stylesheet that names one of the tile's files, quoted or
+  // not, swapped for its copy (a stylesheet's own addresses count from its folder).
+  function swapCssUrls(text, cssPath, addr) {
+    var dir = cssPath.slice(0, cssPath.lastIndexOf("/") + 1) || "/";
+    return text.replace(/url\(\s*(["']?)([^"')\s]+)\1\s*\)/gi, function (all, q, ref) {
+      var path = tilePathOf(dir, ref);
+      return path && Object.prototype.hasOwnProperty.call(addr, path) ? 'url("' + addr[path] + '")' : all;
+    });
   }
   function headInsert(html, extra) {
     var m = /<head[^>]*>/i.exec(html);
@@ -1450,6 +1479,7 @@ export const READER_JS = String.raw`
           return Promise.all(t.files.filter(isCode).map(function (f) {
             return blobText(got[f.path]).then(function (text) {
               code[f.path] = swapRoots(text, plain);
+              if (/\.css$/i.test(f.path)) code[f.path] = swapCssUrls(code[f.path], f.path, plain);
               return address(code[f.path], f.type || (/\.css$/i.test(f.path) ? "text/css" : "text/javascript")).then(function (a) { addr[f.path] = a; });
             });
           }));

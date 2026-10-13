@@ -1,4 +1,4 @@
-import { fetchPublishedTile, jsonFile, TILE_COLLECTION } from "../../core/published-tile.js";
+import { fetchPublishedTile, jsonFile, copyPaths, TILE_COLLECTION } from "../../core/published-tile.js";
 import { listTileTypes } from "../../core/registry.js";
 import { formatSize } from "../../core/fileset.js";
 import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS, isAtmosynthTile, atmoPatchInfo } from "./piece.js";
@@ -124,6 +124,11 @@ function copyOf(kind, uri, cid) {
     const p = fetchPublishedTile(uri, kind === "tape" ? { only: TAPE_FILES } : {}).then((pub) => {
       if (cid && pub.cid && pub.cid !== cid) throw new Error("it changed while it was being copied; choose it again");
       if (kind !== "tape") {
+        // Every file must be one the zine can copy: say so now, on the card,
+        // rather than when the zine is built (v0.27.0).
+        try { copyPaths(pub.files, "/tiles/check"); } catch (err) {
+          throw new Error(String(err.message).replace(/^The tile's /, "its ").replace(/\.$/, ""));
+        }
         if (!isAtmosynthTile(pub.manifest)) return { pub, files: pub.files };
         const patch = jsonFile(pub.files, "/patch.json");
         if (!patch) throw new Error("its patch couldn't be read");

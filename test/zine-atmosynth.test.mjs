@@ -18,7 +18,7 @@ import { zine } from "../src/tile-types/zine/index.js";
 import { emptyPages, zineConfig } from "../src/tile-types/zine/pages.js";
 import {
   isAtmosynthTile, atmoPageRefs, atmoPatchInfo, atmoPatchUrl, tilePlacement, tileForReader, pieceRecipe, pieceReady,
-  pieceFiles, tilePosterPath, tileSize, ATMO_FETCHED, ATMOSYNTH_PLATFORM,
+  pieceFiles, tilePosterPath, tileSize, atmoFetched, ATMOSYNTH_PLATFORM,
 } from "../src/tile-types/zine/piece.js";
 import { READER_JS, READER_CSS } from "../src/tile-types/zine/runtime/reader.js";
 import { glassLantern } from "../src/tile-types/glass-lantern/index.js";
@@ -178,7 +178,7 @@ test("reads a patch: its id, creator, other people's modules and samples, and a 
   assert.equal(atmoPatchUrl({}), "https://atmosynth.at/");
 });
 
-test("the reader gets every file, the fetched JSON, the credit link and the poster; walled off only with other people's modules", async () => {
+test("the reader gets every file, the fetched files, the credit link and the poster; walled off only with other people's modules", async () => {
   const { piece } = await atmoPiece();
   assert.equal(pieceReady({ layout: "tile", piece }), true);
   const t = tileForReader({ layout: "tile", piece }, "p1");
@@ -190,7 +190,8 @@ test("the reader gets every file, the fetched JSON, the credit link and the post
   assert.deepEqual(t.size, { w: 720, h: 520 }, "ATMOSYNTH's size when the tile names none");
   assert.deepEqual(tileForReader({ layout: "tile", piece: { ...piece, sizing: { width: 800, height: 600 } } }, "p1").size, { w: 800, h: 600 });
   assert.equal(t.by, ""); // the creator's own: not credited to themselves
-  assert.deepEqual(t.fetched, ATMO_FETCHED);
+  // Every file but the page, script and stylesheet (the older export: its three JSON files among them).
+  assert.deepEqual(t.fetched, ["/tile.json", "/patch.json", "/samples.json", "/assets/mark.svg", "/screenshot.svg", "/screenshot.png"]);
   assert.deepEqual(t.refs, [{ ref: "./tile.js", path: "/tile.js" }, { ref: "./tile.css", path: "/tile.css" }]);
   assert.deepEqual(t.files.find((f) => f.path === "/assets/mark.svg"), { path: "/assets/mark.svg", src: "/tiles/p1/assets/mark.svg", type: "image/svg+xml" });
   assert.equal(t.files.some((f) => f.path === "/"), false);

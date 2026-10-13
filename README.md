@@ -84,9 +84,13 @@ exports an object following `src/core/contract.js`, and registering it in
 ## Rules built in (lessons from earlier tiles)
 
 - **One fixed content type per kind of file** (`src/core/fileset.js`):
-  `text/html`, `image/png`, `application/json`, `model/gltf-binary`. A PDS
+  `text/html`, `image/png`, `application/json`, `model/gltf-binary` and the
+  others listed there (pictures, sounds, video, CSS, SVG, web fonts, text). A PDS
   stores each file once and the first upload's type sticks, so the same bytes
-  must never be uploaded under two types.
+  must never be uploaded under two types. When a zine copies a tile someone
+  already published, fonts and sounds declared under another common name for
+  the same kind of file (`audio/x-flac`, `audio/x-wav` and so on) are accepted
+  too, and uploaded under the type the account already holds them as.
 - **Every tile carries the standard security policy** as a meta tag
   (`src/core/policy.js`); the build refuses a page without it.
 - **Every tile carries a recipe** at `/foundry.json`: tile type, version and the

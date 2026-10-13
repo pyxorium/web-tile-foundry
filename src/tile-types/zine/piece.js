@@ -25,10 +25,14 @@ import { activityReady, activityRecipe } from "./activities.js";
 // the creator's own synth patches, exported from atmosynth.at as Web Tiles,
 // go on "A web tile" pages too. They have no /foundry.json; the exporter marks
 // its tiles with `generator: "ATMOSYNTH"` in the tile's manifest. Their page
-// loads its files by relative address ("./tile.js"), the player fetches
-// ./patch.json, ./tile.json and ./samples.json itself, and its script names one
-// file from the tile's root ("/assets/mark.svg"). The reader handles all three
-// (runtime/reader.js, startTile). A page's ATMOSYNTH tile keeps, beside the
+// loads its files by relative address ("./tile.js"), the player fetches its own
+// files (./patch.json, ./tile.json; samples as separate files such as
+// ./samples/<cid>.flac), its stylesheet loads fonts with url(./fonts/…), and its
+// script names one file from the tile's root ("/assets/mark.svg"). The reader
+// handles all of these (runtime/reader.js, startTile). Since v0.27.0 it answers
+// the player's fetches for EVERY one of the tile's own files (not a fixed list),
+// so both the older export (made for appmosphe.re: samples.json) and the direct
+// publish from atmosynth.at (fonts, FLAC samples, no samples.json) play. A page's ATMOSYNTH tile keeps, beside the
 // usual piece fields:
 //   maker: "atmosynth", atmo: { patchId?, creator?, modules: [did], samples: [did], forkedFrom?, others }
 // `others`: the patch uses other people's modules (their own code), so the
@@ -38,8 +42,14 @@ export const ATMOSYNTH = "ATMOSYNTH";
 export const ATMOSYNTH_HOME = "https://atmosynth.at/";
 // The account ATMOSYNTH's built-in modules are published from (the platform).
 export const ATMOSYNTH_PLATFORM = "did:plc:fzjkahpwapmoqxybwdjb6ysf";
-/** The files the ATMOSYNTH player fetches for itself, by "./name.json". */
-export const ATMO_FETCHED = Object.freeze(["/patch.json", "/tile.json", "/samples.json"]);
+/**
+ * The files the reader answers the ATMOSYNTH player's own fetches with: every
+ * one of the tile's files but its page, script and stylesheet (those the page
+ * itself loads; leaving them out keeps a walled-off page from carrying them twice).
+ */
+export function atmoFetched(paths) {
+  return (paths || []).filter((p) => p !== "/" && !/\.(js|css)$/i.test(p));
+}
 const DID_LIKE = /^did:[a-z]+:[A-Za-z0-9._:%-]{1,200}$/;
 const PATCH_ID = /^[A-Za-z0-9._~-]{1,100}$/;
 
@@ -224,8 +234,8 @@ export function tileForReader(page, pageId, src = (path) => tilePath(pageId, pat
  *   { name, by, url, page, atmo: true, made: "ATMOSYNTH", patchUrl, sealed?,
  *     refs: [{ ref, path }], files: [{ path, src, type }], fetched: [path], poster? }
  * `refs` are the addresses in its page; `files` every file but the page (the
- * reader swaps the root addresses in its script and stylesheet for copies, and
- * answers the player's own fetches of `fetched` from copies).
+ * reader swaps the addresses in its script and stylesheet for copies, and
+ * answers the player's own fetches of `fetched`, all its other files, from copies).
  */
 function atmoForReader(t, html, src) {
   const paths = t.files.map((f) => f.path).filter((p) => p !== "/");
@@ -239,7 +249,7 @@ function atmoForReader(t, html, src) {
     patchUrl: atmoPatchUrl(atmo),
     refs: atmoPageRefs(html, paths),
     files: t.files.filter((f) => f.path !== "/").map((f) => ({ path: f.path, src: src(f.path), type: f.contentType || "" })),
-    fetched: ATMO_FETCHED.filter((p) => paths.includes(p)),
+    fetched: atmoFetched(paths),
     size: tileSize(t.sizing),
   };
   if (atmo.others) out.sealed = true;

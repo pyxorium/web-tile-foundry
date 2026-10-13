@@ -1,6 +1,6 @@
 import { resolveDidDocument, pdsFromDidDocument, handleFromDidDocument, fetchPublicBlob } from "./atproto.js";
 import { rawCid } from "./cid.js";
-import { contentTypeFor } from "./fileset.js";
+import { contentTypeFor, copyTypeAccepts, hasContentType, bareType } from "./fileset.js";
 
 // Reading a published tile back from its author's account: the record, and
 // every one of its files, each checked against the address the record gives
@@ -116,16 +116,26 @@ export function jsonFile(files, path) {
  * ("/t1"), the page as `${folder}/index.html`. Each copy keeps its bytes and
  * must keep its content type (a PDS keeps the first type it saw for given
  * bytes; see src/core/fileset.js), so a file whose type differs from the one
- * the Foundry gives its new path can't be copied.
+ * the Foundry gives its new path can't be copied. Fonts and sounds declared
+ * under another common name for the same kind of file (COPY_ALIASES, e.g.
+ * audio/x-flac) are copied too (v0.27.0): the copy is listed under the
+ * Foundry's type, and uploaded under the type the account already holds it as.
  */
 export function copyPaths(files, folder) {
   return files.map((f) => {
     const to = f.path === "/" ? `${folder}/index.html` : `${folder}${f.path}`;
+    if (!hasContentType(to)) {
+      throw new Error(`The tile's file ${f.path} is a kind of file the Foundry can't copy yet.`);
+    }
     const type = contentTypeFor(to);
-    if (f.contentType && f.contentType !== type) {
+    if (f.contentType && !copyTypeAccepts(to, f.contentType)) {
       throw new Error(`The tile's file ${f.path} is stored as ${f.contentType}, so it can't be copied as ${type}.`);
     }
-    return { from: f.path, path: to, bytes: f.bytes, contentType: type, ...(f.storedType ? { storedType: f.storedType } : {}) };
+    // The type to upload the bytes under: the account's own (storedType), else
+    // the other name the tile declared, so the same bytes never get two types.
+    const declared = bareType(f.contentType);
+    const stored = f.storedType || (declared && declared !== type ? declared : "");
+    return { from: f.path, path: to, bytes: f.bytes, contentType: type, ...(stored ? { storedType: stored } : {}) };
   });
 }
 
