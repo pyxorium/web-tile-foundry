@@ -2,6 +2,7 @@ import { cropRect } from "../../../core/pictures.js";
 import { marksDefs, marksMarkup } from "../marks.js";
 import { SOUND_ROW } from "../sound.js";
 import { mapLayout } from "../activities.js";
+import { mdRuns } from "../markdown.js";
 
 // The Zine Scene reader: the program and styles built into every zine tile's
 // page. Plain JavaScript (no bundler), kept as text so it can go straight into
@@ -405,6 +406,22 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 .now span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now button { flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: #fff; color: #1b1a17; font-size: 10px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .zp { transition: none; } }
+
+/* Light Markdown (v0.30.0): bold, italic, code and links in words; bold and italic in headings. */
+.zp strong { font-weight: 700; }
+.zp h1 strong, .zp h2 strong { font-weight: 900; }
+.zp code { font-family: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace; font-size: .9em; padding: 0 .22em; border-radius: 3px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.zp .words a, .zp .sub a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.zp .words a:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 1px; border-radius: 2px; }
+[data-look="photocopy"] .zp code { background: none; border: 1px dashed var(--ink); }
+[data-look="collage"] .zp h2 code, [data-look="collage"] .zp.cover h1 code { background: color-mix(in srgb, var(--paper) 22%, transparent); }
+
+/* Zine fonts (v0.30.0): set by the reader when the zine chooses them (html data-hf / data-wf). */
+html[data-hf] .zp h1, html[data-hf] .zp h2 { font-family: var(--hf); font-weight: var(--hw); letter-spacing: normal; font-synthesis-weight: none; }
+html[data-hf] .zp h1 strong, html[data-hf] .zp h2 strong { font-weight: var(--hs); }
+html[data-hf-noitalic] .zp h1 em, html[data-hf-noitalic] .zp h2 em { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 750; }
+html[data-hf-noitalic][data-look="photocopy"] .zp h1 em, html[data-hf-noitalic][data-look="photocopy"] .zp h2 em { font-family: "Courier New", Courier, "Liberation Mono", monospace; font-weight: 700; }
+html[data-wf] .zp .words:not(.big), html[data-wf] .zp .sub { font-family: var(--wf); font-synthesis-weight: none; }
 `;
 
 export const READER_JS = String.raw`
@@ -437,14 +454,48 @@ export const READER_JS = String.raw`
     if (text != null) e.textContent = text;
     return e;
   }
-  function wordsBlock(text) {
+  // Light Markdown (v0.30.0): each line becomes runs (markdown.js), and the
+  // elements are made here, never HTML from the text. Links open in a new tab.
+  var mdRuns = ${mdRuns.toString()};
+  function inline(parent, text, rich) {
+    var link = null, linkHref = null;
+    mdRuns(text, rich).forEach(function (r) {
+      var n = document.createTextNode(r.t);
+      if (r.c) { var c = el("code"); c.appendChild(n); n = c; }
+      if (r.i) { var i = el("em"); i.appendChild(n); n = i; }
+      if (r.b) { var b = el("strong"); b.appendChild(n); n = b; }
+      if (r.h) {
+        if (!link || linkHref !== r.h) {
+          link = el("a");
+          link.href = r.h; link.target = "_blank"; link.rel = "noopener noreferrer";
+          linkHref = r.h;
+          parent.appendChild(link);
+        }
+        link.appendChild(n);
+        return;
+      }
+      link = null; linkHref = null;
+      parent.appendChild(n);
+    });
+    return parent;
+  }
+  function plainOf(text) {
+    return mdRuns(text, false).map(function (r) { return r.t; }).join("");
+  }
+  // A heading or the title: bold and italic only.
+  function headEl(tag, cls, text) {
+    return inline(el(tag, cls), String(text || ""), false);
+  }
+  // rich: false for the big quote and a book's line from its review (plain, as written).
+  function wordsBlock(text, rich) {
     var box = el("div", "words");
     String(text || "").replace(/\r\n?/g, "\n").split(/\n\s*\n/).forEach(function (para) {
       if (!para.trim()) return;
       var p = el("p");
       para.split("\n").forEach(function (line, i) {
         if (i) p.appendChild(document.createElement("br"));
-        p.appendChild(document.createTextNode(line));
+        if (rich === false) p.appendChild(document.createTextNode(line));
+        else inline(p, line, true);
       });
       box.appendChild(p);
     });
@@ -458,7 +509,7 @@ export const READER_JS = String.raw`
   var STILL_MS = ${LOAD_TIMES.still}, RETRY_MS = ${LOAD_TIMES.retry};
   var shownNow = []; // the pages being shown (indices)
   function getBytes(src) {
-    if (config.preview && /^(clip|piece):/.test(src)) {
+    if (config.preview && /^(clip|piece|font):/.test(src)) {
       // In the Foundry's preview, sounds and tile files come from the Foundry (they're in memory there).
       return new Promise(function (resolve, reject) {
         clipAsks[src] = { resolve: resolve, reject: reject };
@@ -579,9 +630,30 @@ export const READER_JS = String.raw`
     location.hash = "page=" + pageId;
     location.reload();
   }
+  // A picture that moves (v0.30.0) shows its still (first frame) to readers
+  // whose device asks for less motion; that can change while the zine is open.
+  var lessMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  function motionSrc(pic) {
+    return pic.still && lessMotion && lessMotion.matches ? pic.still : pic.src;
+  }
+  if (lessMotion) {
+    var onMotion = function () {
+      pageEls.forEach(function (e) {
+        Array.prototype.forEach.call(e.querySelectorAll("img[data-anim]"), function (img) {
+          var want = lessMotion.matches ? img.getAttribute("data-still") : img.getAttribute("data-anim");
+          if (img.getAttribute("data-src")) img.setAttribute("data-src", want);
+          else if (!img.getAttribute("data-want")) { img.setAttribute("data-src", want); }
+        });
+      });
+      if (stage) show();
+    };
+    if (lessMotion.addEventListener) lessMotion.addEventListener("change", onMotion);
+    else if (lessMotion.addListener) lessMotion.addListener(onMotion);
+  }
   function image(pic, cls, alt) {
     var img = document.createElement("img");
-    img.setAttribute("data-src", pic.src);
+    img.setAttribute("data-src", motionSrc(pic));
+    if (pic.still) { img.setAttribute("data-anim", pic.src); img.setAttribute("data-still", pic.still); }
     img.alt = alt;
     img.className = cls;
     if (pic.width && pic.height) { img.width = pic.width; img.height = pic.height; }
@@ -903,6 +975,39 @@ export const READER_JS = String.raw`
   }
   function has(list, x) { return list && list.indexOf(x) >= 0; }
 
+  // Zine fonts (v0.30.0): each chosen font's files are fetched like pictures
+  // (first, they're small), added as faces scaled to keep the words' room, and
+  // the pages are fitted again once they've loaded.
+  var fontsOn = {};
+  function applyFonts() {
+    var html = document.documentElement;
+    var f = config.fonts || {};
+    [["heading", "data-hf", "--hf"], ["words", "data-wf", "--wf"]].forEach(function (k) {
+      var spec = f[k[0]];
+      if (!spec) { html.removeAttribute(k[1]); html.style.removeProperty(k[2]); return; }
+      html.setAttribute(k[1], spec.id);
+      html.style.setProperty(k[2], '"' + spec.family + '", ' + (spec.fallback || "sans-serif"));
+      if (k[0] === "heading") {
+        html.style.setProperty("--hw", String(spec.weight || 700));
+        html.style.setProperty("--hs", String(spec.strong || 900));
+        if (spec.italic) html.removeAttribute("data-hf-noitalic"); else html.setAttribute("data-hf-noitalic", "");
+      }
+      var key = spec.family + "|" + spec.faces.map(function (x) { return x.src; }).join(",");
+      if (fontsOn[spec.family] === key || typeof FontFace === "undefined" || !document.fonts) return;
+      fontsOn[spec.family] = key;
+      Promise.all(spec.faces.map(function (face) {
+        return fileUrl(face.src, true).then(function (u) {
+          var ff = new FontFace(spec.family, "url(" + u + ")", { weight: String(face.weight), style: face.style || "normal", sizeAdjust: Math.round((spec.adjust || 1) * 100) + "%" });
+          return ff.load().then(function (loaded) { document.fonts.add(loaded); });
+        });
+      })).then(refitAll, function () { delete fontsOn[spec.family]; });
+    });
+    if (!f.heading) html.removeAttribute("data-hf-noitalic");
+  }
+  function refitAll() {
+    pageEls.forEach(function (e) { fitWords(e); fitBook(e); fitActivity(e); fitQuote(e); fitTape(e); });
+  }
+
   function makePage(page, i) {
     var shows = page.shows || [];
     var hasPic = has(shows, "picture") && page.picture;
@@ -914,7 +1019,7 @@ export const READER_JS = String.raw`
     e.style.setProperty("--tilt", TILTS[i % TILTS.length] + "deg");
     if (kind === "cover") {
       if (bleed) e.appendChild(picture(page.picture));
-      e.appendChild(el("h1", null, config.title || ""));
+      e.appendChild(headEl("h1", null, config.title || ""));
       if (hasPic && !bleed) e.appendChild(picture(page.picture)); else e.appendChild(el("div", "pic"));
       if (has(shows, "subtitle") && String(page.subtitle || "").trim()) e.appendChild(el("p", "sub", page.subtitle));
       if (config.handle) e.appendChild(el("p", "by", "by @" + config.handle));
@@ -928,14 +1033,14 @@ export const READER_JS = String.raw`
       e.appendChild(el("div", "spacer"));
       if (heading || hasWords) {
         var band = el("div", "band");
-        if (heading) band.appendChild(el("h2", null, page.heading));
+        if (heading) band.appendChild(headEl("h2", null, page.heading));
         if (hasWords) band.appendChild(wordsBlock(page.words));
         e.appendChild(band);
       }
     } else if (page.layout === "tile") {
       // A tile: the creator's own tile, live on the page once tapped.
       e.classList.add("tile-page");
-      if (heading) e.appendChild(el("h2", null, page.heading));
+      if (heading) e.appendChild(headEl("h2", null, page.heading));
       e.appendChild(tileBox(page));
       if (hasWords) { e.classList.add("has-words"); e.appendChild(wordsBlock(page.words)); }
     } else if (page.layout === "tape") {
@@ -946,7 +1051,7 @@ export const READER_JS = String.raw`
       // A book: its cover, title, author, stars and status, then a line from the review.
       e.classList.add("book-page");
       bookBlock(page).forEach(function (n) { e.appendChild(n); });
-      if (hasWords) { e.classList.add("has-words"); var rv = wordsBlock(page.words); rv.classList.add("review"); e.appendChild(rv); }
+      if (hasWords) { e.classList.add("has-words"); var rv = wordsBlock(page.words, false); rv.classList.add("review"); e.appendChild(rv); }
     } else if (page.layout === "activity") {
       // An activity: the route, the elevation profile, the stats, then words of the creator's own.
       e.classList.add("activity-page");
@@ -956,13 +1061,13 @@ export const READER_JS = String.raw`
       // Big quote: the words set large (shrunk to fit if long), who said it below.
       e.classList.add("quote");
       var box = el("div", "quote-box");
-      var q = wordsBlock(page.words);
+      var q = wordsBlock(page.words, false);
       q.className = "big";
       box.appendChild(q);
       if (has(shows, "subtitle") && String(page.subtitle || "").trim()) box.appendChild(el("p", "who", "— " + page.subtitle));
       e.appendChild(box);
     } else {
-      if (heading) e.appendChild(el("h2", null, page.heading));
+      if (heading) e.appendChild(headEl("h2", null, page.heading));
       if (hasPic) e.appendChild(picture(page.picture));
       if (hasWords && !bleed) e.appendChild(wordsBlock(page.words));
       if (!hasPic && !hasWords) e.appendChild(el("div", "words"));
@@ -1851,6 +1956,7 @@ export const READER_JS = String.raw`
     if (creditsOpen) creditsOpen.shut();
     root.textContent = "";
     applyLook();
+    applyFonts();
     size = SIZES[config.paper] || SIZES.letter;
     stage = el("div", "stage");
     deck = el("div", "deck");
@@ -1945,7 +2051,7 @@ export const READER_JS = String.raw`
       if (!openBtn) {
         openBtn = el("button", "open");
         openBtn.type = "button";
-        openBtn.setAttribute("aria-label", "Open the zine: " + (config.title || ""));
+        openBtn.setAttribute("aria-label", "Open the zine: " + plainOf(config.title || ""));
         openBtn.appendChild(el("span", null, "Tap to read"));
         openBtn.addEventListener("click", function () { forced = true; current = 0; layout(); });
         stage.appendChild(openBtn);
@@ -2048,11 +2154,11 @@ export const READER_JS = String.raw`
         if (keep) goto(keep);
       } else if (e.data.zine === "goto") {
         goto(e.data.id);
-      } else if ((e.data.zine === "clip" || e.data.zine === "piece") && clipAsks[e.data.src]) {
+      } else if ((e.data.zine === "clip" || e.data.zine === "piece" || e.data.zine === "font") && clipAsks[e.data.src]) {
         var ask = clipAsks[e.data.src];
         delete clipAsks[e.data.src];
         if (e.data.bytes) ask.resolve(new Blob([e.data.bytes], { type: e.data.type || (e.data.zine === "clip" ? "audio/mpeg" : "") }));
-        else ask.reject(new Error(e.data.error || (e.data.zine === "clip" ? "the sound isn't ready" : "the tile isn't ready")));
+        else ask.reject(new Error(e.data.error || (e.data.zine === "clip" ? "the sound isn't ready" : e.data.zine === "font" ? "the font isn't ready" : "the tile isn't ready")));
       }
     });
     try { window.parent.postMessage({ zine: "ready" }, "*"); } catch (e) {}

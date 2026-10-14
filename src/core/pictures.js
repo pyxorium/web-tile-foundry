@@ -11,7 +11,15 @@ export const PICTURE_QUALITY = 0.82;
 /** Pictures bigger than this before shrinking are refused (they'd need too much memory). */
 export const PICTURE_MAX_INPUT_BYTES = 40 * 1024 * 1024;
 
-const READABLE = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/bmp"];
+const READABLE = ["image/jpeg", "image/png", "image/apng", "image/webp", "image/gif", "image/avif", "image/bmp"];
+
+// Animated pictures (v0.30.0): a GIF, an animated WebP or an APNG keeps its own
+// bytes (redrawing it would keep only its first frame), up to this size each.
+// A still of its first frame is made too: for readers whose device asks for
+// less motion, and for the card pictures. Plan: claude/zine-v030-plan.md.
+export const ANIMATED_MAX_BYTES = 3 * 1024 * 1024;
+export const STILL_MAX_SIDE = 900;
+export const ANIMATED_TYPES = Object.freeze(["image/gif", "image/webp", "image/png"]);
 
 /** The size a picture is scaled to: long side at most maxSide, never enlarged. */
 export function fitSize(width, height, maxSide = PICTURE_MAX_SIDE) {
@@ -26,7 +34,7 @@ export function pictureFileProblem(file) {
   if (type === "image/heic" || type === "image/heif" || /\.hei[cf]$/.test(name)) {
     return "This is an iPhone HEIC photo, which most browsers can't open. Save it as a JPEG first (on the iPhone: Share, then Save as JPEG, or set Camera > Formats to Most Compatible).";
   }
-  if (type && !READABLE.includes(type)) return "Choose a JPEG, PNG or WebP picture.";
+  if (type && !READABLE.includes(type)) return "Choose a JPEG, PNG, WebP or GIF picture.";
   if (file && file.size > PICTURE_MAX_INPUT_BYTES) return "This picture is very large (over 40 MB). Choose a smaller copy.";
   return null;
 }
@@ -96,4 +104,98 @@ export function clampCrop(picW, picH, boxW, boxH, crop) {
   const r = cropRect(picW, picH, boxW, boxH, 0.5, 0.5, crop.zoom);
   const limit = (v, size, box) => (size <= box ? 0.5 : Math.min(1 - box / (2 * size), Math.max(box / (2 * size), v)));
   return { x: limit(crop.x, r.w, boxW), y: limit(crop.y, r.h, boxH), zoom: crop.zoom };
+}
+
+// ---- Animated pictures (v0.30.0) ----
+
+function u32be(b, i) { return ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3]; }
+function u32le(b, i) { return b[i] + (b[i + 1] << 8) + (b[i + 2] << 16) + ((b[i + 3] << 24) >>> 0); }
+function tag(b, i) { return String.fromCharCode(b[i], b[i + 1], b[i + 2], b[i + 3]); }
+
+/** Whether GIF bytes hold more than one image (an animation). */
+export function gifFrames(b) {
+  if (b.length < 13 || tag(b, 0) !== "GIF8") return 0;
+  let i = 13;
+  if (b[10] & 0x80) i += 3 * (1 << ((b[10] & 7) + 1)); // the global colour table
+  let frames = 0;
+  const blocks = () => { while (i < b.length && b[i] !== 0) i += b[i] + 1; i++; };
+  while (i < b.length) {
+    const kind = b[i];
+    if (kind === 0x3b) break; // the end
+    if (kind === 0x21) { i += 2; blocks(); continue; } // an extension
+    if (kind !== 0x2c) break; // not a GIF block: stop counting
+    frames++;
+    if (frames > 1) return frames;
+    const flags = b[i + 9];
+    i += 10;
+    if (flags & 0x80) i += 3 * (1 << ((flags & 7) + 1)); // a local colour table
+    i += 1; // the LZW code size
+    blocks();
+  }
+  return frames;
+}
+
+/** Whether WebP bytes are an animated WebP (an ANIM chunk, or the VP8X animation flag). */
+export function webpAnimated(b) {
+  if (b.length < 21 || tag(b, 0) !== "RIFF" || tag(b, 8) !== "WEBP") return false;
+  let i = 12;
+  while (i + 8 <= b.length) {
+    const id = tag(b, i), size = u32le(b, i + 4);
+    if (id === "VP8X" && (b[i + 8] & 0x02)) return true;
+    if (id === "ANIM" || id === "ANMF") return true;
+    i += 8 + size + (size & 1);
+  }
+  return false;
+}
+
+/** Whether PNG bytes are an APNG: an acTL chunk (with more than one frame) before the first IDAT. */
+export function pngAnimated(b) {
+  if (b.length < 16 || b[0] !== 0x89 || tag(b, 1).slice(0, 3) !== "PNG") return false;
+  let i = 8;
+  while (i + 12 <= b.length) {
+    const size = u32be(b, i), id = tag(b, i + 4);
+    if (id === "acTL") return u32be(b, i + 8) > 1;
+    if (id === "IDAT" || id === "IEND") return false;
+    i += 12 + size;
+  }
+  return false;
+}
+
+/** The type of an animated picture ("image/gif", "image/webp" or "image/png"), or null for a still one. */
+export function animatedType(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  if (gifFrames(b) > 1) return "image/gif";
+  if (webpAnimated(b)) return "image/webp";
+  if (pngAnimated(b)) return "image/png";
+  return null;
+}
+
+/** "This animation is 7.2 MB; a page can hold one up to 3 MB. …" */
+export function animationTooBig(size) {
+  const mb = (n) => `${(n / 1024 / 1024).toFixed(1).replace(/\.0$/, "")} MB`;
+  return `This animation is ${mb(size)}; a page can hold one up to ${mb(ANIMATED_MAX_BYTES)}. Try a shorter or smaller one, or save it as an animated WebP (often much smaller than a GIF).`;
+}
+
+/**
+ * A picture for a page, from the creator's computer: an animated one keeps
+ * its own bytes, with a still of its first frame; any other is shrunk as
+ * before (shrinkPicture). Returns shrinkPicture's shape, plus for an animation
+ *   { animated: true, still: { bytes, contentType, width, height } }
+ */
+export async function preparePicture(file) {
+  const problem = pictureFileProblem(file);
+  if (problem) throw new Error(problem);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const type = animatedType(bytes);
+  if (!type) return shrinkPicture(file);
+  if (bytes.length > ANIMATED_MAX_BYTES) throw new Error(animationTooBig(bytes.length));
+  // Its first frame, for its size and its still.
+  const still = await shrinkPicture(new Blob([bytes], { type }), { maxSide: STILL_MAX_SIDE });
+  let width = still.width, height = still.height;
+  try {
+    const bitmap = await createImageBitmap(new Blob([bytes], { type }));
+    width = bitmap.width; height = bitmap.height;
+    if (bitmap.close) bitmap.close();
+  } catch { /* the still's size, scaled the same way, is close enough */ }
+  return { bytes, contentType: type, width, height, animated: true, still };
 }

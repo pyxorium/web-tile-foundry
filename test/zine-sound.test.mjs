@@ -204,7 +204,7 @@ test("the preview asks the Foundry for sounds by a changing address", () => {
 test("the reader loads files once, page by page, and plays sounds", () => {
   assert.doesNotThrow(() => new Function(READER_JS));
   // Pictures wait for their page (data-src), and each file is fetched once and kept.
-  assert.ok(READER_JS.includes('img.setAttribute("data-src", pic.src)'));
+  assert.ok(READER_JS.includes('img.setAttribute("data-src", motionSrc(pic))'), "a picture's address waits in data-src (its still, for less motion: v0.30.0)");
   assert.ok(!/img\.src = pic\.src/.test(READER_JS));
   assert.ok(READER_JS.includes("wantPage(i, true)") && READER_JS.includes("wantPage(i, false)"));
   assert.ok(READER_JS.includes("URL.createObjectURL"));

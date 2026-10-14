@@ -8,6 +8,8 @@ import { tileForReader, tapeForReader, ATMOSYNTH_HOME } from "./piece.js";
 import { bookForReader, BOOKHIVE } from "./books.js";
 import { activityForReader, TREELINE } from "./activities.js";
 import { tilePairs, cleanShortName } from "./pairs.js";
+import { mdRoom } from "./markdown.js";
+import { fontsForReader, fontPath, wordsWidth, cleanFont } from "./fonts.js";
 export { cropRect } from "../../core/pictures.js";
 
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
@@ -130,9 +132,21 @@ export const DESCRIPTION_MAX = 200;
 // system fonts) at the smallest text size the reader allows; the reader
 // shrinks long words a little to fit. See the stage 1 notes in the plan.
 export const NEWLINE_COST = 20;
-export function wordSize(text) {
+// v0.30.0: words count as they read (light Markdown's markers and link
+// addresses take no room; bold and code a little more), on every layout but the
+// big quote and a book's review line (plain text, as written). A words font
+// wider than the reader's own text (fonts.js) uses the room up faster.
+export const PLAIN_WORDS = Object.freeze(["quote", "book"]);
+export function richWords(page) {
+  return !PLAIN_WORDS.includes(page && page.layout);
+}
+export function wordSize(text, page = null, spec = null, values = null) {
   const t = String(text || "");
-  return t.length + NEWLINE_COST * (t.match(/\n/g) || []).length;
+  const rich = !page || richWords(page);
+  const breaks = (t.match(/\n/g) || []).length;
+  const chars = rich ? mdRoom(t, true) + breaks : t.length;
+  const wide = page && page.layout !== "quote" ? wordsWidth(values) : 1;
+  return Math.ceil(chars * wide) + NEWLINE_COST * breaks;
 }
 
 // [without a heading, with a heading], for pages 1 to 6 and for the back
@@ -243,11 +257,25 @@ export function showsOf(spec, page) {
 }
 
 const EXT = { "image/webp": "webp", "image/jpeg": "jpg" };
+// Animated pictures keep their own kind of file (v0.30.0).
+const ANIMATED_EXT = { "image/gif": "gif", "image/webp": "webp", "image/png": "png" };
 /** Where a page's picture goes in the tile. */
 export function picturePath(page) {
-  const ext = EXT[page.picture && page.picture.contentType];
+  const pic = page.picture;
+  const ext = pic && pic.animated ? ANIMATED_EXT[pic.contentType] : EXT[pic && pic.contentType];
   if (!ext) throw new Error(`The picture on ${page.id} has an unknown type.`);
   return `/pictures/${page.id}.${ext}`;
+}
+/** Where an animated picture's still (its first frame) goes in the tile. */
+export function stillPath(page) {
+  const still = page.picture && page.picture.still;
+  const ext = EXT[still && still.contentType];
+  if (!ext) throw new Error(`The still of the picture on ${page.id} has an unknown type.`);
+  return `/pictures/${page.id}-still.${ext}`;
+}
+/** Whether a page's picture moves (and so has a still). */
+export function isAnimated(pic) {
+  return Boolean(pic && pic.animated && pic.still && pic.still.bytes);
 }
 
 /** Text as it goes into the zine: plain, newlines tidied, trimmed. */
@@ -298,7 +326,7 @@ export function cleanCrop(crop) {
  * cleaned. `src(page)` gives a picture's address (its tile path, or in the
  * Foundry preview a data: address). `paper` and `look` size filled pictures.
  */
-export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id), tileSrc = null, count } = {}) {
+export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id), tileSrc = null, count, stillSrc = stillPath } = {}) {
   const used = pagesInUse(pages, count);
   const specs = pagesFor(count);
   const shown = specs.map((spec, i) => {
@@ -328,6 +356,8 @@ export function zinePages(pages, src = picturePath, { paper, look, sprite = fals
     out.picture = null;
     if (shows.includes("picture") && p.picture) {
       out.picture = { src: src({ ...p, id: spec.id }), width: p.picture.width, height: p.picture.height, alt: cleanText(p.picture.alt, 200).replace(/\n+/g, " ") };
+      // An animated picture (v0.30.0): its still, for readers who ask for less motion.
+      if (isAnimated(p.picture)) out.picture.still = stillSrc({ ...p, id: spec.id });
       const frame = fillFrame(spec, { ...p, layout: p.layout }, { paper, look });
       if (frame) {
         out.picture.fill = true;
@@ -399,7 +429,7 @@ export function zineCredits(pages, shown, withSprite, count) {
   return out;
 }
 
-export function zineConfig({ title, handle, paper, look, ink, pages, pageCount, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, tileSrc, preview = false }) {
+export function zineConfig({ title, handle, paper, look, ink, pages, pageCount, made, src, sprite = null, spriteSrc = SPRITE_PATH, soundSrc, tileSrc, stillSrc, headingFont, wordsFont, fontSrc = fontPath, preview = false }) {
   const count = pageCountOf(pageCount);
   const withSprite = usesSprite(pages, sprite, count);
   const config = {
@@ -411,8 +441,11 @@ export function zineConfig({ title, handle, paper, look, ink, pages, pageCount, 
     handle: String(handle || "").replace(/^@/, "").trim(),
     made: made || "",
     makeUrl: MAKE_URL,
-    pages: zinePages(pages, src, { paper, look, count, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}), ...(tileSrc ? { tileSrc } : {}) }),
+    pages: zinePages(pages, src, { paper, look, count, sprite: withSprite, ...(soundSrc ? { soundSrc } : {}), ...(tileSrc ? { tileSrc } : {}), ...(stillSrc ? { stillSrc } : {}) }),
   };
+  // Zine fonts (v0.30.0): a heading font and a words font, when not the look's own.
+  const fonts = fontsForReader({ headingFont: cleanFont("heading", headingFont), wordsFont: cleanFont("words", wordsFont) }, fontSrc);
+  if (fonts) config.fonts = fonts;
   // Credits (stage 5): what came from other apps, and on which pages. The back
   // page's footer has a "Credits" button that opens them as a sheet.
   const credits = zineCredits(pages, config.pages, withSprite, count);

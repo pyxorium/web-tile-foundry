@@ -5,3 +5,5 @@ dist/
 
 # Backups made by scripts/revise-tape.mjs and scripts/set-tile-screenshot.mjs
 scripts/backups/
+# The zine fonts as downloaded (scripts/make-zine-fonts.py makes public/zine-fonts/ from them).
+font-sources/

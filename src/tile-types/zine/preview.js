@@ -55,6 +55,17 @@ function pictureSrc(page) {
   return uri;
 }
 
+// An animated picture's still (v0.30.0), for readers who ask for less motion.
+function stillSrc(page) {
+  const still = page.picture.still;
+  let uri = dataUris.get(still.bytes);
+  if (!uri) {
+    uri = bytesToDataUri(still.bytes, still.contentType);
+    dataUris.set(still.bytes, uri);
+  }
+  return uri;
+}
+
 function spriteSrc(sprite) {
   let uri = dataUris.get(sprite.bytes);
   if (!uri) {
@@ -81,6 +92,11 @@ export function previewConfig(values) {
     spriteSrc: values.sprite && values.sprite.bytes ? spriteSrc(values.sprite) : undefined,
     soundSrc: clipSrc,
     tileSrc: tileSrc(values.pages),
+    stillSrc,
+    // Zine fonts (v0.30.0): the reader asks for each file by "font:<file>".
+    headingFont: values.headingFont,
+    wordsFont: values.wordsFont,
+    fontSrc: (file) => `font:${file}`,
     preview: true,
   });
   // Decorating needs every sticker and the look's colours, even on a page with no marks yet.
@@ -174,6 +190,14 @@ export function mountZinePreview(element, { values, setValue, onSelect }) {
       } else {
         send({ zine: "piece", src: m.src, error: "this tile has changed since" });
       }
+    } else if (m.zine === "font" && typeof m.src === "string") {
+      // The reader wants one of the zine fonts' files (v0.30.0): the Foundry's own copy.
+      const file = m.src.slice(5);
+      import("./fontfiles.js").then(({ fontFileBytes }) => fontFileBytes(file)).then((bytes) => {
+        if (disposed || !frame.contentWindow) return;
+        const copy = bytes.slice().buffer;
+        frame.contentWindow.postMessage({ zine: "font", src: m.src, bytes: copy, type: "font/woff2" }, "*", [copy]);
+      }, (err) => send({ zine: "font", src: m.src, error: String((err && err.message) || err) }));
     } else if (m.zine === "selected") {
       deco.selected = Boolean(m.has);
       drawBar();

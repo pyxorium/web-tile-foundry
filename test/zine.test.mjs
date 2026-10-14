@@ -176,7 +176,7 @@ test("pictures: sizes, refused files", () => {
   assert.deepEqual(fitSize(3000, 4000, 1000), { width: 750, height: 1000 });
   assert.match(pictureFileProblem({ type: "image/heic", name: "IMG_1.HEIC", size: 1 }), /HEIC/);
   assert.match(pictureFileProblem({ type: "", name: "x.heif", size: 1 }), /HEIC/);
-  assert.match(pictureFileProblem({ type: "application/pdf", name: "x.pdf", size: 1 }), /JPEG, PNG or WebP/);
+  assert.match(pictureFileProblem({ type: "application/pdf", name: "x.pdf", size: 1 }), /JPEG, PNG, WebP or GIF/);
   assert.match(pictureFileProblem({ type: "image/jpeg", name: "x.jpg", size: 50 * 1024 * 1024 }), /very large/);
   assert.equal(pictureFileProblem({ type: "image/jpeg", name: "x.jpg", size: 1000 }), null);
   assert.throws(() => picturePath({ id: "p1", picture: { contentType: "image/png" } }), /unknown type/);

@@ -152,7 +152,7 @@ test("the reader: starts when its page is shown, files handed over, stop off the
   assert.ok(READER_JS.includes('if (t.by && t.by !== "@" + config.handle)'), "the maker shows only when it isn't the zine's author");
   assert.ok(!READER_CSS.includes(".tile-play"), "no Play button");
   assert.ok(READER_JS.includes('frame.addEventListener("click"'), "tapping a tile that failed (or isn't started) starts it");
-  assert.ok(/\/\^\(clip\|piece\):\//.test(READER_JS), "the preview asks the Foundry for tile files");
+  assert.ok(/\/\^\(clip\|piece\|font\):\//.test(READER_JS), "the preview asks the Foundry for tile files (and zine fonts, v0.30.0)");
   for (const look of ["photocopy", "collage", "riso"]) assert.ok(READER_CSS.includes(`[data-look="${look}"] .zp .tileframe`), look);
   assert.ok(!/\[data-look="photocopy"\] \.zp \.tileframe[^{]*\{[^}]*filter/.test(READER_CSS), "the tile keeps its own colors");
   const html = renderZineHtml({ title: "T", config: zineConfig({ title: "T", handle: "x", paper: "letter", look: "clean", pages: sample().pages }) });

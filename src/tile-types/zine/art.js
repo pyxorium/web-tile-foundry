@@ -4,6 +4,8 @@ import { lookOf, lookColors, hexToRgb, isLightInk } from "./looks.js";
 import { mapLayout } from "./activities.js";
 import { cropRect } from "../../core/pictures.js";
 import { marksSvg, markColors } from "./marks.js";
+import { mdRuns, mdPlain } from "./markdown.js";
+import { fontOf, cleanFont } from "./fonts.js";
 
 // The zine's card pictures, drawn in the browser from the creator's own pages:
 //   banner 1280x720: the cover with page 1 beside it, open on the desk
@@ -61,6 +63,8 @@ async function pngOf(c) {
 
 async function bitmapOf(picture) {
   if (!picture || !picture.bytes) return null;
+  // A picture that moves (v0.30.0) is drawn from its still (its first frame).
+  if (picture.animated && picture.still && picture.still.bytes) picture = picture.still;
   try {
     return await createImageBitmap(new Blob([picture.bytes], { type: picture.contentType }));
   } catch {
@@ -126,6 +130,42 @@ function wrap(g, text, width, max) {
     if (out.length >= max) return out.slice(0, max);
   }
   return out;
+}
+
+// Light Markdown in the title and headings (v0.30.0): lines of styled pieces.
+// font(style) gives the canvas font for { b, i }.
+function wrapRuns(g, text, width, max, font) {
+  const tokens = [];
+  for (const r of mdRuns(text, false)) {
+    for (const part of r.t.split(/(\s+)/)) if (part) tokens.push({ t: part, b: Boolean(r.b), i: Boolean(r.i), space: /^\s+$/.test(part) });
+  }
+  const measure = (tok) => { g.font = font(tok); return g.measureText(tok.t).width; };
+  const lines = [];
+  let line = [], w = 0;
+  for (const tok of tokens) {
+    if (tok.space && !line.length) continue;
+    const tw = measure(tok);
+    if (!tok.space && line.length && w + tw > width) {
+      while (line.length && line[line.length - 1].space) w -= line.pop().w;
+      lines.push({ pieces: line, w });
+      if (lines.length >= max) return lines;
+      line = []; w = 0;
+    }
+    if (tok.space && !line.length) continue;
+    line.push({ ...tok, w: tw });
+    w += tw;
+  }
+  while (line.length && line[line.length - 1].space) w -= line.pop().w;
+  if (line.length) lines.push({ pieces: line, w });
+  return lines.slice(0, max);
+}
+function fillRuns(g, line, x, y, font) {
+  let cx = x;
+  for (const p of line.pieces) {
+    g.font = font(p);
+    g.fillText(p.t, cx, y);
+    cx += p.w;
+  }
 }
 
 function fitInto(bw, bh, x, y, w, h) {
@@ -275,59 +315,82 @@ function drawPicture(g, bitmap, box, u, style, tilt, pic) {
   return { y: top, h: r.h };
 }
 
+function titleFont(style, u) {
+  const size = style.look === "photocopy" ? 29 : style.look === "collage" ? 27 : 30;
+  const family = style.headingFont ? style.headingFont.family : style.look === "photocopy" ? MONO : SANS;
+  const base = style.headingFont ? style.headingFont.weight : style.look === "photocopy" ? 700 : 800;
+  const strong = style.headingFont ? style.headingFont.strong : 900;
+  const plainItalic = style.headingFont && !style.headingFont.italic;
+  return (p) => {
+    const fam = p.i && plainItalic ? (style.look === "photocopy" ? MONO : SANS) : family;
+    const wt = p.i && plainItalic ? (style.look === "photocopy" ? 700 : 800) : p.b ? strong : base;
+    return `${p.i ? "italic " : ""}${wt} ${size * u}px ${fam}`;
+  };
+}
+
 function drawTitle(g, x, y, width, u, title, style, banded = false) {
   g.textBaseline = "top";
-  if (style.look === "photocopy") g.font = `700 ${29 * u}px ${MONO}`;
-  else if (style.look === "collage") g.font = `800 ${27 * u}px ${SANS}`;
-  else g.font = `800 ${30 * u}px ${SANS}`;
-  const lines = wrap(g, title, width - (style.look === "collage" ? 20 * u : 0), 3);
+  const font = titleFont(style, u);
+  const lines = wrapRuns(g, title, width - (style.look === "collage" ? 20 * u : 0), 3, font);
   const lh = (style.look === "collage" ? 30 : 32) * u;
   let cy = y;
   if (style.look === "collage" && lines.length) {
-    const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 20 * u;
+    const w = Math.max(...lines.map((l) => l.w)) + 20 * u;
     g.save();
     g.translate(x - 4 * u, cy);
     g.rotate((-1.5 * Math.PI) / 180);
     g.fillStyle = style.accent;
     g.fillRect(0, 0, w, lines.length * lh + 12 * u);
     g.fillStyle = style.paper;
-    lines.forEach((line, i) => g.fillText(line, 10 * u, 6 * u + i * lh));
+    lines.forEach((line, i) => fillRuns(g, line, 10 * u, 6 * u + i * lh, font));
     g.restore();
     return cy + lines.length * lh + 22 * u;
   }
   if (banded && lines.length) {
-    const w = Math.max(...lines.map((l) => g.measureText(l).width));
+    const w = Math.max(...lines.map((l) => l.w));
     band(g, x - 10 * u, cy - 6 * u, w + 20 * u, lines.length * lh + 13 * u, style);
   }
   for (const line of lines) {
     if (style.look === "riso") {
       g.fillStyle = style.riso.b;
       g.globalAlpha = 0.8;
-      g.fillText(line, x + 2 * u, cy + 2 * u);
+      fillRuns(g, line, x + 2 * u, cy + 2 * u, font);
       g.globalAlpha = 1;
     }
     g.fillStyle = style.ink;
-    g.fillText(line, x, cy);
+    fillRuns(g, line, x, cy, font);
     cy += lh;
   }
   return cy + 6 * u;
 }
 
+function headingFont(style, u, size) {
+  const family = style.headingFont ? style.headingFont.family : style.heading;
+  const base = style.headingFont ? style.headingFont.weight : style.look === "photocopy" ? 700 : 750;
+  const strong = style.headingFont ? style.headingFont.strong : 900;
+  const plainItalic = style.headingFont && !style.headingFont.italic;
+  return (p) => {
+    const fam = p.i && plainItalic ? style.heading : family;
+    const wt = p.i && plainItalic ? (style.look === "photocopy" ? 700 : 750) : p.b ? strong : base;
+    return `${p.i ? "italic " : ""}${wt} ${size * u}px ${fam}`;
+  };
+}
+
 function drawHeading(g, x, y, width, u, text, style) {
   g.textBaseline = "top";
   const size = style.look === "photocopy" ? 18 : style.look === "collage" ? 17 : 19;
-  g.font = `${style.look === "photocopy" ? 700 : 750} ${size * u}px ${style.heading}`;
-  const lines = wrap(g, text, width - (style.look === "collage" ? 16 * u : 0), 2);
+  const font = headingFont(style, u, size);
+  const lines = wrapRuns(g, text, width - (style.look === "collage" ? 16 * u : 0), 2, font);
   const lh = size * 1.2 * u;
   if (style.look === "collage") {
-    const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 16 * u;
+    const w = Math.max(...lines.map((l) => l.w)) + 16 * u;
     g.save();
     g.translate(x + 2 * u, y);
     g.rotate((-1.2 * Math.PI) / 180);
     g.fillStyle = style.ink;
     g.fillRect(0, 0, w, lines.length * lh + 7 * u);
     g.fillStyle = style.paper;
-    lines.forEach((line, i) => g.fillText(line, 8 * u, 3 * u + i * lh));
+    lines.forEach((line, i) => fillRuns(g, line, 8 * u, 3 * u + i * lh, font));
     g.restore();
     return y + lines.length * lh + 17 * u;
   }
@@ -336,11 +399,11 @@ function drawHeading(g, x, y, width, u, text, style) {
     if (style.look === "riso") {
       g.fillStyle = style.riso.b;
       g.globalAlpha = 0.6;
-      g.fillRect(x - 3 * u, cy + lh * 0.58, g.measureText(line).width + 6 * u, lh * 0.34);
+      g.fillRect(x - 3 * u, cy + lh * 0.58, line.w + 6 * u, lh * 0.34);
       g.globalAlpha = 1;
     }
     g.fillStyle = style.ink;
-    g.fillText(line, x, cy);
+    fillRuns(g, line, x, cy, font);
     cy += lh;
   }
   return cy + 8 * u;
@@ -355,11 +418,11 @@ function drawCover(g, x, y, w, h, u, { title, subtitle, handle, bitmap, pic, lan
   let cy = drawTitle(g, x + padX, y + 28 * u, w - 2 * padX, u, title, style, bleed);
   let bottom = y + h - (lane ? 20 + 58 : 20) * u; // a sprite keeps a lane at the bottom
   const foot = [];
-  if (handle) foot.push({ text: `by @${handle}`, size: 12, color: style.soft });
-  if (subtitle) foot.unshift({ text: subtitle, size: 15, color: style.ink });
+  if (handle) foot.push({ text: `by @${handle}`, size: 12, color: style.soft, family: SANS });
+  if (subtitle) foot.unshift({ text: subtitle, size: 15, color: style.ink, family: style.words || SANS });
   g.textBaseline = "top";
   for (let i = foot.length - 1; i >= 0; i--) {
-    g.font = `${foot[i].size * u}px ${SANS}`;
+    g.font = `${foot[i].size * u}px ${foot[i].family}`;
     const t = wrap(g, foot[i].text, w - 2 * padX, 1)[0] || "";
     bottom -= foot[i].size * 1.35 * u;
     if (bleed) band(g, x + padX - 8 * u, bottom - 3 * u, g.measureText(t).width + 16 * u, foot[i].size * 1.35 * u + 6 * u, style);
@@ -409,8 +472,8 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
     if (page.layout === "overlay" && (page.heading || page.words)) {
       // Words over picture: the heading and words on a band near the bottom.
       const pad = 22 * u, inner = w - 2 * pad - 8 * u;
-      g.font = `${14 * u}px ${SANS}`;
-      const lines = wrap(g, page.words, inner, 6);
+      g.font = `${14 * u}px ${style.words || SANS}`;
+      const lines = wrap(g, mdPlain(page.words), inner, 6);
       const head = page.heading ? 30 * u : 0;
       const bh = head + lines.length * 20 * u + 22 * u;
       const by = y + h - (page.lane ? 84 : 26) * u - bh;
@@ -418,7 +481,7 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
       let cy = by + 11 * u;
       if (page.heading) cy = drawHeading(g, x + pad + 4 * u, cy, inner, u, page.heading, style) - 6 * u;
       g.fillStyle = style.ink;
-      g.font = `${14 * u}px ${SANS}`;
+      g.font = `${14 * u}px ${style.words || SANS}`;
       g.textBaseline = "top";
       for (const line of lines) { g.fillText(line, x + pad + 4 * u, cy); cy += 20 * u; }
     }
@@ -455,10 +518,10 @@ function drawPage(g, x, y, w, h, u, page, bitmap, style) {
   }
   if (hasWords) {
     g.fillStyle = style.ink;
-    g.font = `${14 * u}px ${SANS}`;
+    g.font = `${14 * u}px ${style.words || SANS}`;
     g.textBaseline = "top";
     const max = Math.max(0, Math.floor((bottom - cy) / (20 * u)));
-    for (const line of wrap(g, page.words, inner, max)) { g.fillText(line, x + pad, cy); cy += 20 * u; }
+    for (const line of wrap(g, mdPlain(page.words), inner, max)) { g.fillText(line, x + pad, cy); cy += 20 * u; }
   }
   grain(g, x, y, w, h, style, u);
 }
@@ -667,8 +730,8 @@ function drawActivityPage(g, x, y, w, h, u, page, style) {
   cy += 18 * u;
   cy = drawHeading(g, x + pad, cy, inner, u, a.title, style);
   // What goes below the route, from the bottom up: words, stats, profile.
-  g.font = `${14 * u}px ${SANS}`;
-  const words = page.words ? wrap(g, page.words.replace(/\s+/g, " "), inner, 4) : [];
+  g.font = `${14 * u}px ${style.words || SANS}`;
+  const words = page.words ? wrap(g, mdPlain(page.words).replace(/\s+/g, " "), inner, 4) : [];
   const statsH = a.stats && a.stats.length ? 44 * u : 0;
   const profH = a.profile ? 70 * u : 0;
   const low = bottom - words.length * 20 * u - (words.length ? 4 * u : 0);
@@ -813,7 +876,7 @@ function drawActivityPage(g, x, y, w, h, u, page, style) {
     });
   }
   if (words.length) {
-    g.font = `${14 * u}px ${SANS}`;
+    g.font = `${14 * u}px ${style.words || SANS}`;
     g.fillStyle = style.ink;
     let wy = statsY + statsH + 4 * u;
     for (const line of words) { g.fillText(line, x + pad, wy); wy += 20 * u; }
@@ -824,9 +887,30 @@ function drawActivityPage(g, x, y, w, h, u, page, style) {
  * Draws the card pictures. `values` are the panel's values (name, handle,
  * paper, look, ink, pages). Returns { icon, banner }: PNG bytes.
  */
+/**
+ * The zine fonts on this page, for drawing (v0.30.0): { headingFont?, words? },
+ * each font scaled as the reader scales it.
+ */
+async function artFonts(values) {
+  const out = {};
+  const h = fontOf(cleanFont("heading", values.headingFont));
+  const w = fontOf(cleanFont("words", values.wordsFont));
+  if (!h && !w) return out;
+  const { useFontHere } = await import("./fontfiles.js");
+  if (h) {
+    const family = `zine-art-heading-${h.id}`;
+    if (await useFontHere(h.id, family, h.headAdjust)) out.headingFont = { family: `"${family}", ${h.fallback}`, weight: h.headWeight, strong: h.strongWeight, italic: h.italic };
+  }
+  if (w) {
+    const family = `zine-art-words-${w.id}`;
+    if (await useFontHere(w.id, family, w.wordsAdjust)) out.words = `"${family}", ${w.fallback}`;
+  }
+  return out;
+}
+
 export async function drawZineArt(values) {
   const size = PAGE_SIZES[values.paper] || PAGE_SIZES.letter;
-  const style = artStyle(values.look, values.ink);
+  const style = { ...artStyle(values.look, values.ink), ...(await artFonts(values)) };
   // Only the pages in use: the banner shows the cover and the next page (page 1,
   // or the back of a 2-page zine, owner Oct 11).
   const pages = zinePages(values.pages || [], () => "", { paper: values.paper, look: values.look, count: values.pageCount });

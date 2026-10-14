@@ -2,11 +2,12 @@ import { makeZineTile } from "./tile.js";
 import {
   PAGES, LAYOUTS, PAPERS, HEADING_MAX, SUBTITLE_MAX, TITLE_MAX, DESCRIPTION_MAX,
   emptyPages, defaultPaper, wordLimit, wordSize, madeLabel, fillFrame, FILL_ZOOM_MAX, usableSprite, showsOf,
-  PAGE_COUNT_OPTIONS, DEFAULT_PAGE_COUNT, pageCountOf, pagesFor, pagesInUse, pageInUse, asideNote,
+  PAGE_COUNT_OPTIONS, DEFAULT_PAGE_COUNT, pageCountOf, pagesFor, pagesInUse, pageInUse, asideNote, richWords,
 } from "./pages.js";
 import { LOOK_OPTIONS, INK_OPTIONS, DEFAULT_LOOK, DEFAULT_INK } from "./looks.js";
 import { soundProblems, soundBytes } from "./sound.js";
 import { pieceProblems, pieceBytes } from "./piece.js";
+import { HEADING_FONT_OPTIONS, WORDS_FONT_OPTIONS, FONT_LOOK, cleanFont } from "./fonts.js";
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || "/";
 
@@ -72,7 +73,7 @@ export const zine = {
       key: "name",
       kind: "text",
       label: "Title",
-      help: "Big on the cover, and the tile's name.",
+      help: "Big on the cover, and the tile's name. **bold** and *italic* work on the cover.",
       required: true,
       maxLength: TITLE_MAX,
     },
@@ -103,6 +104,26 @@ export const zine = {
       label: "Look",
       help: "Choose a print theme. The live preview shows the look.",
       options: LOOK_OPTIONS,
+    },
+    {
+      // Zine fonts (v0.30.0): two pills side by side under the look.
+      key: "headingFont",
+      kind: "choice",
+      display: "menu",
+      row: "fonts",
+      label: "Heading font",
+      options: HEADING_FONT_OPTIONS,
+      fontFace: (id) => import("./fontfiles.js").then((m) => m.useFontHere(id, undefined, m.menuScale(id))),
+    },
+    {
+      key: "wordsFont",
+      kind: "choice",
+      display: "menu",
+      row: "fonts",
+      label: "Words font",
+      options: WORDS_FONT_OPTIONS,
+      fontFace: (id) => import("./fontfiles.js").then((m) => m.useFontHere(id, undefined, m.menuScale(id))),
+      rowHelp: "Fonts for the whole zine. Default uses the look's own.",
     },
     {
       key: "ink",
@@ -149,6 +170,13 @@ export const zine = {
       subtitleMax: SUBTITLE_MAX,
       wordLimit,
       wordSize,
+      // Light Markdown (v0.30.0): words boxes take all four kinds, headings bold and italic.
+      wordsHint: (spec, page) => (richWords(page) ? "**bold**, *italic*, `code`, [link](https://…)" : null),
+      headingHint: () => "**bold**, *italic*",
+      // Pictures from the computer that move (GIF, animated WebP, APNG) keep moving (v0.30.0).
+      animatedPictures: true,
+      // The kinds of picture, listed in the empty picture box (owner, Oct 14).
+      pictureTypes: ["JPG", "PNG", "WebP", "GIF", "AVIF"],
       // The shape a picture fills on a page (edge to edge on the cover and on picture-only pages).
       // Stage 5: pictures can also come from your Grain photos and PinkSea drawings.
       pictureSources: ["grain", "pinksea"],
@@ -215,6 +243,8 @@ export const zine = {
       paper: defaultPaper(),
       pageCount: DEFAULT_PAGE_COUNT,
       look: DEFAULT_LOOK,
+      headingFont: FONT_LOOK,
+      wordsFont: FONT_LOOK,
       ink: DEFAULT_INK,
       pages: emptyPages(),
       soundRights: false,
@@ -240,7 +270,16 @@ export const zine = {
       const { drawZineArt } = await import("./art.js");
       art = await drawZineArt(inputs);
     }
+    // The chosen fonts' files (v0.30.0), loaded from the Foundry's own copies.
+    const fontChoice = { headingFont: cleanFont("heading", inputs.headingFont), wordsFont: cleanFont("words", inputs.wordsFont) };
+    let fontBytes = {};
+    if (fontChoice.headingFont || fontChoice.wordsFont) {
+      const { loadFontBytes } = await import("./fontfiles.js");
+      fontBytes = await loadFontBytes(fontChoice);
+    }
     return makeZineTile({
+      ...fontChoice,
+      fontBytes,
       name: inputs.name,
       description: inputs.description,
       handle: inputs.handle,

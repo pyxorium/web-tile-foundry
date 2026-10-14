@@ -181,8 +181,96 @@ function SwatchChoice({ input, value, onChange, type, values }) {
   );
 }
 
+// A choice as a pill that opens a short menu (display: "menu", v0.30.0), like
+// "Choose picture": "Heading font: Fraunces ▾". An option's `font` (a zine font)
+// writes its name in that font (input.fontFace(id) loads it on this page).
+function MenuChoice({ input, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [, setLoaded] = useState(0);
+  const boxRef = useRef(null);
+  const itemsRef = useRef([]);
+  const current = input.options.find((o) => o.value === (value ?? "")) || input.options[0];
+  const family = (o) => (o.font ? `zine-menu-${o.font}` : undefined);
+
+  useEffect(() => {
+    if (!open || !input.fontFace) return;
+    let live = true;
+    input.options.forEach((o) => { if (o.font) input.fontFace(o.font).then(() => live && setLoaded((n) => n + 1)); });
+    return () => { live = false; };
+  }, [open, input]);
+  useEffect(() => {
+    if (current && current.font && input.fontFace) input.fontFace(current.font).then(() => setLoaded((n) => n + 1));
+  }, [current, input]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("pointerdown", away);
+    const at = Math.max(0, input.options.indexOf(current));
+    const t = setTimeout(() => itemsRef.current[at] && itemsRef.current[at].focus(), 0);
+    return () => { document.removeEventListener("pointerdown", away); clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  function pick(o) {
+    setOpen(false);
+    onChange(o.value);
+    const b = boxRef.current && boxRef.current.querySelector(".picture-menu-button");
+    if (b) b.focus();
+  }
+  function onKey(e) {
+    const items = itemsRef.current.filter(Boolean);
+    const at = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); setOpen(false); boxRef.current && boxRef.current.querySelector(".picture-menu-button").focus(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); items[(at + 1) % items.length].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); items[(at - 1 + items.length) % items.length].focus(); }
+    else if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
+    else if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === "Tab") setOpen(false);
+  }
+
+  return (
+    <div className="field field-menu">
+      <span className="picture-menu menu-choice" ref={boxRef}>
+        <button
+          type="button"
+          className="btn btn-quiet btn-small picture-menu-button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label={`${input.label}: ${current.label}`}
+          onClick={() => setOpen((o) => !o)}
+          onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}
+        >
+          <span className="menu-choice-label">{input.label}:</span>{" "}
+          <span style={{ fontFamily: family(current) }}>{current.label}</span>
+          <span className="picture-menu-caret" aria-hidden="true">▾</span>
+        </button>
+        {open && (
+          <ul className="picture-menu-list" role="menu" aria-label={input.label} onKeyDown={onKey}>
+            {input.options.map((o, i) => (
+              <li key={o.value || "look"} role="none">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={o === current}
+                  ref={(e) => { itemsRef.current[i] = e; }}
+                  className={`picture-menu-item menu-choice-item ${o === current ? "on" : ""}`}
+                  onClick={() => pick(o)}
+                >
+                  <span className="menu-choice-tick" aria-hidden="true">{o === current ? "✓" : ""}</span>
+                  <span style={{ fontFamily: family(o), fontSize: o.font ? "1.15em" : undefined }}>{o.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </span>
+    </div>
+  );
+}
+
 function ChoiceInput(props) {
   if (props.input.display === "swatches") return <SwatchChoice {...props} />;
+  if (props.input.display === "menu") return <MenuChoice {...props} />;
   const { input, value, onChange, values } = props;
   const note = input.note ? input.note(values || {}) : null;
   return (
@@ -706,8 +794,9 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
     setPictureError((x) => ({ ...x, [id]: null }));
     setBusy((x) => ({ ...x, [id]: true }));
     try {
-      const { shrinkPicture } = await import("../core/pictures.js");
-      const made = await shrinkPicture(file);
+      // Pictures that move keep their bytes, where the type allows it (v0.30.0).
+      const { shrinkPicture, preparePicture } = await import("../core/pictures.js");
+      const made = input.animatedPictures ? await preparePicture(file) : await shrinkPicture(file);
       patch(id, { picture: nextPicture(id, made, null) });
     } catch (err) {
       setPictureError((x) => ({ ...x, [id]: err.message || String(err) }));
@@ -725,8 +814,11 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
     const typed = before.alt && before.alt !== before.autoAlt ? before.alt : "";
     const fromApp = item && item.alt ? item.alt : "";
     const alt = typed || fromApp;
+    // A new picture replaces the old one entirely: an animation's still goes with it.
+    const { animated, still, ...rest } = made;
     return {
-      ...made,
+      ...rest,
+      ...(animated ? { animated: true, still } : {}),
       alt,
       ...(alt && alt === fromApp && !typed ? { autoAlt: fromApp } : {}),
       ...(before.fill ? { fill: true } : {}),
@@ -914,7 +1006,14 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
         )}
         {shows.includes("picture") && (
           <div className="page-picture">
-            {page.picture ? <PictureThumb picture={page.picture} /> : <span className="page-thumb page-thumb-empty">No picture</span>}
+            {page.picture ? <PictureThumb picture={page.picture} /> : (
+              <span className={`page-thumb page-thumb-empty ${input.pictureTypes ? "with-types" : ""}`}>
+                <span>No picture</span>
+                {input.pictureTypes && [input.pictureTypes.slice(0, 3), input.pictureTypes.slice(3)].filter((r) => r.length).map((row) => (
+                  <span key={row[0]} className="page-thumb-types">{row.join(" · ")}</span>
+                ))}
+              </span>
+            )}
             <div className="page-picture-tools">
               {apps.length ? (
                 <PictureMenu
@@ -933,9 +1032,12 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
               {page.picture && (
                 <button type="button" className="btn btn-quiet btn-small" onClick={() => patch(spec.id, { picture: null })}>Remove</button>
               )}
-              {page.picture && <span className="page-picture-size">{formatSize(page.picture.bytes.length)}</span>}
-              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif,.heic,.heif" hidden onChange={choose} />
+              {page.picture && <span className="page-picture-size">{formatSize(page.picture.bytes.length + (page.picture.still ? page.picture.still.bytes.length : 0))}{page.picture.animated ? " · moves" : ""}</span>}
+              <input ref={fileRef} type="file" accept={`image/jpeg,image/png,image/webp,image/gif,image/avif${input.animatedPictures ? ",image/apng,.apng" : ""},.heic,.heif`} hidden onChange={choose} />
             </div>
+            {page.picture && page.picture.animated && (
+              <p className="field-help page-picture-note">It moves on the page. Readers whose device asks for less motion see its first frame, and the card shows it too.</p>
+            )}
             {browsing && browsing.page === spec.id && (
               <AppPictureGrid
                 app={browsing.app}
@@ -992,6 +1094,7 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
           <div className="field page-text">
             <label className="field-label" htmlFor={`${input.key}-heading`}>{labelFor("heading", "Heading (optional)")}</label>
             <input id={`${input.key}-heading`} className="text" value={page.heading || ""} maxLength={input.headingMax} onChange={(e) => patch(spec.id, { heading: e.target.value })} />
+            {input.headingHint && input.headingHint(spec, page) && <p className="field-help field-hint">{input.headingHint(spec, page)}</p>}
           </div>
         )}
         {shows.includes("words") && (
@@ -1003,6 +1106,7 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
                 {fullness > 100 ? `Too many words (${fullness}%)` : `${fullness}% of the page`}
               </span>
             )}
+            {input.wordsHint && input.wordsHint(spec, page) && <p className="field-help field-hint">{input.wordsHint(spec, page)}</p>}
           </div>
         )}
         <div className="page-nav">
@@ -1059,26 +1163,47 @@ export function InputForm({ type, values, onChange, problems, context, only = nu
   for (const input of type.inputs.filter((i) => isShown(i, values) && wanted(i))) {
     const last = blocks[blocks.length - 1];
     if (input.group && last && last.group === input.group) last.inputs.push(input);
+    else if (!input.group && input.row && last && !last.group && last.inputs[last.inputs.length - 1].row === input.row) last.inputs.push(input);
     else blocks.push({ group: input.group || null, inputs: [input] });
+  }
+
+  // Inputs that share a row (input.row, v0.30.0) sit side by side, wrapping on a
+  // narrow screen; the last one's rowHelp goes under the row.
+  function fields(inputs) {
+    const out = [];
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i];
+      if (!input.row) { out.push(field(input)); continue; }
+      const row = [input];
+      while (inputs[i + 1] && inputs[i + 1].row === input.row) row.push(inputs[++i]);
+      const help = row.map((r) => r.rowHelp).filter(Boolean)[0];
+      out.push(
+        <div key={`row-${input.row}`} className="field-row-box">
+          <div className="field-row">{row.map(field)}</div>
+          {help && <p className="field-help">{help}</p>}
+        </div>,
+      );
+    }
+    return out;
   }
 
   return (
     <div className="form">
       {blocks.map((block) => {
-        if (!block.group) return block.inputs.map(field);
+        if (!block.group) return fields(block.inputs);
         const group = (type.groups || []).find((g) => g.id === block.group);
         if (group.collapsed) {
           return (
             <details key={block.group} className="input-group input-group-more">
               <summary className="input-group-title">{group.title}</summary>
-              {block.inputs.map(field)}
+              {fields(block.inputs)}
             </details>
           );
         }
         return (
           <section key={block.group} className="input-group" aria-label={group.title}>
             <p className="input-group-title">{group.title}</p>
-            {block.inputs.map(field)}
+            {fields(block.inputs)}
           </section>
         );
       })}

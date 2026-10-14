@@ -19,6 +19,9 @@ export const CONTENT_TYPES = Object.freeze({
   ".webm": "video/webm",
   ".css": "text/css",
   ".svg": "image/svg+xml",
+  // Pictures other apps' tiles carry, and animated pictures on zine pages (v0.30.0).
+  ".gif": "image/gif",
+  ".avif": "image/avif",
   // Fonts, sounds and notes that other apps' tiles carry (ATMOSYNTH's direct
   // publish, Foundry v0.27.0): web fonts and their licence, FLAC samples.
   ".woff2": "font/woff2",

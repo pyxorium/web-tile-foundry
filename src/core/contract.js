@@ -63,7 +63,13 @@
 //                        "words", "subtitle"). headingMax, subtitleMax (characters);
 //                        wordLimit(page, value, values) -> how much room the words
 //                        on that page may take (as the type lays it out), measured
-//                        by wordSize(text) (default: the number of characters).
+//                        by wordSize(text, page, spec, values) (default: the number of characters).
+//                        animatedPictures: true, optional: pictures from the computer
+//                        that move (GIF, animated WebP, APNG) keep their bytes, with
+//                        a still (src/core/pictures.js preparePicture; v0.30.0).
+//                        pictureTypes, optional: the kinds of picture, listed in the empty picture box.
+//                        wordsHint(spec, page), headingHint(spec, page), optional:
+//                        a short line under the words / heading box (v0.30.0).
 //                        onSelect(id), optional: called when the creator opens a page
 //                        in the editor (a preview can turn to it).
 //                        The value is a list, one entry per page, in the same order:
@@ -170,6 +176,7 @@
 // A type must only put in it what is safe to publish.
 
 import { APP_PICTURE_SOURCES } from "./app-pictures.js";
+import { ANIMATED_MAX_BYTES, animationTooBig } from "./pictures.js";
 
 /** Size budget for a tile when its type doesn't set maxBytes. */
 export const DEFAULT_MAX_TILE_BYTES = 5 * 1024 * 1024;
@@ -189,6 +196,9 @@ export const PAGE_FIELDS = Object.freeze(["picture", "heading", "words", "subtit
 export const ZINE_PAGE_KINDS = Object.freeze(["live", "tape"]);
 /** Picture types a "pages" input keeps (see src/core/pictures.js). */
 export const PAGE_PICTURE_TYPES = Object.freeze(["image/webp", "image/jpeg"]);
+// Animated pictures keep their own bytes (v0.30.0): GIF, animated WebP, APNG,
+// each with a still of its first frame (src/core/pictures.js, preparePicture).
+export const ANIMATED_PICTURE_TYPES = Object.freeze(["image/gif", "image/webp", "image/png"]);
 
 /** How a song leads into the next one (tracks input): straight on, a short pause, or fade out and in with a pause. */
 export const TRANSITIONS = Object.freeze(["straight", "pause", "fade"]);
@@ -377,7 +387,7 @@ export function pageFullness(input, spec, page, values = {}) {
   if (!input.wordLimit) return 0;
   const limit = input.wordLimit(spec, page, values);
   const words = typeof (page && page.words) === "string" ? page.words : "";
-  const size = input.wordSize ? input.wordSize(words) : words.length;
+  const size = input.wordSize ? input.wordSize(words, page, spec, values) : words.length;
   if (!words) return 0;
   return limit > 0 ? Math.ceil((size / limit) * 100) : 999;
 }
@@ -409,9 +419,14 @@ export function pageProblems(input, pages, values = {}) {
     }
     const pic = p.picture;
     if (shows.includes("picture") && pic) {
-      const ok = pic.bytes instanceof Uint8Array && pic.bytes.length > 0 && PAGE_PICTURE_TYPES.includes(pic.contentType)
-        && Number.isInteger(pic.width) && pic.width > 0 && Number.isInteger(pic.height) && pic.height > 0;
+      const still = (q) => Boolean(q) && q.bytes instanceof Uint8Array && q.bytes.length > 0 && PAGE_PICTURE_TYPES.includes(q.contentType)
+        && Number.isInteger(q.width) && q.width > 0 && Number.isInteger(q.height) && q.height > 0;
+      const ok = pic.animated
+        ? pic.bytes instanceof Uint8Array && pic.bytes.length > 0 && ANIMATED_PICTURE_TYPES.includes(pic.contentType)
+          && Number.isInteger(pic.width) && pic.width > 0 && Number.isInteger(pic.height) && pic.height > 0 && still(pic.still)
+        : still(pic);
       if (!ok) out.push(`${name}: the picture isn't ready. Choose it again.`);
+      else if (pic.animated && pic.bytes.length > ANIMATED_MAX_BYTES) out.push(`${name}: ${animationTooBig(pic.bytes.length)}`);
       const c = pic.crop;
       const inRange = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi;
       if ((pic.fill !== undefined && typeof pic.fill !== "boolean")
@@ -437,7 +452,11 @@ export function pagesBytes(input, pages, values = {}) {
     const spec = input.pages[i];
     if (spec && !pageInUse(input, spec, values)) return;
     const shows = spec ? pageShows(input, spec, p) : [];
-    if (p.picture && p.picture.bytes && (!spec || shows.includes("picture"))) n += p.picture.bytes.length;
+    if (p.picture && p.picture.bytes && (!spec || shows.includes("picture"))) {
+      n += p.picture.bytes.length;
+      // An animated picture's still (v0.30.0) goes into the tile too.
+      if (p.picture.still && p.picture.still.bytes) n += p.picture.still.bytes.length;
+    }
     if (shows.includes("piece") && input.piece && input.piece.bytes) n += Number(input.piece.bytes(p)) || 0;
     for (const t of input.pageToggles || []) if (p[t.key] && t.bytes) n += Number(t.bytes(p)) || 0;
   });
