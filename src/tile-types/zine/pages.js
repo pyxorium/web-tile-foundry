@@ -370,8 +370,18 @@ export function zineCredits(pages, shown, withSprite, count) {
     add(s.what, s.app, s.home, (z, raw) => z.picture && raw.picture && raw.picture.source && raw.picture.source.app === a);
   }
   add("Books", BOOKHIVE.app, BOOKHIVE.home, (z) => z.book);
-  add("Activities", TREELINE.app, TREELINE.home, (z) => z.activity);
+  // Treeline's own tiles (v0.28.0) join its activity pages.
+  add("Activities", TREELINE.app, TREELINE.home, (z) => z.activity || (z.tile && z.tile.treeline));
   add("Synth patches", "ATMOSYNTH", ATMOSYNTH_HOME, (z) => z.tile && z.tile.atmo);
+  // Tiles from other apps that name themselves: "Web tiles · <app>", without a
+  // link (we don't know a safe address into an app we haven't looked at). Your
+  // own tiles that name no app aren't credited.
+  const apps = [];
+  shown.forEach((z) => {
+    const t = z && z.tile;
+    if (t && t.app && !t.atmo && !t.treeline && t.made && !apps.includes(t.made)) apps.push(t.made);
+  });
+  for (const app of apps) add("Web tiles", app, "", (z) => z.tile && z.tile.app && !z.tile.atmo && !z.tile.treeline && z.tile.made === app);
   return out;
 }
 

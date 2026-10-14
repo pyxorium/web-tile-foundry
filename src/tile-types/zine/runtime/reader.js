@@ -27,10 +27,12 @@ import { mapLayout } from "../activities.js";
 //                profile?: { line, area, low, high } } }], credits?: [...] }
 //
 // Tiles on a page (stage 4, layout "tile"): one of the creator's own tiles, its
-// files copied into the zine. Its banner shows with a play button; a tap fetches
-// its files through the same queue as pictures and hands them to a frame as
-// blob: copies of its own (way C of the stage 4 host test: the nested frame needs
-// no service worker). It stops (the frame is removed) when the reader leaves the page.
+// files copied into the zine. Since v0.28.0 a tile starts by itself when its page
+// is shown (one tap on its own controls, not two): its files are fetched a page
+// ahead through the same queue as pictures, and handed to a frame as blob:
+// copies of its own (way C of the stage 4 host test: the nested frame needs no
+// service worker). Its picture shows while it loads. It stops (the frame is
+// removed) when the reader leaves the page.
 //
 // Loading (stage 3): pictures are fetched only as the reader nears their page:
 // first the pages being shown, then the pages either side, one file at a time.
@@ -253,14 +255,11 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 .zp .tileframe iframe { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%; border: 0; background: #111; }
 .zp .tile-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px; }
 .zp .tileframe[data-state="idle"], .zp .tileframe[data-state="failed"] { cursor: pointer; }
-.zp .tile-play { flex: none; min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); font: 600 11px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
-.zp .tile-play:disabled { opacity: .75; cursor: default; }
-.zp .tile-play[hidden], .zp .tile-note[hidden], .zp .tile-again[hidden] { display: none; }
+.zp .tile-note[hidden], .zp .tile-again[hidden] { display: none; }
+.zp .tileframe .tile-plain { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 10px; color: #fff; font-weight: 700; text-align: center; }
 .zp .tile-note { color: var(--accent); }
 .zp .tile-again { flex: none; min-height: 24px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--ink); font-size: 10.5px; cursor: pointer; }
-.zp .tile-play:focus-visible, .zp .tile-again:focus-visible, .zp .tcap a:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
-[data-look="riso"] .zp .tile-play { background: var(--ink-b); color: var(--ink); }
-[data-look="collage"] .zp .tile-play { background: var(--accent); }
+.zp .tile-again:focus-visible, .zp .tcap a:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
 .zp .tcap { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 28px; margin: 6px 0 0; font-size: 10.5px; line-height: 1.3; color: var(--soft); }
 .zp .tcap b { color: var(--ink); font-weight: 700; overflow-wrap: anywhere; }
 .zp .tcap a { margin-left: auto; color: var(--accent); text-decoration: none; }
@@ -502,6 +501,7 @@ export const READER_JS = String.raw`
   function wantPage(i, urgent) {
     var e = pageEls[i];
     if (!e) return;
+    if (mode !== "card") wantTile(i);
     Array.prototype.forEach.call(e.querySelectorAll("img[data-src]"), function (img) {
       var src = img.getAttribute("data-src");
       img.removeAttribute("data-src");
@@ -1203,9 +1203,10 @@ export const READER_JS = String.raw`
 
   // Tiles on a page (stage 4). One running frame per page; it stops when the page goes.
   var tilesOn = {}; // page id -> { frame, urls, timers, state, slow, error }
-  // The tile's controls sit in the caption line under its frame (never on the
-  // tile, whose own gear is top right): Play, then Loading / Still loading / Try
-  // again. The banner itself also starts it. No Stop: turning the page stops it.
+  // The tile starts by itself when its page is shown (v0.28.0); its picture
+  // shows meanwhile. The caption line under the frame (never on the tile, whose
+  // own controls are its business) says Loading… / Still loading… / Try again
+  // and credits the app it came from. No Stop: turning the page stops it.
   function tileBox(p) {
     var t = p.tile;
     var box = el("div", "tilebox");
@@ -1215,18 +1216,16 @@ export const READER_JS = String.raw`
     frame.setAttribute("data-tile", p.id);
     frame.setAttribute("data-state", tilesOn[p.id] ? tilesOn[p.id].state : "idle");
     if (t.poster) frame.appendChild(image({ src: t.poster }, "poster", ""));
+    else frame.appendChild(el("span", "tile-plain", t.name));
     frame.addEventListener("click", function (e) {
+      // Running or on its way: taps go to the tile. Failed (or not started yet): start it.
       var me = tilesOn[p.id];
-      if (me && me.state !== "failed") return; // running or on its way
+      if (me && me.state !== "failed") return;
       e.stopPropagation();
       startTile(p);
     });
     var cap = el("div", "tcap");
     cap.setAttribute("data-cap", p.id);
-    var play = el("button", "tile-play", "▶ Play");
-    play.type = "button";
-    play.setAttribute("aria-label", "Play “" + t.name + "”");
-    play.addEventListener("click", function (e) { e.stopPropagation(); startTile(p); });
     var note = el("span", "tile-note");
     note.setAttribute("aria-live", "polite");
     note.hidden = true;
@@ -1234,26 +1233,53 @@ export const READER_JS = String.raw`
     again.type = "button";
     again.hidden = true;
     again.addEventListener("click", function (e) { e.stopPropagation(); retryTile(p); });
-    cap.appendChild(play);
     cap.appendChild(el("b", null, t.name));
     // The maker shows only when it isn't the zine's own author (today, never).
     if (t.by && t.by !== "@" + config.handle) cap.appendChild(el("span", "tile-by", "by " + t.by));
     cap.appendChild(note);
     cap.appendChild(again);
-    if (t.atmo && t.patchUrl) {
-      // An ATMOSYNTH patch: the credit links to the patch on atmosynth.at.
-      var m = el("a", "tile-made", "made with ATMOSYNTH ↗");
-      m.href = t.patchUrl; m.target = "_blank"; m.rel = "noopener";
-      m.setAttribute("aria-label", "“" + t.name + "”, made with ATMOSYNTH: open the patch on atmosynth.at (opens a new tab)");
+    if (t.app && t.made && /^https:\/\//.test(t.madeUrl || "")) {
+      // A known app (ATMOSYNTH: the patch; Treeline: the activity): the credit links there.
+      var m = el("a", "tile-made", "made with " + t.made + " ↗");
+      m.href = t.madeUrl; m.target = "_blank"; m.rel = "noopener";
+      m.setAttribute("aria-label", "“" + t.name + "”, made with " + t.made + ": open it on " + t.made + " (opens a new tab)");
       cap.appendChild(m);
-    } else if (t.url) {
-      var a = el("a", null, "Open it ↗");
-      a.href = t.url; a.target = "_blank"; a.rel = "noopener";
-      a.setAttribute("aria-label", "Open “" + t.name + "” on its own page (opens a new tab)");
-      cap.appendChild(a);
+    } else {
+      // Another app that names itself: credited by name; then the tile's own page.
+      if (t.app && t.made) cap.appendChild(el("span", "tile-made", "made with " + t.made));
+      if (t.url) {
+        var a = el("a", null, "Open it ↗");
+        a.href = t.url; a.target = "_blank"; a.rel = "noopener";
+        a.setAttribute("aria-label", "Open “" + t.name + "” on its own page (opens a new tab)");
+        cap.appendChild(a);
+      }
     }
     box.appendChild(cap);
     return box;
+  }
+  // A tile's files, to fetch a page ahead (v0.28.0): its page, and the files it uses.
+  var tilesWanted = {};
+  function wantTile(i) {
+    var p = config.pages[i];
+    if (!p || p.layout !== "tile" || !p.tile || tilesWanted[p.id] === p.tile) return;
+    tilesWanted[p.id] = p.tile;
+    var t = p.tile;
+    var srcs = [t.page].concat((t.app ? t.files : t.refs || []).map(function (f) { return f.src; }));
+    srcs.forEach(function (src) { if (src) fileUrl(src, false).catch(function () {}); });
+  }
+  // Starting the tiles on the pages being shown, once the reader settles there
+  // (flipping quickly past a page doesn't start its tile; the Foundry's preview,
+  // rebuilt as the creator types, doesn't restart it at every letter).
+  var START_MS = 350, PREVIEW_START_MS = 900, startTimer = null;
+  function startShownTiles() {
+    clearTimeout(startTimer);
+    if (mode === "card") return;
+    startTimer = setTimeout(function () {
+      shownNow.forEach(function (i) {
+        var p = i != null && config.pages[i];
+        if (p && p.layout === "tile" && p.tile && !tilesOn[p.id]) startTile(p);
+      });
+    }, config.preview ? PREVIEW_START_MS : START_MS);
   }
   // A tape's J-card (stage 4, part 2): its banner (which also opens the tape),
   // title, songs by side, dedication, the creator's own line, and a link out.
@@ -1345,12 +1371,9 @@ export const READER_JS = String.raw`
     var me = tilesOn[id];
     var state = me ? me.state : "idle";
     frame.setAttribute("data-state", state);
-    var play = cap.querySelector(".tile-play"), note = cap.querySelector(".tile-note"), again = cap.querySelector(".tile-again");
-    play.textContent = state === "loading" ? "… Loading" : "▶ Play";
-    play.disabled = state === "loading";
-    play.hidden = state === "running" || state === "failed";
+    var note = cap.querySelector(".tile-note"), again = cap.querySelector(".tile-again");
     var words = "";
-    if (state === "loading" && me.slow) words = "Still loading…";
+    if (state === "loading") words = me.slow ? "Still loading…" : "Loading…";
     else if (state === "failed") words = "Couldn't load it (" + me.error + ")";
     note.textContent = words;
     note.hidden = !words;
@@ -1389,6 +1412,8 @@ export const READER_JS = String.raw`
       return swapRefs(html, data);
     });
   }
+  // Tiles from other apps (ATMOSYNTH's since v0.24.0; any of your own since
+  // v0.28.0: Treeline's activity replays, hand-made tiles) run through makeAtmo.
   // ATMOSYNTH tiles (v0.24.0; v0.27.0). Their page asks for "./tile.js" and
   // "./tile.css"; the player fetches its own files (./patch.json, ./tile.json,
   // and in the older export ./samples.json; in the direct publish from
@@ -1508,6 +1533,7 @@ export const READER_JS = String.raw`
         });
       });
   }
+  // Tiles from other apps are fitted the same way (their manifest's sizing).
   // The ATMOSYNTH player lays itself out for its own size (its export asks for
   // about 720 x 520) and doesn't shrink to a short box: its knobs would fall off
   // the bottom. So its frame gets at least the player's height (and a minimum
@@ -1536,7 +1562,8 @@ export const READER_JS = String.raw`
     var map = {};
     // The tile's files come through the zine's queue (kept, each asked for once),
     // then go to the tile's frame as its own blob: copies.
-    var making = t.atmo ? makeAtmo(t, SEALED || Boolean(t.sealed), me) :
+    // Tiles from other apps (ATMOSYNTH's, Treeline's, any of your own) take the app path.
+    var making = t.app ? makeAtmo(t, SEALED || Boolean(t.sealed), me) :
       Promise.all(t.refs.map(function (r) { return fileUrl(r.src, true).then(function (u) { map[r.ref] = u; }); }))
       .then(function () { return fileUrl(t.page, true); })
       .then(textOfUrl)
@@ -1559,7 +1586,7 @@ export const READER_JS = String.raw`
         }
         box.appendChild(f);
         me.frame = f;
-        if (t.atmo) {
+        if (t.app) {
           var size = t.size || { w: 720, h: 520 };
           fitAtmo(box, f, size);
           if (window.ResizeObserver) { me.ro = new ResizeObserver(function () { fitAtmo(box, f, size); }); me.ro.observe(box); }
@@ -1652,6 +1679,7 @@ export const READER_JS = String.raw`
   }
 
   function build() {
+    clearTimeout(startTimer);
     Object.keys(tilesOn).forEach(function (id) { stopTile(id, true); });
     if (creditsOpen) creditsOpen.shut();
     root.textContent = "";
@@ -1777,6 +1805,8 @@ export const READER_JS = String.raw`
       }
     });
     var k = viewIndex(), all = views(), total = all.length;
+    // The tiles shown start by themselves (after a moment); the pictures shown still come first.
+    startShownTiles();
     // Load what's shown first, then the pages either side (a small card loads only its cover).
     v.forEach(function (i) { if (i != null) wantPage(i, true); });
     if (mode !== "card") [k + 1, k - 1].forEach(function (n) { if (all[n]) all[n].forEach(function (i) { if (i != null) wantPage(i, false); }); });

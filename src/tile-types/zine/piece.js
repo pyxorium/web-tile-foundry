@@ -1,7 +1,7 @@
 import { copyPaths, pageRefs } from "../../core/published-tile.js";
 import { tileViewUrl } from "../../core/publish.js";
 import { bookReady, bookFiles, bookRecipe } from "./books.js";
-import { activityReady, activityRecipe } from "./activities.js";
+import { activityReady, activityRecipe, treelineUrl, TREELINE } from "./activities.js";
 
 // Tiles on zine pages (stage 4, claude/zine-maker-plan.md section 26): one of
 // the creator's own published tiles, copied into the zine byte for byte and
@@ -37,6 +37,16 @@ import { activityReady, activityRecipe } from "./activities.js";
 //   maker: "atmosynth", atmo: { patchId?, creator?, modules: [did], samples: [did], forkedFrom?, others }
 // `others`: the patch uses other people's modules (their own code), so the
 // reader runs it walled off (a sealed frame; owner's decision, Oct 10).
+//
+// Your own tiles from other apps (v0.28.0; claude/zine-other-app-tiles-plan.md):
+// any of the creator's own published tiles that isn't a Foundry tile can go on
+// "A web tile" pages too (Treeline's activity replays, hand-made tiles, …) and
+// runs through the same path as ATMOSYNTH tiles. Such a piece keeps:
+//   maker: "app", app: { generator?, activityUri? }
+// `generator` names the app that made it (the tile manifest's `generator`);
+// Treeline tiles also keep the activity they replay (the record's `activityUri`)
+// for their credit link. They run normally (not walled off): they're the
+// creator's own (owner, Oct 13).
 
 export const ATMOSYNTH = "ATMOSYNTH";
 export const ATMOSYNTH_HOME = "https://atmosynth.at/";
@@ -61,6 +71,33 @@ export function isAtmosynthTile(manifestOrGenerator) {
 
 export function isAtmoPiece(piece) {
   return Boolean(piece && piece.kind === "tile" && piece.maker === "atmosynth");
+}
+
+/** A tile from another app (not the Foundry): ATMOSYNTH's or any other. They share the reader's app path. */
+export function isAppPiece(piece) {
+  return Boolean(piece && piece.kind === "tile" && (piece.maker === "atmosynth" || piece.maker === "app"));
+}
+
+const GENERATOR_MAX = 60;
+/** The app a tile names as its maker (the manifest's `generator`), cleaned; "" when none. */
+export function generatorOf(manifestOrGenerator) {
+  const g = manifestOrGenerator && typeof manifestOrGenerator === "object" ? manifestOrGenerator.generator : manifestOrGenerator;
+  return String(typeof g === "string" ? g : "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, GENERATOR_MAX);
+}
+
+/** Whether a tile's manifest (or its generator) says Treeline made it. */
+export function isTreelineTile(manifestOrGenerator) {
+  return generatorOf(manifestOrGenerator).toLowerCase() === TREELINE.app.toLowerCase();
+}
+
+/** What a piece keeps about a tile from another app: { generator?, activityUri? }. `record` is the tile's record value. */
+export function appTileInfo(manifest, record) {
+  const out = {};
+  const generator = generatorOf(manifest);
+  if (generator) out.generator = generator;
+  const act = record && record.activityUri;
+  if (isTreelineTile(generator) && typeof act === "string" && /^at:\/\/[^\s"'<>]{1,500}$/.test(act)) out.activityUri = act;
+  return out;
 }
 
 /**
@@ -135,6 +172,14 @@ export function tilePosterPath(files) {
 
 /** How an ATMOSYNTH tile is named in the tile list (it isn't a Foundry type). */
 export const ATMO_TYPE = Object.freeze({ id: "atmosynth", title: "ATMOSYNTH patch", zinePage: "live" });
+/** How other apps' tiles are grouped in the tile list: by the app they name, else "Other tiles". */
+export const OTHER_TYPE = Object.freeze({ id: "other", title: "Other tiles", zinePage: "live" });
+export function appType(generator) {
+  const g = generatorOf(generator);
+  if (!g) return OTHER_TYPE;
+  if (isTreelineTile(g)) return Object.freeze({ id: "treeline", title: TREELINE.app, zinePage: "live" });
+  return Object.freeze({ id: `app:${g.toLowerCase()}`, title: g, zinePage: "live" });
+}
 
 /** The kind of piece each layout holds. */
 export const PIECE_KINDS = Object.freeze({ tile: "tile", tape: "tape", book: "book", activity: "activity" });
@@ -160,7 +205,7 @@ export function pieceReady(page) {
   if (t.kind === "activity") return activityReady(t);
   if (t.kind === "tape") return Boolean(t.tape && Array.isArray(t.tape.sides));
   if (t.kind !== "tile" || !t.files.some((f) => f.path === "/")) return false;
-  // An ATMOSYNTH tile needs the patch its player plays.
+  // An ATMOSYNTH tile needs the patch its player plays; other tiles need only their page.
   return !isAtmoPiece(t) || t.files.some((f) => f.path === "/patch.json");
 }
 
@@ -215,7 +260,7 @@ export function tileForReader(page, pageId, src = (path) => tilePath(pageId, pat
   if (!pieceReady(page) || page.piece.kind !== "tile") return null;
   const t = page.piece;
   const html = new TextDecoder().decode(t.files.find((f) => f.path === "/").bytes);
-  if (isAtmoPiece(t)) return atmoForReader(t, html, src);
+  if (isAppPiece(t)) return appForReader(t, html, src);
   const refs = pageRefs(html, t.files.map((f) => f.path));
   const out = {
     name: oneLine(t.name, TILE_NAME_MAX) || "Untitled tile",
@@ -230,29 +275,41 @@ export function tileForReader(page, pageId, src = (path) => tilePath(pageId, pat
 }
 
 /**
- * An ATMOSYNTH tile as the reader gets it:
- *   { name, by, url, page, atmo: true, made: "ATMOSYNTH", patchUrl, sealed?,
- *     refs: [{ ref, path }], files: [{ path, src, type }], fetched: [path], poster? }
+ * A tile from another app (ATMOSYNTH's, Treeline's, any of your own) as the reader gets it:
+ *   { name, by, url, page, app: true, atmo?: true, made, madeUrl?, patchUrl?, sealed?,
+ *     refs: [{ ref, path }], files: [{ path, src, type }], fetched: [path], size, poster? }
  * `refs` are the addresses in its page; `files` every file but the page (the
  * reader swaps the addresses in its script and stylesheet for copies, and
  * answers the player's own fetches of `fetched`, all its other files, from copies).
+ * `made` names the app ("" for a tile that names none); `madeUrl` is where its
+ * credit links (ATMOSYNTH: the patch; Treeline: the activity), when known.
+ * Only ATMOSYNTH patches with other people's modules run walled off (`sealed`).
  */
-function atmoForReader(t, html, src) {
+function appForReader(t, html, src) {
   const paths = t.files.map((f) => f.path).filter((p) => p !== "/");
-  const atmo = t.atmo || {};
+  const atmoTile = isAtmoPiece(t);
+  const info = t.app || {};
   const out = {
-    name: oneLine(t.name, TILE_NAME_MAX) || "Untitled patch",
+    name: oneLine(t.name, TILE_NAME_MAX) || (atmoTile ? "Untitled patch" : "Untitled tile"),
     by: t.handle && !t.own ? `@${oneLine(t.handle, 253)}` : "",
     page: src("/"),
-    atmo: true,
-    made: ATMOSYNTH,
-    patchUrl: atmoPatchUrl(atmo),
+    app: true,
+    made: atmoTile ? ATMOSYNTH : generatorOf(info.generator),
     refs: atmoPageRefs(html, paths),
     files: t.files.filter((f) => f.path !== "/").map((f) => ({ path: f.path, src: src(f.path), type: f.contentType || "" })),
     fetched: atmoFetched(paths),
     size: tileSize(t.sizing),
   };
-  if (atmo.others) out.sealed = true;
+  if (atmoTile) {
+    out.atmo = true;
+    out.patchUrl = atmoPatchUrl(t.atmo || {});
+    out.madeUrl = out.patchUrl;
+    if ((t.atmo || {}).others) out.sealed = true;
+  } else if (isTreelineTile(out.made)) {
+    out.made = TREELINE.app;
+    out.treeline = true;
+    if (info.activityUri) out.madeUrl = treelineUrl(info.activityUri);
+  }
   try { out.url = tileViewUrl(t.uri, null); } catch { /* no link for an odd address */ }
   const poster = tilePosterPath(t.files);
   if (poster) out.poster = src(poster);
@@ -269,6 +326,12 @@ export function pieceRecipe(page, pageId) {
   if (t.typeId) out.type = t.typeId;
   if (t.typeVersion) out.typeVersion = t.typeVersion;
   if (t.foundryVersion) out.foundryVersion = t.foundryVersion;
+  if (t.maker === "app" && t.kind === "tile") {
+    // Made with another app (or by hand): which app, and for Treeline the activity it replays.
+    const a = t.app || {};
+    if (generatorOf(a.generator)) out.generator = generatorOf(a.generator);
+    if (a.activityUri) out.activity = a.activityUri;
+  }
   if (isAtmoPiece(t)) {
     // Made with ATMOSYNTH: the patch, and whose modules and samples it uses (kept for fuller credits later).
     const a = t.atmo || {};
@@ -288,13 +351,18 @@ export function pieceRecipe(page, pageId) {
  *   { ok: true, type } or { ok: false, reason }
  */
 export function tilePlacement(recipe, getType, want = "live", generator = "") {
+  const foundry = Boolean(recipe && recipe.madeWith === "Web Tile Foundry");
   // ATMOSYNTH's own tiles (no recipe; marked by the generator in their manifest).
-  if (isAtmosynthTile(generator) && !(recipe && recipe.madeWith === "Web Tile Foundry")) {
+  if (isAtmosynthTile(generator) && !foundry) {
     if (want === "live") return { ok: true, type: ATMO_TYPE };
     return { ok: false, reason: "ATMOSYNTH tiles go on “A web tile” pages.", type: ATMO_TYPE };
   }
-  if (!recipe || recipe.madeWith !== "Web Tile Foundry" || typeof recipe.type !== "string") {
-    return { ok: false, reason: "Not made with the Foundry, so it can't go on a page yet." };
+  // Any other tile of yours that the Foundry didn't make (v0.28.0): Treeline's,
+  // another app's, a hand-made one. It runs as it is, on "A web tile" pages.
+  if (!foundry || typeof recipe.type !== "string") {
+    const type = appType(generator);
+    if (want === "live") return { ok: true, type };
+    return { ok: false, reason: "Tiles from other apps go on “A web tile” pages.", type };
   }
   const type = getType(recipe.type);
   if (!type) return { ok: false, reason: "A kind of tile this Foundry doesn't know." };

@@ -1,7 +1,7 @@
 import { fetchPublishedTile, jsonFile, copyPaths, TILE_COLLECTION } from "../../core/published-tile.js";
 import { listTileTypes } from "../../core/registry.js";
 import { formatSize } from "../../core/fileset.js";
-import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS, isAtmosynthTile, atmoPatchInfo } from "./piece.js";
+import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS, isAtmosynthTile, atmoPatchInfo, appTileInfo, appType } from "./piece.js";
 import { myAccounts, nameOf } from "../../core/my-accounts.js";
 
 // The "Your tile" / "Your tape" panel on an "A tile" or "A tape" page (stage 4):
@@ -22,6 +22,9 @@ import { myAccounts, nameOf } from "../../core/my-accounts.js";
 // ATMOSYNTH tiles (v0.24.0) have no recipe; they're known by the generator in
 // their manifest, and their patch.json is read when copied (whose modules and
 // samples it uses; other people's modules make the reader wall it off).
+// Since v0.28.0 any other tile of yours the Foundry didn't make (Treeline's,
+// another app's, a hand-made one) can go on "A web tile" pages too, grouped by
+// the app it names, else under "Other tiles".
 
 const lists = new Map(); // did -> Promise<entries>
 const recipes = new Map(); // blob cid -> Promise<recipe | null>
@@ -129,7 +132,9 @@ function copyOf(kind, uri, cid) {
         try { copyPaths(pub.files, "/tiles/check"); } catch (err) {
           throw new Error(String(err.message).replace(/^The tile's /, "its ").replace(/\.$/, ""));
         }
-        if (!isAtmosynthTile(pub.manifest)) return { pub, files: pub.files };
+        const foundry = Boolean(pub.recipe && pub.recipe.madeWith === "Web Tile Foundry");
+        if (foundry) return { pub, files: pub.files };
+        if (!isAtmosynthTile(pub.manifest)) return { pub, files: pub.files, app: appTileInfo(pub.manifest, pub.record) };
         const patch = jsonFile(pub.files, "/patch.json");
         if (!patch) throw new Error("its patch couldn't be read");
         return { pub, files: pub.files, atmo: atmoPatchInfo(patch) };
@@ -333,11 +338,13 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
 
   function copy(uri, cid) {
     copyOf(kind, uri, cid).then(
-      ({ pub, tape, files, atmo }) => patchPage((pg) => (pg.piece && pg.piece.uri === uri && pg.piece.kind === kind ? {
+      ({ pub, tape, files, atmo, app }) => patchPage((pg) => (pg.piece && pg.piece.uri === uri && pg.piece.kind === kind ? {
         piece: {
           ...pg.piece, status: "ready", error: undefined, cid: pub.cid || pg.piece.cid, name: (pub.manifest && pub.manifest.name) || pg.piece.name,
           handle: pub.handle || pg.piece.handle, did: pub.did, own: true, files, ...(tape ? { tape } : {}),
-          ...(atmo ? { maker: "atmosynth", atmo, ...(pub.manifest && pub.manifest.sizing ? { sizing: pub.manifest.sizing } : {}) } : {}),
+          ...(atmo ? { maker: "atmosynth", atmo } : {}),
+          ...(app ? { maker: "app", app } : {}),
+          ...((atmo || app) && pub.manifest && pub.manifest.sizing ? { sizing: pub.manifest.sizing } : {}),
         },
       } : null)),
       (err) => patchPage((pg) => (pg.piece && pg.piece.uri === uri ? { piece: { ...pg.piece, status: "error", error: err.message || String(err) } } : null)),
@@ -350,11 +357,15 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     const p = piece();
     if (p && p.uri === t.uri && p.status !== "error") return;
     const r = t.recipe || {};
-    const atmo = isAtmosynthTile(t.generator) && !r.madeWith;
+    const foundry = r.madeWith === "Web Tile Foundry";
+    const atmo = isAtmosynthTile(t.generator) && !foundry;
+    const maker = atmo ? { maker: "atmosynth" }
+      : !foundry && kind === "tile" ? { maker: "app", app: t.generator ? { generator: t.generator } : {} }
+      : { typeId: r.type, typeVersion: r.typeVersion, foundryVersion: r.foundryVersion };
     const change = {
       piece: {
         kind, uri: t.uri, cid: t.cid, name: t.name, did: t.owner.did, handle: t.owner.handle, own: true,
-        ...(atmo ? { maker: "atmosynth" } : { typeId: r.type, typeVersion: r.typeVersion, foundryVersion: r.foundryVersion }),
+        ...maker,
         banner: t.banner, status: "loading",
       },
     };
@@ -381,7 +392,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     const t = tiles && tiles.get(p.uri);
     title.textContent = p.name || `Untitled ${noun}`;
     const pl = t && placementOf(t);
-    const typeTitle = (pl && pl.type && pl.type.title) || (p.maker === "atmosynth" ? "ATMOSYNTH patch" : p.typeId) || "";
+    const typeTitle = (pl && pl.type && pl.type.title) || (p.maker === "atmosynth" ? "ATMOSYNTH patch" : p.maker === "app" ? appType((p.app || {}).generator).title : p.typeId) || "";
     const songs = p.tape ? p.tape.sides.reduce((n, s) => n + s.tracks.length, 0) : 0;
     typeLine.textContent = [typeTitle, p.tape ? `${songs} song${songs === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
     // The banner: the zine's own copy once it's here; before that, from the

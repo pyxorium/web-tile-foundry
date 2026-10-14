@@ -143,7 +143,7 @@ test("recognises ATMOSYNTH tiles, the addresses their page uses, and their poste
   assert.equal(tilePosterPath([]), null);
 });
 
-test("ATMOSYNTH tiles go on “A web tile” pages, not mixtape pages; others without a recipe still can't", () => {
+test("ATMOSYNTH tiles go on “A web tile” pages, not mixtape pages; since v0.28.0 other tiles without a recipe can too", () => {
   const getType = (id) => (id === "glass-lantern" ? glassLantern : undefined);
   const live = tilePlacement(null, getType, "live", "ATMOSYNTH");
   assert.equal(live.ok, true);
@@ -151,8 +151,8 @@ test("ATMOSYNTH tiles go on “A web tile” pages, not mixtape pages; others wi
   const tape = tilePlacement(null, getType, "tape", "ATMOSYNTH");
   assert.equal(tape.ok, false);
   assert.match(tape.reason, /A web tile/);
-  assert.equal(tilePlacement(null, getType, "live", "").ok, false);
-  assert.equal(tilePlacement(null, getType, "live", "SomethingElse").ok, false);
+  assert.equal(tilePlacement(null, getType, "live", "").ok, true);
+  assert.equal(tilePlacement(null, getType, "live", "SomethingElse").type.title, "SomethingElse");
   // A Foundry tile is judged by its recipe as before.
   assert.equal(tilePlacement({ madeWith: "Web Tile Foundry", type: "glass-lantern", typeVersion: 1 }, getType, "live").ok, true);
 });

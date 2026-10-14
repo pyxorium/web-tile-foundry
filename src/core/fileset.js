@@ -29,6 +29,8 @@ export const CONTENT_TYPES = Object.freeze({
   ".wav": "audio/wav",
   ".ogg": "audio/ogg",
   ".txt": "text/plain",
+  // Notes that travel with a tile (Treeline's DATA.md, v0.28.0).
+  ".md": "text/markdown",
 });
 
 // Other names in common use for the same kinds of file. Only for COPYING a
@@ -44,6 +46,7 @@ export const COPY_ALIASES = Object.freeze({
   ".flac": Object.freeze(["audio/x-flac"]),
   ".wav": Object.freeze(["audio/x-wav", "audio/wave", "audio/vnd.wave"]),
   ".ogg": Object.freeze(["application/ogg", "audio/x-ogg"]),
+  ".md": Object.freeze(["text/x-markdown"]),
 });
 
 const encoder = new TextEncoder();

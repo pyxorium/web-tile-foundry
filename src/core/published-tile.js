@@ -59,10 +59,11 @@ export function blobCidOf(src) {
 }
 
 /**
- * Reads a published tile: { uri, cid, did, handle, pds, manifest, files, recipe }.
+ * Reads a published tile: { uri, cid, did, handle, pds, manifest, files, recipe, record }.
  * `files` is [{ path, bytes, contentType, storedType }] exactly as published (bytes checked
  * against their addresses); `recipe` is the parsed /foundry.json, or null for a
- * tile the Foundry didn't make. With `only` (a list of paths), just those files
+ * tile the Foundry didn't make; `record` the whole record value (other apps keep
+ * fields beside the manifest, such as Treeline's `activityUri`). With `only` (a list of paths), just those files
  * are downloaded (a tape's songs are big and not needed for its J-card).
  */
 export async function fetchPublishedTile(address, { fetchImpl = fetch, only = null } = {}) {
@@ -101,7 +102,7 @@ export async function fetchPublishedTile(address, { fetchImpl = fetch, only = nu
   if (recipeFile) {
     try { recipe = JSON.parse(new TextDecoder().decode(recipeFile.bytes)); } catch { recipe = null; }
   }
-  return { uri: uri || `at://${did}/${TILE_COLLECTION}/${where.rkey}`, cid, did, handle: handleFromDidDocument(doc), pds, manifest, files, recipe };
+  return { uri: uri || `at://${did}/${TILE_COLLECTION}/${where.rkey}`, cid, did, handle: handleFromDidDocument(doc), pds, manifest, files, recipe, record: value };
 }
 
 /** A file of a published tile, as text parsed from JSON (null if missing or not JSON). */

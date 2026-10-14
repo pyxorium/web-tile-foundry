@@ -79,7 +79,10 @@ test("which of your tiles can go on a page", () => {
   assert.match(tilePlacement(r("zine"), getType).reason, /can't go on a zine page/);
   assert.match(tilePlacement(r("glass-lantern", { typeVersion: 99 }), getType).reason, /newer Foundry/);
   assert.match(tilePlacement(r("unknown-kind"), getType).reason, /doesn't know/);
-  assert.match(tilePlacement(null, getType).reason, /Not made with the Foundry/);
+  // Since v0.28.0 any of your own tiles the Foundry didn't make can go on "A web tile" pages.
+  assert.equal(tilePlacement(null, getType).ok, true);
+  assert.equal(tilePlacement(null, getType).type.title, "Other tiles");
+  assert.match(tilePlacement(null, getType, "tape").reason, /Tiles from other apps go on “A web tile” pages/);
 });
 
 test("a page's tile: problems, size, files copied byte for byte, the reader's view, the recipe", () => {
@@ -135,18 +138,20 @@ test("a zine with a tile: its files, the reader's config, the preview's addresse
   assert.notEqual(previewConfig(v).pages[1].tile.page, pv.pages[1].tile.page, "copied again, new address");
 });
 
-test("the reader: tap to start, files handed over, stop off the page, frames per look", () => {
+test("the reader: starts when its page is shown, files handed over, stop off the page, frames per look", () => {
   assert.doesNotThrow(() => new Function(READER_JS));
   assert.ok(READER_JS.includes('page.layout === "tile"') && READER_JS.includes("function startTile(p)") && READER_JS.includes("function stopTilesOffPage()"));
   assert.ok(READER_JS.includes("{ html: swapRefs(html, map) }") && READER_JS.includes('URL.createObjectURL(new Blob([made.html], { type: "text/html" }))'), "way C: the frame gets blob: copies");
   assert.ok(READER_JS.includes("var SEALED = location.origin === \"null\";") && READER_JS.includes("f.srcdoc = made.srcdoc;"), "sealed (the Foundry preview): files written into the frame");
   assert.ok(!READER_JS.includes("</script"), "nothing in the reader ends its script early");
   assert.ok(READER_JS.includes("stopTilesOffPage();"), "leaving the page stops the tile");
-  assert.ok(READER_JS.includes('"▶ Play"') && READER_JS.includes('"… Loading"') && READER_JS.includes('"Open it ↗"'));
+  // One tap, not two (v0.28.0): no Play button; the tile starts when its page is shown.
+  assert.ok(!READER_JS.includes('"▶ Play"') && READER_JS.includes('"Loading…"') && READER_JS.includes('"Open it ↗"'));
+  assert.ok(READER_JS.includes("function startShownTiles()") && READER_JS.includes("startShownTiles();"));
   assert.ok(!READER_JS.includes("tile-stop"), "no Stop: turning the page stops a tile");
   assert.ok(READER_JS.includes('if (t.by && t.by !== "@" + config.handle)'), "the maker shows only when it isn't the zine's author");
-  assert.ok(!/\.tile-play \{[^}]*position: absolute/.test(READER_CSS), "controls sit in the caption line, not on the tile");
-  assert.ok(READER_JS.includes('frame.addEventListener("click"'), "the banner itself starts the tile");
+  assert.ok(!READER_CSS.includes(".tile-play"), "no Play button");
+  assert.ok(READER_JS.includes('frame.addEventListener("click"'), "tapping a tile that failed (or isn't started) starts it");
   assert.ok(/\/\^\(clip\|piece\):\//.test(READER_JS), "the preview asks the Foundry for tile files");
   for (const look of ["photocopy", "collage", "riso"]) assert.ok(READER_CSS.includes(`[data-look="${look}"] .zp .tileframe`), look);
   assert.ok(!/\[data-look="photocopy"\] \.zp \.tileframe[^{]*\{[^}]*filter/.test(READER_CSS), "the tile keeps its own colors");
