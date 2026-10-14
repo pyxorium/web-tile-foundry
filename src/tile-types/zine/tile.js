@@ -57,7 +57,14 @@ export function zineRecipe({ paper, look, ink, pages, pageCount, sprite = null }
         if (from) out.picture.source = from;
       }
       if (z.sound) out.sound = soundRecipe({ ...byId.get(z.id), id: z.id });
-      if (z.tile) out.tile = pieceRecipe(byId.get(z.id), z.id);
+      if (z.tile) {
+        out.tile = pieceRecipe(byId.get(z.id), z.id);
+        // Tiles that talk (v0.29.0): the page it talks to, and its short name.
+        if (out.tile && z.tile.pair) {
+          out.tile.talksTo = z.tile.pair;
+          if (z.tile.short) out.tile.shortName = z.tile.short;
+        }
+      }
       if (z.tape) out.tape = pieceRecipe(byId.get(z.id), z.id);
       if (z.book) out.book = pieceRecipe(byId.get(z.id), z.id);
       if (z.activity) out.activity = pieceRecipe(byId.get(z.id), z.id);

@@ -640,3 +640,10 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .about ul, .about ol { margin: 0 0 12px; padding-left: 22px; line-height: 1.6; }
 .about li { margin-bottom: 6px; }
 .about-make { margin-top: 32px; }
+/* Zine Scene: "Talks to" on an "A web tile" page (tiles that talk, v0.29.0). */
+.tile-talk { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tile-talk[hidden], .tile-talk-short[hidden] { display: none; }
+.tile-talk .field-label { display: block; }
+.tile-talk select, .tile-talk input { width: 100%; max-width: 360px; }
+.tile-talk .field-help { margin: 4px 0 0; }
+.tile-talk-short { display: block; margin-top: 10px; }

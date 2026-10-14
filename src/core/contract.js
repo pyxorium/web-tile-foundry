@@ -104,7 +104,12 @@
 //                        piece: { panel, problems?, bytes? }, needed when a layout (or a
 //                        page's fields) shows "piece": something the type manages itself
 //                        and keeps in page.piece (Zine Scene: one of the creator's tiles).
-//                        panel, problems and bytes work as for page toggles (above).
+//                        panel, problems and bytes work as for page toggles (above);
+//                        the piece panel's mount also gets getPages() (every page, the
+//                        latest) and patchPageById(changes), changes being
+//                        { [page id]: change } or a function of the pages returning
+//                        that, for a setting kept on two pages (Zine Scene's tiles
+//                        that talk, v0.29.0).
 //             showIf(values): OPTIONAL; the input is shown (and checked) only when it returns true.
 //             Inputs with the same `group` are shown together under that group's title.
 //             The group "card" (the link preview card's words) is shown at the

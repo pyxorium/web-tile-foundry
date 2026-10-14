@@ -622,14 +622,14 @@ function PictureThumb({ picture }) {
 // A page switch's own tools (see pageToggles' panel in src/core/contract.js),
 // mounted as plain DOM under the switch while it is on. Mounted once per page;
 // later changes reach it through update().
-function TogglePanel({ panel, getPage, patchPage, page, values, context }) {
+function TogglePanel({ panel, getPage, patchPage, getPages, patchPageById, page, values, context }) {
   const boxRef = useRef(null);
   const handleRef = useRef(null);
   const latest = useRef({ page, values, context });
   latest.current = { page, values, context };
   useEffect(() => {
     let disposed = false;
-    Promise.resolve(panel.mount(boxRef.current, { getPage, patchPage, values: latest.current.values, context: latest.current.context })).then((h) => {
+    Promise.resolve(panel.mount(boxRef.current, { getPage, patchPage, getPages, patchPageById, values: latest.current.values, context: latest.current.context })).then((h) => {
       if (disposed) { if (h && h.dispose) h.dispose(); return; }
       handleRef.current = h;
       const l = latest.current;
@@ -682,6 +682,19 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
   }
   function patch(id, change) {
     const next = latest.current.map((p) => (p.id === id ? { ...p, ...change } : p));
+    latest.current = next;
+    onChange(next);
+  }
+  // For panels that change other pages too (a pair of tiles that talk, v0.29.0):
+  // every page as it is now, and a change to several pages at once
+  // ({ [page id]: change }, or a function of the pages returning that).
+  const getPages = () => latest.current.slice();
+  function patchPageById(changes) {
+    const c = typeof changes === "function" ? changes(latest.current.slice()) : changes;
+    if (!c || typeof c !== "object") return;
+    const ids = Object.keys(c).filter((id) => c[id] && latest.current.some((p) => p.id === id));
+    if (!ids.length) return;
+    const next = latest.current.map((p) => (ids.includes(p.id) ? { ...p, ...c[p.id] } : p));
     latest.current = next;
     onChange(next);
   }
@@ -884,6 +897,8 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
             <TogglePanel
               key={`${spec.id}-${page.layout || ""}-piece`}
               panel={input.piece.panel}
+              getPages={getPages}
+              patchPageById={patchPageById}
               page={page}
               values={values}
               context={context}

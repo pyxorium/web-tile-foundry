@@ -270,6 +270,13 @@ html, body { margin: 0; height: 100%; background: var(--desk); color: var(--ink)
 [data-look="collage"] .zp .tilebox::before { content: ""; position: absolute; z-index: 3; top: -7px; left: 50%; width: 64px; height: 16px; margin-left: -32px; background: rgba(240,228,190,.78); transform: rotate(-3deg); pointer-events: none; }
 [data-look="riso"] .zp .tileframe { border: 2px solid var(--ink-b); }
 .card .tilebox { visibility: hidden; }
+/* Tiles that talk (v0.29.0): "Message sent · Go to Alice's tile (p. 2) →" and "From Bob's tile (p. 1)". */
+.zp .tile-talk { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--soft); }
+.zp .tile-talk[hidden] { display: none; }
+.zp .tile-go { flex: none; min-height: 26px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--ink); color: var(--paper); font: 600 11px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; }
+.zp .tile-go:focus-visible { outline: 2px solid rgba(47,95,179,.6); outline-offset: 2px; }
+[data-look="collage"] .zp .tile-go { background: var(--accent); color: #fff; }
+[data-look="riso"] .zp .tile-go { background: var(--ink-b); color: var(--ink); }
 /* A tape's J-card (stage 4, part 2). The banner keeps its own colours; its frame follows the look. */
 .zp.tape-page .tapeframe { position: relative; display: block; flex: none; aspect-ratio: 16 / 9; overflow: hidden; background: #222; border: 1px solid var(--line); border-radius: 4px; color: inherit; }
 .zp .tapeframe img.poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -1238,6 +1245,13 @@ export const READER_JS = String.raw`
     if (t.by && t.by !== "@" + config.handle) cap.appendChild(el("span", "tile-by", "by " + t.by));
     cap.appendChild(note);
     cap.appendChild(again);
+    if (t.pair) {
+      // Tiles that talk: where a message went, or where one came from (drawTalk).
+      var talkLine = el("span", "tile-talk");
+      talkLine.setAttribute("aria-live", "polite");
+      talkLine.hidden = true;
+      cap.appendChild(talkLine);
+    }
     if (t.app && t.made && /^https:\/\//.test(t.madeUrl || "")) {
       // A known app (ATMOSYNTH: the patch; Treeline: the activity): the credit links there.
       var m = el("a", "tile-made", "made with " + t.made + " ↗");
@@ -1278,6 +1292,9 @@ export const READER_JS = String.raw`
       shownNow.forEach(function (i) {
         var p = i != null && config.pages[i];
         if (p && p.layout === "tile" && p.tile && !tilesOn[p.id]) startTile(p);
+        // Its partner starts with it (tiles that talk, v0.29.0), wherever it is.
+        var q = p && p.tile && p.tile.pair ? tilePage(p.tile.pair) : null;
+        if (q && q.layout === "tile" && q.tile && !tilesOn[q.id]) startTile(q);
       });
     }, config.preview ? PREVIEW_START_MS : START_MS);
   }
@@ -1552,7 +1569,9 @@ export const READER_JS = String.raw`
   function startTile(p) {
     var t = p.tile;
     stopTile(p.id, true);
-    var me = { state: "loading", slow: 0, urls: [], frame: null };
+    // hello: it has said hello (so it hears presence); open: it listens, so
+    // messages for it go straight in rather than wait in its inbox.
+    var me = { state: "loading", slow: 0, urls: [], frame: null, hello: false, open: false, bucket: TALK_BURST, filled: Date.now() };
     tilesOn[p.id] = me;
     me.timers = [
       setTimeout(function () { if (tilesOn[p.id] === me && me.state === "loading") { me.slow = 1; drawTile(p.id); } }, STILL_MS),
@@ -1584,6 +1603,11 @@ export const READER_JS = String.raw`
           me.urls.push(u);
           f.src = u;
         }
+        // A paired tile may not say anything before it listens: what waits for
+        // it goes in a moment after its page has loaded (or as soon as it speaks).
+        if (t.pair) f.addEventListener("load", function () {
+          setTimeout(function () { if (tilesOn[p.id] === me) openTalk(p.id); }, TALK_SETTLE_MS);
+        });
         box.appendChild(f);
         me.frame = f;
         if (t.app) {
@@ -1606,6 +1630,8 @@ export const READER_JS = String.raw`
     var me = tilesOn[id];
     if (!me) return;
     delete tilesOn[id];
+    // Its partner, if it listens for presence, hears it has gone.
+    if (me.hello) tellPresence(partnerId(id));
     (me.timers || []).forEach(clearTimeout);
     if (me.ro) me.ro.disconnect();
     if (me.frame) me.frame.remove();
@@ -1620,7 +1646,146 @@ export const READER_JS = String.raw`
   }
   function stopTilesOffPage() {
     var ids = shownNow.filter(function (i) { return i != null; }).map(function (i) { return config.pages[i].id; });
-    Object.keys(tilesOn).forEach(function (id) { if (ids.indexOf(id) < 0) stopTile(id); });
+    // Paired tiles keep running, hidden, while the zine is open (v0.29.0).
+    Object.keys(tilesOn).forEach(function (id) { if (ids.indexOf(id) < 0 && !partnerId(id)) stopTile(id); });
+  }
+
+  // Tiles that talk (v0.29.0). A paired tile's messages to its parent (this
+  // reader) go to its partner's frame: any plain object, as it is, within size
+  // and rate limits. A message for a partner that hasn't started, or isn't
+  // listening yet, waits in its inbox (the newest TALK_INBOX). The reader stands
+  // in for a host: a tile's hello (it has just started) is answered with its
+  // partner's presence and a round trip of 0, and never passed on; its partner
+  // hears "present" again then (so it sends what it has), and "gone" when it
+  // stops. Only tiles that said hello hear presence. Messages carrying the
+  // zine's own "zine" key are the reader's business and never passed on.
+  var TALK_MAX_CHARS = 65536, TALK_INBOX = 64, TALK_BURST = 240, TALK_RATE = 120, TALK_SETTLE_MS = 1500;
+  var inbox = {}; // page id -> messages waiting for its tile
+  var talkNotes = {}; // page id -> { sent, from, seen }
+  function partnerId(id) {
+    var p = tilePage(id), to = p && p.tile && p.tile.pair;
+    var q = to && tilePage(to);
+    return q && q.tile && q.tile.pair === id ? to : null;
+  }
+  function plainObject(d) { return d !== null && typeof d === "object" && Object.prototype.toString.call(d) === "[object Object]"; }
+  function frameOwner(win) {
+    if (!win) return null;
+    var ids = Object.keys(tilesOn);
+    for (var k = 0; k < ids.length; k++) {
+      var me = tilesOn[ids[k]];
+      if (me.frame && me.frame.contentWindow === win) return ids[k];
+    }
+    return null;
+  }
+  function post(id, d) {
+    var me = tilesOn[id];
+    try { me.frame.contentWindow.postMessage(d, "*"); } catch (e) {}
+  }
+  function listening(id) {
+    var me = tilesOn[id];
+    return Boolean(me && me.state === "running" && me.frame && me.open);
+  }
+  function deliver(id, d) {
+    if (listening(id)) { post(id, d); return; }
+    var box = inbox[id] || (inbox[id] = []);
+    box.push(d);
+    if (box.length > TALK_INBOX) box.shift();
+  }
+  function openTalk(id) {
+    var me = tilesOn[id];
+    if (!me || me.open || me.state !== "running") return;
+    me.open = true;
+    var box = inbox[id] || [];
+    delete inbox[id];
+    box.forEach(function (d) { post(id, d); });
+  }
+  function present(id) { var me = id && tilesOn[id]; return Boolean(me && me.state === "running" && me.hello); }
+  function tellPresence(id) {
+    // Tells tile id whether its partner is there (only if it said hello).
+    if (!present(id)) return;
+    post(id, { kind: "presence", state: present(partnerId(id)) ? "present" : "gone" });
+  }
+  function withinRate(me) {
+    var now = Date.now();
+    me.bucket = Math.min(TALK_BURST, me.bucket + (now - me.filled) * TALK_RATE / 1000);
+    me.filled = now;
+    if (me.bucket < 1) return false;
+    me.bucket -= 1;
+    return true;
+  }
+  function smallEnough(d) {
+    try { var j = JSON.stringify(d); return typeof j === "string" && j.length <= TALK_MAX_CHARS; } catch (e) { return false; }
+  }
+  function onScreen(id) {
+    return shownNow.some(function (i) { return i != null && config.pages[i] && config.pages[i].id === id; });
+  }
+  window.addEventListener("message", function (e) {
+    var d = e.data;
+    if (!plainObject(d)) return;
+    var id = frameOwner(e.source), to = id && partnerId(id);
+    if (!to) return;
+    var me = tilesOn[id];
+    if (me.state !== "running") return;
+    openTalk(id); // it speaks, so it listens
+    if (d.kind === "hello") {
+      me.hello = true;
+      tellPresence(id);
+      post(id, { kind: "rtt", ms: 0 });
+      tellPresence(to);
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(d, "zine")) return;
+    if (!withinRate(me) || !smallEnough(d)) return;
+    deliver(to, d);
+    // The caption: when the reader can see the sender but not its partner.
+    if (onScreen(id) && !onScreen(to)) {
+      var a = talkNotes[id] || (talkNotes[id] = {}), b = talkNotes[to] || (talkNotes[to] = {});
+      var changed = !a.sent || !b.from;
+      a.sent = true;
+      b.from = true; b.seen = false;
+      if (changed) { drawTalk(id); drawTalk(to); }
+    }
+  });
+  // "p. 2", or "the back".
+  function pageWords(id) {
+    var p = tilePage(id);
+    if (!p) return "";
+    return p.kind === "back" ? "the back" : "p. " + indexName(p);
+  }
+  function tileWords(id) {
+    var p = tilePage(id), short = p && p.tile && p.tile.short;
+    return short ? short + "'s tile (" + pageWords(id) + ")" : "the tile on " + pageWords(id);
+  }
+  function drawTalk(id) {
+    var cap = root.querySelector('.tcap[data-cap="' + id + '"]');
+    var line = cap && cap.querySelector(".tile-talk");
+    if (!line) return;
+    var n = talkNotes[id] || {}, to = partnerId(id);
+    line.textContent = "";
+    if (to && n.sent) {
+      line.appendChild(document.createTextNode("Message sent"));
+      line.appendChild(el("span", null, "·"));
+      var go = el("button", "tile-go", "Go to " + tileWords(to) + " →");
+      go.type = "button";
+      go.addEventListener("click", function (ev) { ev.stopPropagation(); goto(to); });
+      line.appendChild(go);
+    } else if (to && n.from) {
+      line.appendChild(document.createTextNode("From " + tileWords(to)));
+    }
+    line.hidden = !line.firstChild;
+  }
+  // After each turn: a sender's button goes once its partner's page has been
+  // shown; a "From …" note goes once it has been seen and its page turned away.
+  function updateTalkNotes() {
+    Object.keys(talkNotes).forEach(function (id) {
+      var n = talkNotes[id], to = partnerId(id), was = Boolean(n.sent || n.from);
+      if (n.sent && to && onScreen(to)) n.sent = false;
+      if (n.from) {
+        if (onScreen(id)) n.seen = true;
+        else if (n.seen) { n.from = false; n.seen = false; }
+      }
+      if (was !== Boolean(n.sent || n.from)) drawTalk(id);
+    });
   }
 
   // A big quote starts large and shrinks until it fits (never below 18px).
@@ -1681,6 +1846,8 @@ export const READER_JS = String.raw`
   function build() {
     clearTimeout(startTimer);
     Object.keys(tilesOn).forEach(function (id) { stopTile(id, true); });
+    inbox = {};
+    talkNotes = {};
     if (creditsOpen) creditsOpen.shut();
     root.textContent = "";
     applyLook();
@@ -1792,6 +1959,7 @@ export const READER_JS = String.raw`
     var v = views()[viewIndex()];
     shownNow = v.slice();
     stopTilesOffPage();
+    updateTalkNotes();
     var cols = mode === "spread" ? 2 : 1;
     pageEls.forEach(function (e, i) {
       var slot = v.indexOf(i);

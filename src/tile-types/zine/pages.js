@@ -7,6 +7,7 @@ import { soundForReader, soundPath, SOUND_COST, QUOTE_SOUND_COST } from "./sound
 import { tileForReader, tapeForReader, ATMOSYNTH_HOME } from "./piece.js";
 import { bookForReader, BOOKHIVE } from "./books.js";
 import { activityForReader, TREELINE } from "./activities.js";
+import { tilePairs, cleanShortName } from "./pairs.js";
 export { cropRect } from "../../core/pictures.js";
 
 // The pages of a Zine Scene zine and what each can hold, plus the reader's
@@ -299,7 +300,8 @@ export function cleanCrop(crop) {
  */
 export function zinePages(pages, src = picturePath, { paper, look, sprite = false, soundSrc = (p) => soundPath(p.id), tileSrc = null, count } = {}) {
   const used = pagesInUse(pages, count);
-  return pagesFor(count).map((spec, i) => {
+  const specs = pagesFor(count);
+  const shown = specs.map((spec, i) => {
     const p = used[i] || { id: spec.id };
     const shows = showsOf(spec, p);
     const out = { id: spec.id, kind: spec.kind, label: spec.label, shows: shows.slice() };
@@ -335,6 +337,18 @@ export function zinePages(pages, src = picturePath, { paper, look, sprite = fals
     }
     return out;
   });
+  // Tiles that talk (v0.29.0): each paired tile names its partner's page, and
+  // the short name its captions use ("Go to Alice's tile (p. 2)").
+  const pairs = tilePairs(specs, used);
+  shown.forEach((out, i) => {
+    const to = pairs.get(out.id);
+    const other = to && shown.find((z) => z.id === to);
+    if (!out.tile || !other || !other.tile) return;
+    out.tile.pair = to;
+    const short = cleanShortName(used[i] && used[i].shortName);
+    if (short) out.tile.short = short;
+  });
+  return shown;
 }
 
 export const MAKE_URL = "https://foundry.thunderbird.cafe/";

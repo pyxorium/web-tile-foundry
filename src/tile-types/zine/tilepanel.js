@@ -3,6 +3,8 @@ import { listTileTypes } from "../../core/registry.js";
 import { formatSize } from "../../core/fileset.js";
 import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS, isAtmosynthTile, atmoPatchInfo, appTileInfo, appType } from "./piece.js";
 import { myAccounts, nameOf } from "../../core/my-accounts.js";
+import { pagesFor, pagesInUse } from "./pages.js";
+import { tilePairs, pairChanges, showsTile, cleanShortName, SHORT_NAME_MAX } from "./pairs.js";
 
 // The "Your tile" / "Your tape" panel on an "A tile" or "A tape" page (stage 4):
 // pick one of your published tiles (or tapes); the Foundry copies it into the
@@ -174,7 +176,7 @@ function tasteSource(getPage) {
   };
 }
 
-export function mountTilePanel(root, { getPage, patchPage, context, values }) {
+export function mountTilePanel(root, { getPage, patchPage, getPages, patchPageById, context, values }) {
   let page = getPage() || {};
   const kind = PIECE_KINDS[page.layout] || "tile";
   const want = kind === "tape" ? "tape" : "live";
@@ -205,8 +207,27 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
   card.append(thumb, about);
   const help = el("p", "field-help tile-help", kind === "tape"
     ? "Shows as the tape's J-card: its cassette, title, songs by side and dedication, with a link to play the whole tape."
-    : "Copied exactly as you published it. Readers tap it to start it on the page; it stops when they turn the page.");
+    : "Copied exactly as you published it. It starts when its page is shown, and stops when the page is turned.");
   box.append(head, note, status, card, help);
+
+  // Tiles that talk (v0.29.0, "A web tile" pages only): this tile's partner on
+  // another tile page, set on both pages at once, and the short name the
+  // reader's captions call this tile by.
+  const talk = el("div", "tile-talk");
+  const talkLabel = el("label", "field-label", "Talks to");
+  const talkPick = el("select", "text");
+  talkPick.id = `talk-${Math.random().toString(36).slice(2, 9)}`;
+  talkLabel.htmlFor = talkPick.id;
+  const talkHelp = el("p", "field-help", "Tiles that talk pass messages to each other through the zine, such as a wish and its grant. Both keep running while the zine is open.");
+  const shortBox = el("label", "tile-talk-short");
+  const shortInput = el("input", "text");
+  shortInput.type = "text";
+  shortInput.maxLength = SHORT_NAME_MAX;
+  shortInput.placeholder = "e.g. Bob";
+  shortBox.append(el("span", "field-label", "Short name (optional)"), shortInput, el("p", "field-help", ""));
+  const shortHelp = shortBox.querySelector(".field-help");
+  talk.append(talkLabel, talkPick, talkHelp, shortBox);
+  if (kind === "tile") box.append(talk);
 
   // The taste (tape pages only): a switch, then the sound panel with the tape's songs.
   const taste = el("div", "tape-taste");
@@ -381,6 +402,67 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     patchPage((pg) => (pg.piece ? { piece: { ...pg.piece, status: "loading", error: undefined } } : null));
     copy(p.uri, p.cid);
   });
+  // Every page now (the latest), and the page specs in use with their pages.
+  const allPages = () => (getPages ? getPages() : (lastValues && lastValues.pages) || []);
+  function talkState() {
+    const pages = allPages();
+    const count = lastValues && lastValues.pageCount;
+    const specs = pagesFor(count);
+    const used = pagesInUse(pages, count);
+    const me = (getPage() || page || {}).id;
+    return { pages, specs, used, me, partner: tilePairs(specs, used).get(me) || "" };
+  }
+  const pageWords = (spec) => (spec.kind === "back" ? "the back" : `p. ${spec.short || spec.label}`);
+  function drawTalk() {
+    if (kind !== "tile") return;
+    const cur = getPage() || page || {};
+    talk.hidden = !showsTile(cur);
+    if (talk.hidden) return;
+    const { specs, used, me, partner } = talkState();
+    // A pair that no longer counts (the other page's tile taken off, or the
+    // page put aside) ends quietly.
+    if (cur.talksTo && !partner) {
+      if (patchPageById) patchPageById(pairChanges(allPages(), me, ""));
+      else patchPage((pg) => (pg.talksTo ? { talksTo: null } : null));
+    }
+    talkPick.replaceChildren();
+    const none = el("option", null, "Nobody");
+    none.value = "";
+    talkPick.append(none);
+    specs.forEach((spec, i) => {
+      if (spec.id === me || !showsTile(used[i])) return;
+      const o = el("option", null, `${spec.label}: ${used[i].piece.name || "a tile"}`);
+      o.value = spec.id;
+      talkPick.append(o);
+    });
+    talkPick.value = partner;
+    talkPick.disabled = talkPick.options.length < 2;
+    talkHelp.textContent = talkPick.disabled
+      ? "Tiles that talk pass messages to each other through the zine, such as a wish and its grant. Put a tile on another page to pair it with this one."
+      : "Tiles that talk pass messages to each other through the zine, such as a wish and its grant. Both keep running while the zine is open.";
+    shortBox.hidden = !partner;
+    if (document.activeElement !== shortInput) shortInput.value = cur.shortName || "";
+    const mySpec = specs.find((s2) => s2.id === me);
+    const name = cleanShortName(shortInput.value);
+    const where = mySpec ? pageWords(mySpec) : "";
+    shortHelp.textContent = `What the captions call this tile: “${name ? `Go to ${name}'s tile (${where})` : `Go to the tile on ${where}`}”.`;
+  }
+  talkPick.addEventListener("change", () => {
+    const me = (getPage() || page || {}).id;
+    if (!me) return;
+    const changes = pairChanges(allPages(), me, talkPick.value || "");
+    if (patchPageById) patchPageById(changes);
+    else if (changes[me]) patchPage(changes[me]);
+  });
+  shortInput.addEventListener("input", () => {
+    patchPage({ shortName: shortInput.value.slice(0, SHORT_NAME_MAX) });
+  });
+  shortInput.addEventListener("change", () => {
+    const clean = cleanShortName(shortInput.value);
+    if (clean !== shortInput.value) shortInput.value = clean;
+    patchPage({ shortName: clean });
+  });
+
   tasteBox.addEventListener("change", () => {
     patchPage(tasteBox.checked ? { sound: true } : { sound: false });
   });
@@ -486,6 +568,7 @@ export function mountTilePanel(root, { getPage, patchPage, context, values }) {
     if (tiles && p && p.uri && pick.value !== p.uri) allTiles(accounts).then(({ all }) => { if (!disposed) drawList(all); }, () => {});
     drawCard();
     drawTaste();
+    drawTalk();
   }
 
   update(page, values, context);
