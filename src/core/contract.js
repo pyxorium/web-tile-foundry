@@ -20,6 +20,13 @@
 //                        shown as a grid of pictures: each option's `image` (a picture's
 //                        address, made ahead of time), or else drawn by optionPreview (below).
 //                        Pictures are drawn as pixel art unless the input has smooth: true.
+//                        With display: "menu" (v0.30.0) it is a pill that opens a short menu
+//                        ("Label: choice ▾"); an option's `font` writes its name in that font.
+//               Any input: row (v0.30.0), inputs that share it sit side by side (the last
+//                        one's rowHelp under the row, and choices' notes under it too);
+//                        inPage (v0.31.0), a page id: drawn inside that page's panel of the
+//                        type's "pages" input (with its problem beside its label, and the
+//                        page's tab marked), not at the top; hint, a short line under it.
 //                        note(values) -> sentence | null, optional: a small line shown
 //                        under the choice while it applies (e.g. what a choice put aside).
 //               text     a line or box of text (maxLength, multiline)

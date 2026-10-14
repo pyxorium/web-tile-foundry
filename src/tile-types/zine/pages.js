@@ -53,7 +53,7 @@ export const LAYOUTS = Object.freeze([
 export const PAGES = Object.freeze([
   {
     id: "cover", label: "Cover", short: "C", kind: "cover", fields: ["picture", "subtitle"],
-    note: "The title and “by @you” are added from the zine's title and your account.",
+    note: "“by @you” is added from your account.",
   },
   ...[1, 2, 3, 4, 5, 6].map((n) => ({ id: `p${n}`, label: `Page ${n}`, short: String(n), kind: "page", layouts: true })),
   {

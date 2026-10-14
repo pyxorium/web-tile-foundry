@@ -736,7 +736,7 @@ function TogglePanel({ panel, getPage, patchPage, getPages, patchPageById, page,
   return <div ref={boxRef} className="page-toggle-panel" />;
 }
 
-function PagesInput({ input, value, onChange, values, type, context, setValue }) {
+function PagesInput({ input, value, onChange, values, type, context, setValue, problems = [] }) {
   const pages = Array.isArray(value) ? value : [];
   const [openId, setOpenId] = useState(input.pages[0].id);
   const [busy, setBusy] = useState({}); // page id -> true while its picture is being made small
@@ -914,6 +914,12 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
   const fullness = input.wordLimit ? pageFullness(input, spec, page, values) : null;
   const words = page.words || "";
 
+  // Inputs drawn inside a page's panel (v0.31.0: the title on the cover), and
+  // whether a page needs attention because one of them has a problem.
+  const pageInputs = (id) => ((type && type.inputs) || []).filter((i) => i.inPage === id && isShown(i, values));
+  const problemOf = (key) => problems.find((pr) => pr.key === key);
+  const needs = (id) => pageInputs(id).some((i) => problemOf(i.key));
+
   return (
     <fieldset className="field pages">
       <legend className="field-label">{input.label}</legend>
@@ -925,9 +931,9 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
             type="button"
             role="tab"
             aria-selected={p.id === spec.id}
-            className={`page-tab ${p.id === spec.id ? "on" : ""} ${has(valueOf(p)) ? "filled" : ""}`}
+            className={`page-tab ${p.id === spec.id ? "on" : ""} ${has(valueOf(p)) ? "filled" : ""} ${needs(p.id) ? "needs" : ""}`}
             onClick={() => open(p.id)}
-            title={p.label}
+            title={needs(p.id) ? `${p.label}: needs attention` : p.label}
           >
             {p.short || p.label}
           </button>
@@ -942,6 +948,31 @@ function PagesInput({ input, value, onChange, values, type, context, setValue })
       )}
       <div className="page-editor" role="tabpanel" aria-label={spec.label}>
         <p className="page-editor-title">{spec.label}</p>
+        {pageInputs(spec.id).map((pi) => {
+          const pr = problemOf(pi.key);
+          const id = `${input.key}-${pi.key}`;
+          const v = values[pi.key] || "";
+          return (
+            <div key={pi.key} className="field page-text page-own-field">
+              <div className="label-row">
+                <label className="field-label" htmlFor={id}>{pi.label}</label>
+                {pr && <span className="field-error field-error-inline" id={`${id}-problem`}>{pr.message}</span>}
+              </div>
+              <input
+                id={id}
+                className="text"
+                value={v}
+                maxLength={pi.maxLength}
+                aria-invalid={pr ? "true" : undefined}
+                aria-describedby={pr ? `${id}-problem` : undefined}
+                onChange={(e) => setValue && setValue(pi.key, e.target.value)}
+              />
+              {pi.maxLength && <span className="counter">{v.length} / {pi.maxLength}</span>}
+              {pi.help && <p className="field-help field-help-after">{pi.help}</p>}
+              {pi.hint && <p className="field-help field-hint">{pi.hint}</p>}
+            </div>
+          );
+        })}
         {spec.layouts && (
           <div className="segmented page-layouts">
             {input.layouts.map((l) => (
@@ -1151,7 +1182,7 @@ export function InputForm({ type, values, onChange, problems, context, only = nu
     const shown = input.kind === "pages" ? problems.filter((p) => p.key === input.key) : problem ? [problem] : [];
     return (
       <div key={input.key}>
-        <Component input={input} value={values[input.key]} onChange={(v) => onChange(input.key, v)} type={type} values={values} context={context} setValue={onChange} {...extra} />
+        <Component input={input} value={values[input.key]} onChange={(v) => onChange(input.key, v)} type={type} values={values} context={context} setValue={onChange} problems={problems} {...extra} />
         {input.kind !== "sprite" && shown.map((p, i) => <p key={i} className="field-error">{p.message}</p>)}
       </div>
     );
@@ -1160,7 +1191,9 @@ export function InputForm({ type, values, onChange, problems, context, only = nu
   // Inputs that share a group are shown together under the group's title.
   const blocks = [];
   const wanted = (i) => (only ? only.has(i.key) : !(skip && skip.has(i.key)));
-  for (const input of type.inputs.filter((i) => isShown(i, values) && wanted(i))) {
+  // An input with inPage (v0.31.0: the zine's title) is drawn inside that page's panel.
+  const inPages = type.inputs.some((i) => i.kind === "pages");
+  for (const input of type.inputs.filter((i) => isShown(i, values) && wanted(i) && !(i.inPage && inPages))) {
     const last = blocks[blocks.length - 1];
     if (input.group && last && last.group === input.group) last.inputs.push(input);
     else if (!input.group && input.row && last && !last.group && last.inputs[last.inputs.length - 1].row === input.row) last.inputs.push(input);
@@ -1177,10 +1210,13 @@ export function InputForm({ type, values, onChange, problems, context, only = nu
       const row = [input];
       while (inputs[i + 1] && inputs[i + 1].row === input.row) row.push(inputs[++i]);
       const help = row.map((r) => r.rowHelp).filter(Boolean)[0];
+      // A choice's note (e.g. pages put aside) goes under the whole row.
+      const notes = row.map((r) => (r.note ? r.note(values || {}) : null)).filter(Boolean);
       out.push(
         <div key={`row-${input.row}`} className="field-row-box">
           <div className="field-row">{row.map(field)}</div>
           {help && <p className="field-help">{help}</p>}
+          {notes.map((n, k) => <p key={k} className="field-help field-note" aria-live="polite">{n}</p>)}
         </div>,
       );
     }

@@ -5,6 +5,7 @@ import { tilePlacement, tapeFromJson, tasteSongs, PIECE_KINDS, isAtmosynthTile, 
 import { myAccounts, nameOf } from "../../core/my-accounts.js";
 import { pagesFor, pagesInUse } from "./pages.js";
 import { tilePairs, pairChanges, showsTile, cleanShortName, SHORT_NAME_MAX } from "./pairs.js";
+import { tileTalks, pairQualifies } from "./talk.js";
 
 // The "Your tile" / "Your tape" panel on an "A tile" or "A tape" page (stage 4):
 // pick one of your published tiles (or tapes); the Foundry copies it into the
@@ -198,12 +199,18 @@ export function mountTilePanel(root, { getPage, patchPage, getPages, patchPageBy
   thumb.alt = "";
   const about = el("div", "tile-about");
   const title = el("strong", "tile-name");
+  // Talking tiles (v0.31.0) get a small "talks" badge after their name.
+  const talksBadge = el("span", "tile-talks", "talks");
+  talksBadge.title = "This tile talks to other tiles through the zine.";
+  talksBadge.setAttribute("aria-label", "Talks: this tile talks to other tiles through the zine.");
   const typeLine = el("span", "field-help tile-kind");
   const made = el("span", "snd-made tile-made");
   made.setAttribute("aria-live", "polite");
   const retry = el("button", "btn btn-quiet btn-small", "Try again");
   retry.type = "button";
-  about.append(title, typeLine, made);
+  const nameRow = el("span", "tile-name-row");
+  nameRow.append(title, talksBadge);
+  about.append(nameRow, typeLine, made);
   card.append(thumb, about);
   const help = el("p", "field-help tile-help", kind === "tape"
     ? "Shows as the tape's J-card: its cassette, title, songs by side and dedication, with a link to play the whole tape."
@@ -218,7 +225,13 @@ export function mountTilePanel(root, { getPage, patchPage, getPages, patchPageBy
   const talkPick = el("select", "text");
   talkPick.id = `talk-${Math.random().toString(36).slice(2, 9)}`;
   talkLabel.htmlFor = talkPick.id;
-  const talkHelp = el("p", "field-help", "Tiles that talk pass messages to each other through the zine, such as a wish and its grant. Both keep running while the zine is open.");
+  const talkHelp = el("p", "field-help", "");
+  // v0.31.0: a tile that shows no sign of talking says so; the menu then only
+  // opens on purpose ("Pair it anyway…"). "Show all tiles" adds the others to a
+  // talking tile's menu, marked, for a talker the check missed.
+  const aloneNote = el("p", "field-help tile-alone", "This tile plays on its own: it doesn't seem to talk to other tiles.");
+  const showAll = el("button", "link-button tile-talk-more", "Show all tiles");
+  showAll.type = "button";
   const shortBox = el("label", "tile-talk-short");
   const shortInput = el("input", "text");
   shortInput.type = "text";
@@ -226,7 +239,9 @@ export function mountTilePanel(root, { getPage, patchPage, getPages, patchPageBy
   shortInput.placeholder = "e.g. Bob";
   shortBox.append(el("span", "field-label", "Short name (optional)"), shortInput, el("p", "field-help", ""));
   const shortHelp = shortBox.querySelector(".field-help");
-  talk.append(talkLabel, talkPick, talkHelp, shortBox);
+  talk.append(talkLabel, aloneNote, talkPick, talkHelp, showAll, shortBox);
+  let everyTile = false; // the menu lists every tile page, not only talking ones
+  let everyFor = null;
   if (kind === "tile") box.append(talk);
 
   // The taste (tape pages only): a switch, then the sound panel with the tape's songs.
@@ -419,27 +434,50 @@ export function mountTilePanel(root, { getPage, patchPage, getPages, patchPageBy
     talk.hidden = !showsTile(cur);
     if (talk.hidden) return;
     const { specs, used, me, partner } = talkState();
-    // A pair that no longer counts (the other page's tile taken off, or the
-    // page put aside) ends quietly.
-    if (cur.talksTo && !partner) {
+    const mine = tileTalks(cur.piece);
+    // Opening every tile is for this tile only: a new tile starts afresh.
+    if (everyFor !== (cur.piece && cur.piece.uri)) { everyFor = cur.piece && cur.piece.uri; everyTile = false; }
+    // A pair that no longer counts ends quietly: the other page's tile taken off,
+    // the page put aside, or (v0.31.0) a tile that doesn't talk, unless the
+    // creator paired them on purpose.
+    const partnerPage = partner ? used[specs.findIndex((sp) => sp.id === partner)] : null;
+    if ((cur.talksTo && !partner) || (partner && !pairQualifies(cur, partnerPage))) {
       if (patchPageById) patchPageById(pairChanges(allPages(), me, ""));
       else patchPage((pg) => (pg.talksTo ? { talksTo: null } : null));
+      return;
     }
+    const others = [];
+    specs.forEach((spec, i) => {
+      if (spec.id === me || !showsTile(used[i])) return;
+      others.push({ spec, page: used[i], talks: tileTalks(used[i].piece) });
+    });
+    const open = mine === true || everyTile || Boolean(partner);
+    const hidden = others.filter((o) => o.talks !== true && o.spec.id !== partner);
     talkPick.replaceChildren();
     const none = el("option", null, "Nobody");
     none.value = "";
     talkPick.append(none);
-    specs.forEach((spec, i) => {
-      if (spec.id === me || !showsTile(used[i])) return;
-      const o = el("option", null, `${spec.label}: ${used[i].piece.name || "a tile"}`);
-      o.value = spec.id;
-      talkPick.append(o);
-    });
+    for (const o of others) {
+      if (o.talks !== true && !everyTile && o.spec.id !== partner) continue;
+      const mark = o.talks === true ? "" : o.talks === null ? " (still copying)" : " (no sign of talking)";
+      const opt = el("option", null, `${o.spec.label}: ${o.page.piece.name || "a tile"}${mark}`);
+      opt.value = o.spec.id;
+      talkPick.append(opt);
+    }
     talkPick.value = partner;
     talkPick.disabled = talkPick.options.length < 2;
-    talkHelp.textContent = talkPick.disabled
-      ? "Tiles that talk pass messages to each other through the zine, such as a wish and its grant. Put a tile on another page to pair it with this one."
-      : "Tiles that talk pass messages to each other through the zine, such as a wish and its grant. Both keep running while the zine is open.";
+    aloneNote.hidden = open;
+    talkPick.hidden = !open;
+    showAll.textContent = mine === true ? "Show all tiles" : "Pair it anyway…";
+    showAll.hidden = everyTile || (mine === true ? hidden.length === 0 : open);
+    talkHelp.hidden = !open;
+    talkHelp.textContent = everyTile && mine !== true
+      ? "Only for talking tiles. This tile shows no sign of talking, so a pair probably won't do anything."
+      : everyTile
+      ? "Only for talking tiles. Tiles marked “no sign of talking” probably won't answer."
+      : talkPick.disabled
+        ? "Only for talking tiles. Put a matching talking tile on another page to talk with this one."
+        : "Only for talking tiles. Choose the page with its partner.";
     shortBox.hidden = !partner;
     if (document.activeElement !== shortInput) shortInput.value = cur.shortName || "";
     const mySpec = specs.find((s2) => s2.id === me);
@@ -447,10 +485,25 @@ export function mountTilePanel(root, { getPage, patchPage, getPages, patchPageBy
     const where = mySpec ? pageWords(mySpec) : "";
     shortHelp.textContent = `What the captions call this tile: “${name ? `Go to ${name}'s tile (${where})` : `Go to the tile on ${where}`}”.`;
   }
+  showAll.addEventListener("click", () => {
+    everyTile = true;
+    drawTalk();
+    if (!talkPick.disabled) talkPick.focus();
+  });
   talkPick.addEventListener("change", () => {
     const me = (getPage() || page || {}).id;
     if (!me) return;
     const changes = pairChanges(allPages(), me, talkPick.value || "");
+    // Paired on purpose with a tile that doesn't seem to talk (v0.31.0): kept on both pages,
+    // so the pair isn't ended as one that no longer counts.
+    const b = talkPick.value || "";
+    if (b) {
+      const pages = allPages();
+      const pg = (id) => pages.find((x) => x && x.id === id);
+      const anyway = !(tileTalks((pg(me) || {}).piece) === true && tileTalks((pg(b) || {}).piece) === true);
+      changes[me] = { ...changes[me], pairAnyway: anyway || null };
+      changes[b] = { ...changes[b], pairAnyway: anyway || null };
+    } else if (changes[me]) changes[me] = { ...changes[me], pairAnyway: null };
     if (patchPageById) patchPageById(changes);
     else if (changes[me]) patchPage(changes[me]);
   });
@@ -473,6 +526,7 @@ export function mountTilePanel(root, { getPage, patchPage, getPages, patchPageBy
     if (!p || !p.uri) return;
     const t = tiles && tiles.get(p.uri);
     title.textContent = p.name || `Untitled ${noun}`;
+    talksBadge.hidden = !(kind === "tile" && tileTalks(p) === true);
     const pl = t && placementOf(t);
     const typeTitle = (pl && pl.type && pl.type.title) || (p.maker === "atmosynth" ? "ATMOSYNTH patch" : p.maker === "app" ? appType((p.app || {}).generator).title : p.typeId) || "";
     const songs = p.tape ? p.tape.sides.reduce((n, s) => n + s.tracks.length, 0) : 0;

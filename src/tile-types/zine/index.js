@@ -70,18 +70,23 @@ export const zine = {
 
   inputs: [
     {
+      // v0.31.0: the title is edited in the Cover page's panel (inPage), where it shows.
       key: "name",
       kind: "text",
       label: "Title",
-      help: "Big on the cover, and the tile's name. **bold** and *italic* work on the cover.",
+      help: "On the cover, and the zine's name in feeds.",
+      hint: "**bold**, *italic*",
+      inPage: "cover",
       required: true,
       maxLength: TITLE_MAX,
     },
     {
+      // v0.31.0: Paper and Pages as two pills in one row, no help (owner).
       key: "paper",
       kind: "choice",
+      display: "menu",
+      row: "format",
       label: "Paper",
-      help: "Sets the shape of the pages, on screen and when printed.",
       required: true,
       options: PAPERS,
     },
@@ -90,10 +95,11 @@ export const zine = {
       // use are put aside: kept, so switching back restores them, never published.
       key: "pageCount",
       kind: "choice",
-      label: "How many pages",
-      help: "8-page classic folded booklet, or 4-page mini.",
+      display: "menu",
+      row: "format",
+      label: "Pages",
       // Not required: a zine without a count (made before stage 6) has 8.
-      options: PAGE_COUNT_OPTIONS,
+      options: PAGE_COUNT_OPTIONS.map((o) => ({ ...o, label: String(o.value) })),
       note: asideNote,
     },
     {
@@ -190,7 +196,7 @@ export const zine = {
         {
           key: "sprite",
           label: "Add my sprite",
-          help: "Your rpg.actor sprite walks along the bottom of this page. Readers can tap it to wave.",
+          help: "Your rpg.actor sprite walks along the bottom. Readers can tap it to wave.",
           unavailable(values, context) {
             if (usableSprite(values.sprite)) return null;
             const own = (context && context.ownSprite) || {};

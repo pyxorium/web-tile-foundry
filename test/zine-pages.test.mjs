@@ -49,7 +49,10 @@ test("page counts: 8 by default, 4 keeps cover, 1, 2, back; 2 keeps cover and ba
   // The choice: three buttons, with Paper and Look; a zine made before (no count) still builds.
   const keys = zine.inputs.map((i) => i.key);
   assert.ok(keys.indexOf("pageCount") === keys.indexOf("paper") + 1);
-  assert.deepEqual(countInput.options.map((o) => o.label), ["8 pages", "4 pages"]);
+  // v0.31.0: a "Pages: 8 ▾" pill beside "Paper: Letter ▾".
+  assert.deepEqual(countInput.options.map((o) => o.label), ["8", "4"]);
+  assert.equal(countInput.label, "Pages");
+  assert.equal(countInput.display, "menu");
   assert.equal(zine.defaults({}).pageCount, 8);
   assert.deepEqual(checkInputs(zine, { ...full(undefined) }), []);
 });

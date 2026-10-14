@@ -130,6 +130,11 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .field-label { display: block; font-weight: 600; margin-bottom: 6px; padding: 0; }
 .field-help { margin: 0 0 8px; color: var(--ink-2); font-size: 14px; }
 .field-error { margin: 6px 0 0; color: var(--danger); font-size: 14px; }
+/* A field's problem beside its label (v0.31.0: the title on the cover); the counter keeps its corner. */
+.label-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding-right: 72px; margin-bottom: 6px; }
+.label-row .field-label { margin-bottom: 0; }
+.field-error-inline { margin: 0; font-size: 13px; }
+.page-own-field { margin-bottom: 14px; }
 .counter { position: absolute; right: 0; top: 0; font-size: 12px; color: var(--ink-2); }
 .text {
   width: 100%; font: inherit; color: var(--ink); background: var(--surface);
@@ -444,6 +449,9 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
   background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; position: relative;
 }
 .page-tab.filled::after { content: ""; position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+/* A page that needs attention (v0.31.0: the cover while the title is missing). */
+.page-tab.needs { border-color: var(--danger); }
+.page-tab.needs::before { content: ""; position: absolute; left: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); }
 .page-tab.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
 .page-tab:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
 .page-editor { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface); display: grid; gap: 10px; }
@@ -660,6 +668,13 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .tile-talk { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .tile-talk[hidden], .tile-talk-short[hidden] { display: none; }
 .tile-talk .field-label { display: block; }
+/* Talking tiles (v0.31.0): a small gold badge on the card, and the panel's quieter states. */
+.tile-name-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.tile-talks { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--gold-soft); color: var(--accent); font-size: 11px; font-weight: 600; line-height: 1.5; letter-spacing: .02em; }
+.tile-talks[hidden] { display: none; }
+.tile-talk .tile-alone { margin: 2px 0 4px; }
+.tile-talk .tile-talk-more { display: block; margin-top: 6px; font-size: 13px; }
+.tile-talk select[hidden], .tile-talk .field-help[hidden], .tile-talk .tile-talk-more[hidden] { display: none; }
 .tile-talk select, .tile-talk input { width: 100%; max-width: 360px; }
 .tile-talk .field-help { margin: 4px 0 0; }
 .tile-talk-short { display: block; margin-top: 10px; }
