@@ -267,3 +267,59 @@ export async function switchAccount(did) {
   const session = await withFreshStorage((client) => client.restore(did));
   return use(session);
 }
+
+// ---- Posting a tile (v0.32.0, the Post step) ----
+//
+// A post goes to the account the tile was published to, even if the creator
+// has switched accounts since. Sign-ins made before v0.32.0 were granted the
+// old permission, without tile posts: the post box reads what a sign-in was
+// granted and, if posting isn't in it, offers to sign that account in again
+// in the small window.
+
+/** The stored sign-in for `did`: the one in use when it matches, otherwise restored, without changing the one in use. */
+async function sessionFor(did) {
+  if (currentSession && currentSession.sub === did) return currentSession;
+  return withFreshStorage((client) => client.restore(did));
+}
+
+/**
+ * The permission string the account's server granted to `did`'s sign-in, or
+ * null when the sign-in doesn't say. Never refreshes the sign-in to find out.
+ */
+export async function grantedScope(did) {
+  const session = await sessionFor(did);
+  if (!session || typeof session.getTokenInfo !== "function") return null;
+  try {
+    const info = await session.getTokenInfo(false);
+    return info && typeof info.scope === "string" ? info.scope : null;
+  } catch (err) {
+    console.warn("[sign-in] Couldn't read what this sign-in was granted.", err);
+    return null;
+  }
+}
+
+/** xrpc for `did`, whether or not it's the account in use now (a post after a switch). */
+export async function xrpcForAccount(did) {
+  const session = await sessionFor(did);
+  if (!session || session.sub !== did) throw new Error("That account isn't signed in on this browser any more.");
+  return (nsid, options) => callWith(session, nsid, options);
+}
+
+/**
+ * Signs `did` in again in the sign-in window (already opened with
+ * openSignInWindow), with the permission the Foundry asks for now. The
+ * library replaces that account's old sign-in. The account in use stays the
+ * same; if it IS this account, its new sign-in is used from now on.
+ * `handle` is the hint shown at the account's server (the DID if unknown).
+ */
+export async function signInAgain(did, handle, { signal } = {}) {
+  if (typeof indexedDB === "undefined" || indexedDB === null) throw new Error(NO_STORAGE_MESSAGE);
+  const hint = String(handle || "").trim().replace(/^@/, "") || did;
+  const session = await withFreshStorage((client) => client.signIn(hint, { display: "popup", popupName: SIGNIN_WINDOW, signal }));
+  // The library replaced this account's stored sign-in; the one in use must not keep the old copy.
+  if (session && currentSession && currentSession.sub === session.sub) use(session);
+  if (!session || session.sub !== did) {
+    throw new Error(`That window signed in a different account. Sign in again as ${handle ? `@${hint}` : "the account your tile is in"}.`);
+  }
+  return { did };
+}

@@ -108,8 +108,8 @@ export function SignIn({ account, onSignIn, accounts = [], onSwitch }) {
       )}
       <div className="heads-up">
         <p>
-          Signing in allows <strong>{appAddress()}</strong> to publish Web Tile changes to your repo.
-          The Foundry doesn't touch your posts, likes, follows or anything else.
+          Signing in allows <strong>{appAddress()}</strong> to publish Web Tiles and tile posts to your repo.
+          The Foundry doesn't touch your Bluesky posts, likes, follows or anything else.
         </p>
       </div>
       <p className="fineprint">

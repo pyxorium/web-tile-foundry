@@ -15,8 +15,15 @@ success screen links to the tile's page on lexicographer.space (the open tile vi
 which links on to appmosphe.re), offers a copyable share link
 (for a Bluesky post) and the tile's copyable at:// address (for twinkl.social
 home pages and other sites), and, tucked away, a copyable snippet for Astro sites
-that have a WebTile component (like thunderbird.cafe). In `?debug`, a "Delete this
-test tile" button removes the tile just published (only that one). The tile-type picker appears automatically once there is more than
+that have a WebTile component (like thunderbird.cafe). Since v0.32.0 the
+success screen also has a **post box** ("Post it to Tile posts"): a few words
+(at most 300 characters), and under More an alt text and a language, then
+**Post to Raku** writes one `cafe.thunderbird.tile.post` record (lexicon:
+pyxorium/tile-posts) to the account the tile was published to, pointing at the
+tile's exact version, and reads it back; Raku's Tile posts then shows the tile
+running inside the post. One post per published tile, only on that screen.
+In `?debug`, a "Delete this test tile" button removes the tile just published
+(only that one), and "Delete this test post" the post just made. The tile-type picker appears automatically once there is more than
 one tile type.
 
 On this computer only, add `?debug` to the address (`http://127.0.0.1:5173/?debug`;
@@ -43,9 +50,14 @@ atproto's localhost client mode: no hosted files, sign-ins last about a day,
 and the consent screen won't show the app's name. At
 `foundry.thunderbird.cafe` it uses the `oauth.json` that
 `npm run build` writes from `src/auth/client-config.js`, the one place the
-permission scope (`atproto repo:ing.dasl.masl blob:*/*`) is set. The app's
+permission scope (`atproto repo:ing.dasl.masl repo:cafe.thunderbird.tile.post blob:*/*`)
+is set: Web Tile records, tile posts and file uploads, nothing else. The app's
 identity is the address `https://foundry.thunderbird.cafe/oauth.json`, which
 sign-in screens show in full; changing it would sign everyone out.
+Sign-ins made before v0.32.0 keep the permission they were given (without
+tile posts); the post box sees that (from what the account's server granted)
+and offers "Sign in again" in a small window, keeping the published screen
+and the words typed.
 
 The package versions in `package.json` (Vite 7, React 19) could not be
 checked against the npm registry when this was written. If `npm install`

@@ -42,7 +42,7 @@ function fakeFetch(routes) {
 }
 
 test("one scope, used by both production and development sign-in", () => {
-  assert.equal(SCOPE, "atproto repo:ing.dasl.masl blob:*/*");
+  assert.equal(SCOPE, "atproto repo:ing.dasl.masl repo:cafe.thunderbird.tile.post blob:*/*");
   const prod = productionClientMetadata();
   assert.equal(prod.client_id, "https://foundry.thunderbird.cafe/oauth.json");
   assert.deepEqual(prod.redirect_uris, ["https://foundry.thunderbird.cafe/"]);

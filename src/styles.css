@@ -678,3 +678,19 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .tile-talk select, .tile-talk input { width: 100%; max-width: 360px; }
 .tile-talk .field-help { margin: 4px 0 0; }
 .tile-talk-short { display: block; margin-top: 10px; }
+
+/* The Post step (v0.32.0): post the just-published tile to Raku's Tile posts. */
+.post-box { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.post-box .field-help { margin: 0; }
+.post-box > .field { margin-top: 2px; }
+.post-text { min-height: 4.5em; }
+.post-more { display: flex; flex-direction: column; gap: 10px; }
+.post-more > summary { font-size: 14px; color: var(--accent); }
+.post-more-body { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
+.post-more-body .field-help { margin: 0 0 6px; }
+.post-lang { max-width: 10em; }
+.post-from { font-size: 14px; }
+.post-reauth .button-row { margin-top: 2px; }
+.post-reauth .field-error { margin: 0; }
+.post-done { border-color: var(--gold); background: color-mix(in srgb, var(--gold-soft) 45%, var(--surface)); }
+.post-done .debug-tools { margin-top: 6px; }

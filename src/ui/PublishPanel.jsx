@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { publishTile, deleteTile, tileViewUrl } from "../core/publish.js";
 import { fetchPublicBlob } from "../core/atproto.js";
-import { xrpcFor } from "../auth/auth.js";
+import { xrpcFor, xrpcForAccount, grantedScope, openSignInWindow, signInAgain, isStorageError } from "../auth/auth.js";
+import { postTile, deletePost, buildPostRecord, canPost, graphemeCount, TEXT_MAX, RAKU_POSTS, PostError } from "../core/tile-post.js";
 import { DEBUG } from "./debug.js";
 import { InputForm } from "./InputForm.jsx";
 import { formatSize } from "../core/fileset.js";
@@ -67,6 +68,230 @@ function ReviewCard({ tile, name, description }) {
   );
 }
 
+const POPUP_BLOCKED = "Your browser blocked the sign-in window. Allow pop-ups for this page, then try again.";
+
+/**
+ * The Post step (v0.32.0): on the published screen, post the tile to Raku's
+ * Tile posts, once. The post always goes to `to`, the account the tile was
+ * published to, even after a switch. A sign-in from before v0.32.0 lacks the
+ * permission: the box offers to sign that account in again in the small
+ * window, keeping what was typed. Its state lives with the published screen
+ * (gone on "Make another tile").
+ *   phase: "checking" | "ready" | "reauth" | "waiting" | "posting" | "posted" | "error"
+ */
+export function PostBox({ out, to, description = "" }) {
+  const [text, setText] = useState("");
+  const [alt, setAlt] = useState("");
+  const [lang, setLang] = useState("");
+  const [box, setBox] = useState({ phase: "checking" });
+  const abort = useRef(null);
+  const from = to.handle ? `@${to.handle}` : null;
+
+  // What the publishing account's sign-in was granted: can it post?
+  async function check(after) {
+    try {
+      const allowed = canPost(await grantedScope(to.did));
+      if (allowed === false) setBox({ phase: "reauth", reason: after ? "still" : "old" });
+      else setBox({ phase: "ready" });
+    } catch (err) {
+      console.error("[post] sign-in check", err);
+      setBox({ phase: "reauth", reason: "gone" });
+    }
+  }
+  useEffect(() => {
+    check(false);
+    return () => { if (abort.current) abort.current.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [to.did]);
+
+  const count = graphemeCount(text.trim());
+  const over = count > TEXT_MAX;
+
+  async function post() {
+    setBox({ phase: "posting" });
+    try {
+      // The words are checked before anything is sent.
+      buildPostRecord({ uri: out.uri, cid: out.recordCid, text, alt, langs: lang });
+      const xrpc = await xrpcForAccount(to.did);
+      const made = await postTile({ xrpc, did: to.did, uri: out.uri, cid: out.recordCid, text, alt, langs: lang });
+      setBox({ phase: "posted", made });
+    } catch (err) {
+      console.error("[post]", err);
+      if (err instanceof PostError && err.step === "scope") setBox({ phase: "reauth", reason: "refused", message: err.message });
+      else setBox({ phase: "error", message: err.message, step: err instanceof PostError ? err.step : "create" });
+    }
+  }
+
+  // Straight from the click: the window must open before anything is awaited.
+  function again() {
+    const win = openSignInWindow();
+    if (!win) {
+      setBox({ phase: "reauth", reason: box.reason, message: POPUP_BLOCKED });
+      return;
+    }
+    const ctl = new AbortController();
+    abort.current = ctl;
+    const reason = box.reason;
+    setBox({ phase: "waiting", reason });
+    signInAgain(to.did, to.handle, { signal: ctl.signal })
+      .then(() => {
+        abort.current = null;
+        return check(true);
+      })
+      .catch((err) => {
+        abort.current = null;
+        if (ctl.signal.aborted) {
+          setBox({ phase: "reauth", reason });
+          return;
+        }
+        console.error("[post] sign in again", err);
+        try { win.close(); } catch { /* already gone */ }
+        const message = isStorageError(err)
+          ? "Signing in couldn't start because this browser isn't allowing the page to store data."
+          : `Signing in again didn't work: ${err.message}`;
+        setBox({ phase: "reauth", reason, message });
+      });
+  }
+
+  function cancel() {
+    if (abort.current) abort.current.abort();
+    abort.current = null;
+    setBox((b) => ({ phase: "reauth", reason: b.reason }));
+  }
+
+  async function removeTestPost() {
+    if (!window.confirm("Delete this test post from your account? This can't be undone.")) return;
+    try {
+      await deletePost({ xrpc: await xrpcForAccount(to.did), did: to.did, rkey: box.made.rkey });
+      setBox((b) => ({ ...b, deleted: true }));
+    } catch (err) {
+      window.alert(`Couldn't delete it: ${err.message}`);
+    }
+  }
+
+  if (box.phase === "posted") {
+    const { made } = box;
+    if (box.deleted) {
+      return (
+        <section className="post-box post-done" role="status" data-post="deleted">
+          <p className="share-label">Test post deleted.</p>
+        </section>
+      );
+    }
+    return (
+      <section className="post-box post-done" role="status" data-post="posted">
+        <p className="share-label">Posted to Tile posts.</p>
+        <p className="field-help">It may take a Refresh in Raku to appear (Raku keeps what it read for a few minutes).</p>
+        <div className="button-row">
+          <a className="btn" href={RAKU_POSTS} target="_blank" rel="noopener">See it in Raku</a>
+        </div>
+        <p className="share-label share-label-second">Your post's address</p>
+        <div className="share-row">
+          <span className="mono share-text">{made.uri}</span>
+          <CopyButton text={made.uri} label="Copy address" />
+        </div>
+        {DEBUG && (
+          <div className="debug-tools">
+            <span className="debug-badge">debug</span>
+            <button type="button" className="btn btn-small btn-danger" onClick={removeTestPost}>Delete this test post</button>
+            <details>
+              <summary>Post as written</summary>
+              <pre>{JSON.stringify(made.record, null, 2)}</pre>
+            </details>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  const busy = box.phase === "posting";
+  const locked = busy || box.phase === "waiting";
+  let action;
+  if (box.phase === "reauth") {
+    const why = {
+      old: "Your sign-in on this browser is from before the Foundry could post. To post, sign in again to allow tile posts.",
+      still: "That sign-in still doesn't allow tile posts. Sign in again and allow them on your account's page.",
+      refused: "Your account's server says this sign-in can't post. To post, sign in again to allow tile posts.",
+      gone: `${from || "The account where your tile is"} isn't signed in on this browser any more. To post, sign in again.`,
+    }[box.reason || "old"];
+    action = (
+      <div className="post-reauth heads-up" data-post="reauth">
+        <p>{why}</p>
+        {box.message && <p className="field-error" role="alert">{box.message}</p>}
+        <div className="button-row">
+          <button type="button" className="btn btn-small" onClick={again}>Sign in again</button>
+        </div>
+      </div>
+    );
+  } else if (box.phase === "waiting") {
+    action = (
+      <div className="post-reauth heads-up" data-post="waiting">
+        <p>
+          Finish signing in in the window that opened; what you typed here stays.{" "}
+          <button type="button" className="linklike" onClick={cancel}>Cancel</button>
+        </p>
+      </div>
+    );
+  } else {
+    const label = busy ? "Posting…" : box.phase === "error" ? "Try again" : "Post to Raku";
+    action = (
+      <>
+        <p className="field-help post-from">From {from || "the account"}, the account where your tile is.</p>
+        <div className="button-row">
+          <button type="button" className="btn" disabled={busy || over || box.phase === "checking"} onClick={post}>{label}</button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <section className="post-box" aria-labelledby="post-h" data-post={box.phase}>
+      <p className="share-label" id="post-h">Post it to Tile posts</p>
+      <p className="field-help">
+        Share your tile in Raku's Tile posts, where people can play it right in the post. A few words, or just the tile. Optional.
+      </p>
+      <div className="field">
+        <label className="field-label" htmlFor="post-text">Your words</label>
+        <span className={`counter${over ? " over" : ""}`}>{count} / {TEXT_MAX}</span>
+        <textarea
+          id="post-text"
+          className="text post-text"
+          rows="3"
+          disabled={locked}
+          placeholder="Say something about your tile"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        {over && <p className="field-error">At most {TEXT_MAX} characters.</p>}
+      </div>
+      <details className="input-group-more post-more">
+        <summary>More</summary>
+        <div className="post-more-body">
+          <div className="field">
+            <label className="field-label" htmlFor="post-alt">Alt text</label>
+            <p className="field-help">What the tile is and does, for screen readers and when only its card shows. Empty: Raku uses the tile's description.</p>
+            <textarea id="post-alt" className="text" rows="2" disabled={locked} placeholder={description} value={alt} onChange={(e) => setAlt(e.target.value)} />
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor="post-lang">Language</label>
+            <p className="field-help">A language tag such as en or fr, so apps can sort or translate posts. Optional.</p>
+            <input id="post-lang" className="text post-lang" disabled={locked} placeholder="en" value={lang} onChange={(e) => setLang(e.target.value)} />
+          </div>
+        </div>
+      </details>
+      {box.phase === "error" && (
+        <p className="field-error" role="alert">
+          {box.step === "verify"
+            ? `${box.message} It may still have been posted; look in Raku before trying again.`
+            : `Posting didn't work: ${box.message}`}
+        </p>
+      )}
+      {action}
+      {busy && <p className="publish-note" role="status">Writing your post, then checking it arrived…</p>}
+    </section>
+  );
+}
+
 /**
  * result: the tile as it is now (null while it can't be built); shown: the
  * latest tile that could be built (kept so the review stays up while a field
@@ -126,7 +351,7 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
         },
       });
       setReview(null);
-      setState({ phase: "done", out, name: tile.name, to });
+      setState({ phase: "done", out, name: tile.name, description: tile.description || "", to });
     } catch (err) {
       console.error("[publish]", err);
       setState({ phase: "error", message: err.message, step: err.step, progress: { ...progress } });
@@ -167,9 +392,10 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
                 <a className="btn" href={link} target="_blank" rel="noopener">View on lexicographer.space</a>
                 <button type="button" className="btn btn-quiet" onClick={() => setState({ phase: "idle" })}>Make another tile</button>
               </div>
+              <PostBox out={out} to={to} description={state.description} />
               <div className="share">
                 <p className="share-label">Share it</p>
-                <p className="field-help">Paste this link into a Bluesky post, or send it to a friend.</p>
+                <p className="field-help">Paste this link into a Bluesky post (it shows as a card people tap to open), or send it to a friend.</p>
                 <div className="share-row">
                   <span className="mono share-text">{link}</span>
                   <CopyButton text={link} label="Copy link" />

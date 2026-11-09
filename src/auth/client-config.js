@@ -14,11 +14,15 @@
 // Scope, checked against https://atproto.com/specs/permission (Oct 2 2026):
 //   atproto               required for every atproto sign-in
 //   repo:ing.dasl.masl    create, update and delete Web Tile records only
+//   repo:cafe.thunderbird.tile.post
+//                         tile posts (v0.32.0): the Post step on the published
+//                         screen. Sign-ins made before v0.32.0 lack it; the
+//                         post box asks those to sign in again (src/core/tile-post.js, canPost)
 //   blob:*/*              upload files (blob permission can't be tied to a collection)
 //
 // No browser-only code here, so Node (tests, the build) can import it too.
 
-export const SCOPE = "atproto repo:ing.dasl.masl blob:*/*";
+export const SCOPE = "atproto repo:ing.dasl.masl repo:cafe.thunderbird.tile.post blob:*/*";
 export const APP_NAME = "Web Tile Foundry";
 export const PRODUCTION_ORIGIN = "https://foundry.thunderbird.cafe";
 export const CLIENT_METADATA_FILE = "oauth.json";
