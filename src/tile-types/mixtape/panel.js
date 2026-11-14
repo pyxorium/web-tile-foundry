@@ -2,7 +2,7 @@
 // them in Node): starting values, the shows in the liner notes, free words,
 // and what goes in the public recipe.
 
-import { normalizeTracks } from "./workshop.js";
+import { normalizeTracks, SIDE_SECONDS } from "./workshop.js";
 import { DEFAULT_KIT, kitById, kitColors } from "./kits.js";
 
 export const SIDES = Object.freeze(["A", "B"]);
@@ -14,8 +14,30 @@ export const NOTES_MAX = 5000;
 export const WORDS_MAX = 300;
 export const MAX_TRACKS = 40;
 
+/**
+ * Tape lengths (v0.33.0), as printed on a cassette: the minutes of both sides
+ * together. A C60 holds 30 minutes a side, a C90 45, a C120 60.
+ */
+export const LENGTHS = Object.freeze([
+  { id: "C60", sideSeconds: SIDE_SECONDS },
+  { id: "C90", sideSeconds: 45 * 60 },
+  { id: "C120", sideSeconds: 60 * 60 },
+]);
+export const DEFAULT_LENGTH = "C60";
+
+/** The length entry for an id; unknown or missing (tapes made before v0.33.0) means C60. */
+export function lengthById(id) {
+  return LENGTHS.find((l) => l.id === id) || LENGTHS[0];
+}
+
+/** Seconds a side holds for the chosen length. */
+export function sideSecondsOf(values) {
+  return lengthById(values && values.tapeLength).sideSeconds;
+}
+
 export function panelDefaults({ handle = null } = {}) {
   return {
+    tapeLength: DEFAULT_LENGTH,
     tracks: [],
     label: "",
     kit: DEFAULT_KIT,
@@ -68,7 +90,7 @@ export function applyPanelChange(key, value, values) {
 /** The tape's own details for tape.json (tile.js makes the rest). */
 export function tapeDetails(values) {
   return {
-    label: { text: values.label, style: kitById(values.kit).id, colors: kitColors(values.kit) },
+    label: { text: values.label, style: kitById(values.kit).id, colors: kitColors(values.kit), length: lengthById(values.tapeLength).id },
     dedication: values.dedication,
     notes: values.notes,
     describe: { genres: splitWords(values.genres), moods: splitWords(values.moods), tags: splitWords(values.tags) },
@@ -83,6 +105,7 @@ export function panelRecipe(values) {
   return {
     songsFrom: owners.map((did) => ({ kind: "plyr.fm", did })),
     kit: kitById(values.kit).id,
+    tapeLength: lengthById(values.tapeLength).id,
     chosenTransitions: (values.tracks || []).filter((t) => t.transitionChosen).length,
     confirmed: values.confirm === true,
   };

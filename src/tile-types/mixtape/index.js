@@ -3,14 +3,14 @@ import { makeMixtapeTile } from "./tile.js";
 import { shapesFor } from "./transitions.js";
 import {
   SIDES, NAME_MAX, DESCRIPTION_MAX, LABEL_MAX, DEDICATION_MAX, NOTES_MAX, WORDS_MAX, MAX_TRACKS,
-  panelDefaults, applyPanelChange, tapeDetails, panelRecipe,
+  LENGTHS, lengthById, sideSecondsOf, panelDefaults, applyPanelChange, tapeDetails, panelRecipe,
 } from "./panel.js";
-import { SIDE_SECONDS } from "./workshop.js";
 import { KITS } from "./kits.js";
 
 // Tile type: Mixtape.
 // The creator's own plyr.fm songs on a cassette, Side A and Side B, with the
-// changes between songs baked into the audio. The song picker lives in
+// changes between songs baked into the audio. Three tape lengths (v0.33.0):
+// C60, C90 and C120, 30, 45 or 60 minutes a side (panel.js LENGTHS). The song picker lives in
 // picker.js, the song list's rules in workshop.js and panel.js, the tile's
 // files in tile.js and tape.js, the player in runtime/, the preview in
 // preview.js, the cassette looks in kits.js and the card pictures in art.js.
@@ -30,11 +30,12 @@ const picker = {
 export const mixtape = {
   id: "mixtape",
   version: 1,
-  title: "Mixtape C60",
-  summary: "Your plyr.fm songs on a cassette, Side A and Side B.",
+  title: "Mixtape",
+  summary: "Your plyr.fm songs on a cassette, Side A and Side B: a C60, C90 or C120.",
   // On a Zine Scene page a tape shows as its J-card, with a link to the real tape.
   zinePage: "tape",
-  maxBytes: 50 * 1024 * 1024,
+  // A full C120 is about 86 MB of songs (96 kbps); each song is still its own upload.
+  maxBytes: 90 * 1024 * 1024,
 
   credits: [
     [
@@ -52,13 +53,21 @@ export const mixtape = {
 
   inputs: [
     {
+      key: "tapeLength",
+      kind: "choice",
+      label: "Tape length",
+      help: "A C60 holds 30 minutes a side, a C90 45 and a C120 a whole hour. Longer tapes are bigger to publish and to save in Tileman.",
+      required: true,
+      options: LENGTHS.map((l) => ({ value: l.id, label: l.id })),
+    },
+    {
       key: "tracks",
       kind: "tracks",
       label: "Songs",
-      help: "Pick songs from your plyr.fm uploads. Each side of the cassette can hold 30 minutes. \"Then\" is how a song leads into the next: straight on keeps a segue from a show; a pause or fade suits songs from different recordings.",
+      help: "Pick songs from your plyr.fm uploads. Each side holds as long as the tape length allows. \"Then\" is how a song leads into the next: straight on keeps a segue from a show; a pause or fade suits songs from different recordings.",
       required: true,
       sides: SIDES,
-      maxSecondsPerSide: SIDE_SECONDS,
+      maxSecondsPerSide: sideSecondsOf,
       maxTracks: MAX_TRACKS,
       transitions: true,
       picker,
@@ -96,14 +105,14 @@ export const mixtape = {
     { id: "card", title: "For display in the link preview card" },
   ],
 
-  // For the Publish step's review, next to the size: "14 songs · Side A 28:10 · Side B 27:45".
+  // For the Publish step's review, next to the size: "C90 · 14 songs · Side A 41:10 · Side B 43:45".
   reviewSummary(values) {
     const tracks = (values && values.tracks) || [];
     const sides = SIDES.map((side) => {
       const secs = tracks.filter((t) => t.side === side).reduce((n, t) => n + (t.seconds || 0), 0);
       return secs ? `Side ${side} ${formatDuration(secs)}` : "";
     });
-    return [`${tracks.length} song${tracks.length === 1 ? "" : "s"}`, ...sides].filter(Boolean).join(" · ");
+    return [lengthById(values && values.tapeLength).id, `${tracks.length} song${tracks.length === 1 ? "" : "s"}`, ...sides].filter(Boolean).join(" · ");
   },
 
   defaults(context = {}) {

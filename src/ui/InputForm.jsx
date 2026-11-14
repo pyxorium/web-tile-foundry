@@ -5,7 +5,7 @@ import { DEBUG } from "./debug.js";
 import { cropRect, clampCrop } from "../core/pictures.js";
 import { PictureMenu, AppPictureGrid } from "./AppPictures.jsx";
 import { planGalleryFill, leftOver, describePages } from "../core/gallery-fill.js";
-import { isShown, formatDuration, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout, pagesBytes, pageInUse } from "../core/contract.js";
+import { isShown, formatDuration, sideSecondsFor, TRANSITIONS, TRACK_TITLE_MAX, pageShows, pageFullness, pageLayout, pagesBytes, pageInUse } from "../core/contract.js";
 
 // Form controls for a tile type's inputs, one per input kind
 // (see INPUT_KINDS in src/core/contract.js).
@@ -460,9 +460,12 @@ function ActionInput({ input, onChange, values }) {
 // moved to another side, removed, and given a change into the next song.
 const TRANSITION_LABELS = { straight: "Straight on", pause: "Short pause", fade: "Fade and pause" };
 
-function TrackPicker({ picker, tracks, setTracks, context }) {
+function TrackPicker({ picker, tracks, setTracks, context, maxSeconds }) {
   const contextRef = useRef(context);
   contextRef.current = context;
+  // How much a side holds can change (a tape length choice); the picker asks when it places a song.
+  const maxRef = useRef(maxSeconds);
+  maxRef.current = maxSeconds;
   const boxRef = useRef(null);
   const handleRef = useRef(null);
   const tracksRef = useRef(tracks);
@@ -483,6 +486,7 @@ function TrackPicker({ picker, tracks, setTracks, context }) {
           setRef.current(resolved);
         },
         context,
+        getMaxSecondsPerSide: () => maxRef.current,
       })
     ).then((h) => {
       if (disposed) { if (h && h.dispose) h.dispose(); return; }
@@ -521,10 +525,10 @@ function TrackStatus({ t }) {
   return <span className="track-status">{formatDuration(t.seconds)}</span>;
 }
 
-function TracksInput({ input, value, onChange, context }) {
+function TracksInput({ input, value, onChange, context, values }) {
   const tracks = Array.isArray(value) ? value : [];
   const sides = input.sides || ["A"];
-  const max = input.maxSecondsPerSide;
+  const max = sideSecondsFor(input, values);
 
   const update = (next) => onChange(next);
   const patch = (id, change) => update(tracks.map((t) => (t.id === id ? { ...t, ...change } : t)));
@@ -553,7 +557,7 @@ function TracksInput({ input, value, onChange, context }) {
     <fieldset className="field tracks">
       <legend className="field-label">{input.label}</legend>
       {input.help && <p className="field-help">{input.help}</p>}
-      {input.picker && <TrackPicker picker={input.picker} tracks={tracks} setTracks={update} context={context} />}
+      {input.picker && <TrackPicker picker={input.picker} tracks={tracks} setTracks={update} context={context} maxSeconds={max} />}
       {sides.map((side) => {
         const list = tracks.filter((t) => t.side === side);
         const total = list.reduce((n, t) => n + (Number(t.seconds) || 0), 0);

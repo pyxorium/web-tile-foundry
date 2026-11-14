@@ -15,7 +15,7 @@
 
 import { shapesFor, fadesOf, sameFades, suggestTransition } from "./transitions.js";
 
-/** Seconds a side holds (a C60 cassette: 30 minutes a side). */
+/** Seconds a side holds on a C60 cassette (30 minutes); longer tapes: panel.js LENGTHS. */
 export const SIDE_SECONDS = 30 * 60;
 
 /** The song list with suggested transitions filled in and out-of-date songs marked; the same array if nothing changed. */
@@ -46,10 +46,10 @@ export function normalizeTracks(tracks, sides) {
   return out;
 }
 
-/** Which side a new song goes on: A, unless A is full and it fits on a later side. */
-export function sideFor(tracks, sides, seconds) {
+/** Which side a new song goes on: A, unless A is full and it fits on a later side. `limit`: seconds a side holds. */
+export function sideFor(tracks, sides, seconds, limit = SIDE_SECONDS) {
   const used = (side) => tracks.filter((t) => t.side === side).reduce((n, t) => n + (Number(t.seconds) || 0), 0);
-  for (const side of sides) if (used(side) + seconds <= SIDE_SECONDS) return side;
+  for (const side of sides) if (used(side) + seconds <= limit) return side;
   return sides[0];
 }
 

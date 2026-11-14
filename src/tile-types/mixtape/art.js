@@ -3,6 +3,10 @@ import { kitById } from "./kits.js";
 // The card's pictures: a cassette in the tape's kit colors, drawn with the
 // browser's 2D canvas (no 3D, so it's quick), with the label written on it.
 //
+// A tape's length (tape.json label.length, v0.33.0) is printed on the label,
+// and longer tapes wind fuller reels: a C120's tape was thinner, so more of it
+// fits on a reel (and it famously jammed).
+//
 // Sizes match the other tile types:
 //   icon    256 x 256, shown at 48 x 48 on the card: the cassette alone, no text
 //   banner  1280 x 720 (16:9): the cassette with its label, side lengths and maker
@@ -105,11 +109,15 @@ function screw(ctx, x, y, r, k) {
   ctx.stroke();
 }
 
+/** How full the two reels look for a tape length: [left (side A still to play), right]. */
+export const REELS = Object.freeze({ C60: [0.98, 0.62], C90: [1.06, 0.58], C120: [1.13, 0.55] });
+
 /**
  * A cassette at (x, y), `w` wide (63 % as tall, like a real one).
  * words: { label, sub, left, right } or null for no writing (the icon).
+ * length: "C60", "C90", "C120" or null (printed on the label; sets the reels).
  */
-export function drawCassette(ctx, x, y, w, k, words) {
+export function drawCassette(ctx, x, y, w, k, words, length = null) {
   const h = w * 0.63;
   const u = w / 1000; // one unit of the drawing
 
@@ -164,8 +172,9 @@ export function drawCassette(ctx, x, y, w, k, words) {
   // Tape running between the reels.
   ctx.fillStyle = "#3a2a22";
   ctx.fillRect(wx + wh / 2, wy + wh / 2 + rr * 0.55, ww - wh, 6 * u);
-  reel(ctx, wx + wh / 2 + 6 * u, wy + wh / 2, rr, 0.98, k);
-  reel(ctx, wx + ww - wh / 2 - 6 * u, wy + wh / 2, rr, 0.62, k);
+  const wound = Object.hasOwn(REELS, length || "") ? REELS[length] : REELS.C60;
+  reel(ctx, wx + wh / 2 + 6 * u, wy + wh / 2, rr, wound[0], k);
+  reel(ctx, wx + ww - wh / 2 - 6 * u, wy + wh / 2, rr, wound[1], k);
   // A little window in the middle of the window.
   roundRect(ctx, x + w / 2 - 60 * u, wy + wh * 0.3, 120 * u, wh * 0.4, 8 * u);
   ctx.fillStyle = "rgba(255,255,255,0.08)";
@@ -190,7 +199,18 @@ export function drawCassette(ctx, x, y, w, k, words) {
   }
   ctx.fillRect(bx + bw * 0.46, by + bh * 0.4, bw * 0.08, bh * 0.35);
 
-  if (!words) return;
+  if (!words) {
+    // The icon: no writing but the length, large on the label.
+    if (length && Object.hasOwn(REELS, length)) {
+      ctx.fillStyle = k.ink;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      ctx.font = `bold ${84 * u}px ${PLAIN}`;
+      ctx.fillText(length, x + w / 2, ly + 66 * u);
+      ctx.textAlign = "left";
+    }
+    return;
+  }
 
   // The handwritten label line, and the side letter.
   ctx.fillStyle = k.ink;
@@ -199,9 +219,19 @@ export function drawCassette(ctx, x, y, w, k, words) {
   ctx.font = `bold ${56 * u}px ${PLAIN}`;
   ctx.fillText("A", lx + 28 * u, ly + 64 * u);
   const textX = lx + 100 * u;
+  // The length, printed small at the label's right end, as on a real cassette.
+  const printed = length && Object.hasOwn(REELS, length) ? length : null;
+  const lengthW = printed ? 120 * u : 0;
+  if (printed) {
+    ctx.textAlign = "right";
+    ctx.font = `bold ${34 * u}px ${PLAIN}`;
+    ctx.fillText(printed, lx + lw - 28 * u, ly + 64 * u);
+    ctx.textAlign = "left";
+  }
   const textW = lw - 130 * u;
-  fitFont(ctx, words.label, HAND, 74 * u, 34 * u, textW);
-  ctx.fillText(clip(ctx, words.label, textW), textX, ly + 66 * u);
+  // The label line shares its row with the length; the line under it doesn't.
+  fitFont(ctx, words.label, HAND, 74 * u, 34 * u, textW - lengthW);
+  ctx.fillText(clip(ctx, words.label, textW - lengthW), textX, ly + 66 * u);
   if (words.sub) {
     ctx.font = `${26 * u}px ${PLAIN}`;
     ctx.globalAlpha = 0.75;
@@ -252,6 +282,12 @@ export function cassetteWords(tape) {
   return { label: labelText || title, sub: subParts.join(" · "), left: side(0), right: side(1) };
 }
 
+/** The tape's length from tape.json (label.length), or null for tapes without one. */
+export function tapeLengthOf(tape) {
+  const l = tape && tape.label && tape.label.length;
+  return typeof l === "string" && Object.hasOwn(REELS, l) ? l : null;
+}
+
 /** { icon, banner }: PNG bytes, for a tape (the tape.json object) and kit id. */
 export async function makeCardArt({ tape, kit }) {
   const k = kitById(kit);
@@ -260,13 +296,14 @@ export async function makeCardArt({ tape, kit }) {
   const b = banner.getContext("2d");
   backdrop(b, BANNER_WIDTH, BANNER_HEIGHT, k);
   const cw = 940;
-  drawCassette(b, (BANNER_WIDTH - cw) / 2, (BANNER_HEIGHT - cw * 0.63) / 2 - 6, cw, k, cassetteWords(tape));
+  const length = tapeLengthOf(tape);
+  drawCassette(b, (BANNER_WIDTH - cw) / 2, (BANNER_HEIGHT - cw * 0.63) / 2 - 6, cw, k, cassetteWords(tape), length);
 
   const icon = makeCanvas(ICON_SIZE, ICON_SIZE);
   const i = icon.getContext("2d");
   backdrop(i, ICON_SIZE, ICON_SIZE, k);
   const iw = 224;
-  drawCassette(i, (ICON_SIZE - iw) / 2, (ICON_SIZE - iw * 0.63) / 2, iw, k, null);
+  drawCassette(i, (ICON_SIZE - iw) / 2, (ICON_SIZE - iw * 0.63) / 2, iw, k, null, length);
 
   return { icon: await toPngBytes(icon), banner: await toPngBytes(banner) };
 }

@@ -27,7 +27,8 @@ test("a zine's summary counts what's on its pages", () => {
 });
 
 test("a tape's summary: songs and each side's length", () => {
-  assert.equal(mixtape.reviewSummary({ tracks: [] }), "0 songs");
+  assert.equal(mixtape.reviewSummary({ tracks: [] }), "C60 · 0 songs");
   const tracks = [{ side: "A", seconds: 100 }, { side: "A", seconds: 50 }, { side: "B", seconds: 61 }];
-  assert.equal(mixtape.reviewSummary({ tracks }), "3 songs · Side A 2:30 · Side B 1:01");
+  assert.equal(mixtape.reviewSummary({ tracks }), "C60 · 3 songs · Side A 2:30 · Side B 1:01");
+  assert.equal(mixtape.reviewSummary({ tapeLength: "C120", tracks }), "C120 · 3 songs · Side A 2:30 · Side B 1:01");
 });

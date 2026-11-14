@@ -162,6 +162,13 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
     notesPanel = el("section", "mt-notes");
     notesPanel.hidden = true;
     notesPanel.setAttribute("aria-label", "J-card");
+    // The tape's length (tape.json label.length, v0.33.0) with each side's playing time.
+    const length = tape && tape.label && ["C60", "C90", "C120"].includes(tape.label.length) ? tape.label.length : null;
+    if (length) {
+      const times = sides.length > 1 ? sides.map((s) => `${sideLabel(s, sides.length)} ${clock(s.tracks.reduce((n, t) => n + (Number(t.duration) || 0), 0))}`) : [];
+      notesPanel.append(el("p", "mt-jc-len", [length, ...times].join(" \u00b7 ")));
+      if (length === "C120") notesPanel.append(el("p", "mt-jc-joke", "C120: thin tape, long jams. Don't let the deck eat it."));
+    }
     if (dedication) notesPanel.append(el("p", "mt-jc-ded", dedication));
     if (notes) notesPanel.append(el("h2", null, "Liner notes"), el("div", "mt-jc-notes", notes));
     for (const s of sides) {

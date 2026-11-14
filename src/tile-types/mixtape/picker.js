@@ -14,7 +14,7 @@ import { sharedPool } from "./shared.js";
 // can't be used yet are listed with the reason. Plain DOM (the Foundry mounts
 // it through the tracks input's picker).
 //
-// mountPicker(element, { getTracks, setTracks, context, sides, maxTracks })
+// mountPicker(element, { getTracks, setTracks, context, sides, maxTracks, getMaxSecondsPerSide })
 //   -> { update(tracks, context), dispose() }
 
 function el(tag, className, text) {
@@ -26,7 +26,7 @@ function el(tag, className, text) {
 
 const onPhone = () => typeof matchMedia === "function" && (matchMedia("(pointer: coarse)").matches || matchMedia("(max-width: 700px)").matches);
 
-export function mountPicker(root, { getTracks, setTracks, context, sides, maxTracks = 40 }) {
+export function mountPicker(root, { getTracks, setTracks, context, sides, maxTracks = 40, getMaxSecondsPerSide = null }) {
   // Added alongside, not replacing: React may mount twice in development, and
   // the first one removes only its own box when it is disposed.
   const box = el("div", "mx-picker");
@@ -208,7 +208,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
           full = true;
           break;
         }
-        next = [...next, trackFromSong(s, sideFor(next, sides, s.seconds))];
+        next = [...next, trackFromSong(s, sideFor(next, sides, s.seconds, (getMaxSecondsPerSide && getMaxSecondsPerSide()) || undefined))];
       }
       if (full) setStatus(`A tape holds up to ${maxTracks} songs.`, true);
       return next;

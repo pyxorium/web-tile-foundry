@@ -8,12 +8,12 @@ import assert from "node:assert/strict";
 import { mixtape } from "../src/tile-types/mixtape/index.js";
 import { songFromRecord, groupShows, listPlyrSongs, ownerNames, stripTrackNumber, REASONS } from "../src/tile-types/mixtape/plyr.js";
 import { normalizeTracks, createWorkshop, trackFromSong, sideFor, SIDE_SECONDS } from "../src/tile-types/mixtape/workshop.js";
-import { SIDES, panelDefaults, addShowsToNotes, splitWords, tapeDetails, panelRecipe, applyPanelChange, showsOf } from "../src/tile-types/mixtape/panel.js";
+import { SIDES, panelDefaults, addShowsToNotes, splitWords, tapeDetails, panelRecipe, applyPanelChange, showsOf, LENGTHS, lengthById, sideSecondsOf } from "../src/tile-types/mixtape/panel.js";
 import { TIMING } from "../src/tile-types/mixtape/transitions.js";
 import { KITS, DEFAULT_KIT, kitById, kitColors } from "../src/tile-types/mixtape/kits.js";
-import { cassetteWords } from "../src/tile-types/mixtape/art.js";
-import { cleanLabel } from "../src/tile-types/mixtape/tape.js";
-import { checkTileType, checkInputs, buildProblems } from "../src/core/contract.js";
+import { cassetteWords, tapeLengthOf, REELS } from "../src/tile-types/mixtape/art.js";
+import { cleanLabel, makeTape } from "../src/tile-types/mixtape/tape.js";
+import { checkTileType, checkInputs, buildProblems, sideSecondsFor, trackProblems } from "../src/core/contract.js";
 import { publishTile, REPO_DESTINATION } from "../src/core/publish.js";
 
 const DID = "did:plc:rqbqpaaluty5v47jwciowpik";
@@ -45,7 +45,9 @@ test("the Mixtape type follows the contract and starts with an empty tape", () =
   assert.equal(v.name, "A mixtape from @pyxorium.com");
   assert.deepEqual(v.tracks, []);
   assert.equal(v.confirm, false);
-  assert.equal(mixtape.maxBytes, 50 * 1024 * 1024);
+  assert.equal(mixtape.maxBytes, 90 * 1024 * 1024);
+  assert.equal(v.tapeLength, "C60");
+  assert.equal(mixtape.title, "Mixtape");
   assert.ok(mixtape.credits[0].some((p) => p.text === "lamejs"));
 });
 
@@ -293,10 +295,10 @@ test("liner notes can list the shows, words become terms, and the recipe stays p
   const v = { ...panelDefaults({ handle: "pyxorium.com" }), label: "JAM CRUISE '26", genres: "funk, soul", confirm: true,
     tracks: [{ ...song(1, "a"), transitionChosen: true, source: { record: { uri: `at://${DID}/fm.plyr.track/x`, cid: "bafy" } } }] };
   const d = tapeDetails(v);
-  assert.deepEqual(d.label, { text: "JAM CRUISE '26", style: "cassette-classic", colors: kitColors("cassette-classic") });
+  assert.deepEqual(d.label, { text: "JAM CRUISE '26", style: "cassette-classic", colors: kitColors("cassette-classic"), length: "C60" });
   assert.deepEqual(d.describe.genres, ["funk", "soul"]);
   assert.deepEqual(d.madeBy, { handle: "pyxorium.com" });
-  assert.deepEqual(panelRecipe(v), { songsFrom: [{ kind: "plyr.fm", did: DID }], kit: "cassette-classic", chosenTransitions: 1, confirmed: true });
+  assert.deepEqual(panelRecipe(v), { songsFrom: [{ kind: "plyr.fm", did: DID }], kit: "cassette-classic", tapeLength: "C60", chosenTransitions: 1, confirmed: true });
 });
 
 // ---- stage 5: cassette looks and card pictures -------------------------------------
@@ -318,4 +320,60 @@ test("the cassette shows the label (or title), the maker, and each side's length
     sides: [{ name: "A", tracks: [{ duration: 600 }, { duration: 790.4 }] }, { name: "B", tracks: [{ duration: 224 }] }] };
   assert.deepEqual(cassetteWords(tape), { label: "ROAD TRIP '26", sub: "Road Trip · made by @pyxorium.com", left: ["SIDE A", "23:10"], right: ["SIDE B", "3:44"] });
   assert.deepEqual(cassetteWords({ title: "T", sides: [{ name: "A", tracks: [] }] }), { label: "T", sub: "", left: ["SIDE A", "0:00"], right: null });
+});
+
+// ---- v0.33.0: longer tapes (C90, C120) -------------------------------------------
+
+test("three tape lengths: 30, 45 and 60 minutes a side; unknown or missing means C60", () => {
+  assert.deepEqual(LENGTHS.map((l) => [l.id, l.sideSeconds]), [["C60", 1800], ["C90", 2700], ["C120", 3600]]);
+  assert.equal(SIDE_SECONDS, 1800);
+  assert.equal(lengthById("nonsense").id, "C60");
+  assert.equal(lengthById(undefined).id, "C60");
+  assert.equal(sideSecondsOf({ tapeLength: "C120" }), 3600);
+  assert.equal(sideSecondsOf({}), 1800, "a tape made before v0.33.0");
+  const input = mixtape.inputs.find((i) => i.key === "tracks");
+  assert.equal(sideSecondsFor(input, { tapeLength: "C90" }), 2700);
+  const choice = mixtape.inputs.find((i) => i.key === "tapeLength");
+  assert.equal(mixtape.inputs[0], choice, "the length comes first, above the songs");
+  assert.deepEqual(choice.options.map((o) => o.value), ["C60", "C90", "C120"]);
+});
+
+test("a side that fits a C90 is too long for a C60, and a length must be one of the three", () => {
+  const ready = (id, side, seconds) => ({ id, title: id, side, seconds, status: "ready", bytes: new Uint8Array([1]) });
+  const tracks = [ready("a", "A", 1500), ready("b", "A", 900), ready("c", "B", 600)];   // side A 40:00
+  const base = { ...panelDefaults({ handle: "pyxorium.com" }), tracks, confirm: true };
+  assert.match(checkInputs(mixtape, base).map((p) => p.message).join(" "), /Side A is 40:00 long; it holds up to 30:00/);
+  assert.deepEqual(checkInputs(mixtape, { ...base, tapeLength: "C90" }), []);
+  assert.deepEqual(checkInputs(mixtape, { ...base, tapeLength: "C120" }), []);
+  assert.match(checkInputs(mixtape, { ...base, tapeLength: "C45" }).map((p) => p.message).join(" "), /unknown choice/);
+  // The core's own rule, for any type: a number, or a function of the values.
+  assert.deepEqual(trackProblems({ maxSecondsPerSide: (v) => v.limit, sides: ["A"] }, [ready("x", "A", 100)], { limit: 50 }), ["The tape is 1:40 long; it holds up to 0:50."]);
+  assert.deepEqual(trackProblems({ maxSecondsPerSide: 600, sides: ["A"] }, [ready("x", "A", 100)]), []);
+  const t = { id: "t", version: 1, title: "T", summary: "s", defaults: () => ({}), build: async () => ({}) };
+  checkTileType({ ...t, inputs: [{ key: "s", kind: "tracks", maxSecondsPerSide: () => 60 }] });
+  assert.throws(() => checkTileType({ ...t, inputs: [{ key: "s", kind: "tracks", maxSecondsPerSide: "long" }] }), /maxSecondsPerSide/);
+});
+
+test("new songs fill side A up to the chosen length", () => {
+  const long = [song(1, "a", { seconds: 2000 })];   // 33:20 on side A
+  assert.equal(sideFor(long, SIDES, 300), "B", "a C60 side is already full");
+  assert.equal(sideFor(long, SIDES, 300, 2700), "A", "a C90 side has room");
+  assert.equal(sideFor(long, SIDES, 800, 2700), "B");
+});
+
+test("the length goes into tape.json, the recipe, the review and the card art", () => {
+  const v = { ...panelDefaults({ handle: "pyxorium.com" }), tapeLength: "C120" };
+  assert.equal(tapeDetails(v).label.length, "C120");
+  assert.equal(panelRecipe(v).tapeLength, "C120");
+  assert.equal(cleanLabel({ length: "C90" }).length, "C90");
+  assert.equal(cleanLabel({ length: "C45" }), null, "only the three lengths");
+  assert.equal(cleanLabel({ length: "toString" }), null);
+  assert.equal(tapeLengthOf({ label: { length: "C120" } }), "C120");
+  assert.equal(tapeLengthOf({ label: { length: "constructor" } }), null);
+  assert.equal(tapeLengthOf({}), null);
+  assert.ok(REELS.C120[0] > REELS.C90[0] && REELS.C90[0] > REELS.C60[0], "longer tapes wind fuller reels");
+  assert.ok(REELS.C120[0] * 0.42 < 0.5, "the fullest reel still fits in the window");
+  assert.equal(mixtape.reviewSummary({ tapeLength: "C90", tracks: [{ side: "A", seconds: 61 }] }), "C90 · 1 song · Side A 1:01");
+  const tape = makeTape({ title: "T", label: tapeDetails(v).label, sides: [{ name: "A", tracks: [{ path: "/tracks/a1.mp3", cid: "bafkreiabc", title: "x", duration: 1 }] }] });
+  assert.equal(tape.label.length, "C120", "tape.json keeps the length");
 });

@@ -50,9 +50,12 @@
 //                        status is "converting", "ready" (bytes holds the finished
 //                        file) or "error" (error says why). transition is how the
 //                        song leads into the next one on its side (TRANSITIONS).
-//                        Options: sides (default ["A"]); maxSecondsPerSide;
+//                        Options: sides (default ["A"]); maxSecondsPerSide (seconds,
+//                        or a function of the values giving seconds, e.g. from a
+//                        tape length choice; see sideSecondsFor);
 //                        maxTracks; transitions: true shows the choice between songs;
-//                        picker: { mount(element, { getTracks, setTracks, context })
+//                        picker: { mount(element, { getTracks, setTracks, context,
+//                        getMaxSecondsPerSide })
 //                        -> { update(tracks, context), dispose() } }, the type's own
 //                        way of adding songs, shown above the list (update is also
 //                        called when the context changes, e.g. the account's details
@@ -157,7 +160,7 @@
 //                      rebuilding the tile (default 250).
 //   maxBytes           OPTIONAL: the most a tile of this type may weigh, all files
 //                      together, in bytes. Default DEFAULT_MAX_TILE_BYTES (5 MB);
-//                      never more than MAX_TILE_BYTES_CAP (60 MB). Types with big
+//                      never more than MAX_TILE_BYTES_CAP (90 MB). Types with big
 //                      files (songs) raise it; each file is still uploaded on its own.
 //   defaults(context)  -> object of starting input values. `context` may carry
 //                         { handle } once sign-in exists.
@@ -187,8 +190,12 @@ import { ANIMATED_MAX_BYTES, animationTooBig } from "./pictures.js";
 
 /** Size budget for a tile when its type doesn't set maxBytes. */
 export const DEFAULT_MAX_TILE_BYTES = 5 * 1024 * 1024;
-/** The most any type may allow (each file is a separate upload; seen accepted up to 25 MB). */
-export const MAX_TILE_BYTES_CAP = 60 * 1024 * 1024;
+/**
+ * The most any type may allow. Each file is a separate upload (the PDS limits
+ * each file, not the tile: 50 MB per blob on Bluesky's servers). 90 MB since
+ * v0.33.0, for C120 mixtapes (about 86 MB of songs).
+ */
+export const MAX_TILE_BYTES_CAP = 90 * 1024 * 1024;
 
 /** The size budget for tiles of this type. */
 export function maxBytesFor(type) {
@@ -260,8 +267,8 @@ export function checkTileType(type) {
       if (!Array.isArray(sides) || !sides.length || !sides.every((x) => typeof x === "string" && x) || new Set(sides).size !== sides.length) {
         throw new Error(`${where}: tracks input "${input.key}" needs sides, a list of different names.`);
       }
-      if (input.maxSecondsPerSide !== undefined && !(Number.isFinite(input.maxSecondsPerSide) && input.maxSecondsPerSide > 0)) {
-        throw new Error(`${where}: tracks input "${input.key}": maxSecondsPerSide must be a positive number.`);
+      if (input.maxSecondsPerSide !== undefined && typeof input.maxSecondsPerSide !== "function" && !(Number.isFinite(input.maxSecondsPerSide) && input.maxSecondsPerSide > 0)) {
+        throw new Error(`${where}: tracks input "${input.key}": maxSecondsPerSide must be a positive number or a function of the values.`);
       }
       if (input.maxTracks !== undefined && !(Number.isInteger(input.maxTracks) && input.maxTracks > 0)) {
         throw new Error(`${where}: tracks input "${input.key}": maxTracks must be a positive whole number.`);
@@ -514,7 +521,7 @@ export function checkInputs(type, values) {
       problems.push({ key: input.key, message: input.mustBeOn, publishOnly: true });
     }
     if (input.kind === "tracks") {
-      for (const message of trackProblems(input, v)) problems.push({ key: input.key, message });
+      for (const message of trackProblems(input, v, values)) problems.push({ key: input.key, message });
     }
     if (input.kind === "pages") {
       for (const message of pageProblems(input, v, values)) problems.push({ key: input.key, message });
@@ -523,8 +530,18 @@ export function checkInputs(type, values) {
   return problems;
 }
 
+/**
+ * The seconds each side of a tracks input holds for these values (its
+ * maxSecondsPerSide, which may be a function of the values), or null for no limit.
+ */
+export function sideSecondsFor(input, values) {
+  const m = input && input.maxSecondsPerSide;
+  const n = typeof m === "function" ? m(values || {}) : m;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /** Problems with a tracks input's value, as plain sentences (empty when all is well). */
-export function trackProblems(input, tracks) {
+export function trackProblems(input, tracks, values = {}) {
   if (!Array.isArray(tracks)) return ["The song list is missing."];
   const out = [];
   const sides = input.sides || ["A"];
@@ -552,11 +569,12 @@ export function trackProblems(input, tracks) {
     else if (!(Number.isFinite(t.seconds) && t.seconds > 0)) out.push(`${name} has no length.`);
   }
   if (converting) out.unshift(`${converting === 1 ? "1 song is" : converting + " songs are"} still converting.`);
-  if (input.maxSecondsPerSide) {
+  const max = sideSecondsFor(input, values);
+  if (max) {
     for (const side of sides) {
       const total = tracks.filter((t) => t && t.side === side).reduce((n, t) => n + (Number(t.seconds) || 0), 0);
-      if (total > input.maxSecondsPerSide) {
-        out.push(`${sides.length > 1 ? "Side " + side : "The tape"} is ${formatDuration(total)} long; it holds up to ${formatDuration(input.maxSecondsPerSide)}.`);
+      if (total > max) {
+        out.push(`${sides.length > 1 ? "Side " + side : "The tape"} is ${formatDuration(total)} long; it holds up to ${formatDuration(max)}.`);
       }
     }
   }

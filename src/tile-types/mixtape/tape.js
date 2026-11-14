@@ -89,7 +89,10 @@ export function cleanPerson(p) {
 const HEX = /^#[0-9a-f]{6}$/i;
 const COLOR_KEYS = ["shell", "paper", "ink", "stripe1", "stripe2"];
 
-/** { text?, style?, colors? } (each only if valid), or null. */
+/** The tape lengths a label may carry (tape-json-spec section 7, v0.33.0). */
+export const TAPE_LENGTHS = Object.freeze(["C60", "C90", "C120"]);
+
+/** { text?, style?, colors?, length? } (each only if valid), or null. */
 export function cleanLabel(label) {
   if (!label || typeof label !== "object") return null;
   const out = {};
@@ -101,6 +104,7 @@ export function cleanLabel(label) {
     for (const k of COLOR_KEYS) if (typeof label.colors[k] === "string" && HEX.test(label.colors[k])) colors[k] = label.colors[k].toLowerCase();
     if (Object.keys(colors).length) out.colors = colors;
   }
+  if (TAPE_LENGTHS.includes(label.length)) out.length = label.length;
   return Object.keys(out).length ? out : null;
 }
 
