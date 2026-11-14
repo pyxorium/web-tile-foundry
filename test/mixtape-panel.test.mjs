@@ -47,7 +47,7 @@ test("the Mixtape type follows the contract and starts with an empty tape", () =
   assert.equal(v.confirm, false);
   assert.equal(mixtape.maxBytes, 90 * 1024 * 1024);
   assert.equal(v.tapeLength, "C60");
-  assert.equal(mixtape.title, "Mixtape");
+  assert.equal(mixtape.title, "Mixtape Burndown");
   assert.ok(mixtape.credits[0].some((p) => p.text === "lamejs"));
 });
 

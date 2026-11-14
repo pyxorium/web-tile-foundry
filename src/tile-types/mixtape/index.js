@@ -7,8 +7,10 @@ import {
 } from "./panel.js";
 import { KITS } from "./kits.js";
 
-// Tile type: Mixtape.
-// The creator's own plyr.fm songs on a cassette, Side A and Side B, with the
+// Tile type: Mixtape Burndown (the card's name since v0.34.0; the type id stays "mixtape").
+// The name: the bonfire at the end of a festival night, each side's minutes
+// counting down to a full tape, and burning a mix for a friend.
+// The creator's own songs (plyr.fm uploads, for now) on a cassette, Side A and Side B, with the
 // changes between songs baked into the audio. Three tape lengths (v0.33.0):
 // C60, C90 and C120, 30, 45 or 60 minutes a side (panel.js LENGTHS). The song picker lives in
 // picker.js, the song list's rules in workshop.js and panel.js, the tile's
@@ -30,8 +32,8 @@ const picker = {
 export const mixtape = {
   id: "mixtape",
   version: 1,
-  title: "Mixtape",
-  summary: "Your plyr.fm songs on a cassette, Side A and Side B: a C60, C90 or C120.",
+  title: "Mixtape Burndown",
+  summary: "Your songs on a cassette, Side A and Side B: a C60, C90 or C120.",
   // On a Zine Scene page a tape shows as its J-card, with a link to the real tape.
   zinePage: "tape",
   // A full C120 is about 86 MB of songs (96 kbps); each song is still its own upload.
@@ -64,7 +66,7 @@ export const mixtape = {
       key: "tracks",
       kind: "tracks",
       label: "Songs",
-      help: "Pick songs from your plyr.fm uploads. Each side holds as long as the tape length allows. \"Then\" is how a song leads into the next: straight on keeps a segue from a show; a pause or fade suits songs from different recordings.",
+      help: "Choose songs from your uploads; the window shows how much tape each side has left to burn. Each side holds as long as the tape length allows. \"Then\" is how a song leads into the next: straight on keeps a segue from a show; a pause or fade suits songs from different recordings.",
       required: true,
       sides: SIDES,
       maxSecondsPerSide: sideSecondsOf,
