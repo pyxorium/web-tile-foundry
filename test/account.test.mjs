@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  SCOPE, productionClientMetadata, loopbackClientId, loopbackClientMetadata, isLoopbackHost,
+  SCOPE, IMPORT_SCOPE, DECLARED_SCOPE, TRACK_COLLECTION, productionClientMetadata, loopbackClientId, loopbackClientMetadata, isLoopbackHost,
 } from "../src/auth/client-config.js";
 import {
   resolveDidDocument, pdsFromDidDocument, handleFromDidDocument, fetchOwnSprite,
@@ -41,16 +41,23 @@ function fakeFetch(routes) {
   return impl;
 }
 
-test("one scope, used by both production and development sign-in", () => {
-  assert.equal(SCOPE, "atproto repo:ing.dasl.masl repo:cafe.thunderbird.tile.post blob:*/*");
+test("one declared scope, used by both production and development sign-in (v0.35.0: plus the importer's songs)", () => {
+  assert.equal(SCOPE, "atproto repo:ing.dasl.masl repo:cafe.thunderbird.tile.post blob:*/*", "what ordinary sign-ins ask for, unchanged");
+  assert.equal(TRACK_COLLECTION, "cafe.thunderbird.audio.track");
+  assert.equal(IMPORT_SCOPE, "atproto repo:ing.dasl.masl repo:cafe.thunderbird.tile.post blob:*/* repo:cafe.thunderbird.audio.track");
+  assert.equal(DECLARED_SCOPE, IMPORT_SCOPE);
+  // Every permission asked for must be declared (the sign-in server's rule).
+  for (const ask of [SCOPE, IMPORT_SCOPE]) {
+    for (const p of ask.split(" ")) assert.ok(DECLARED_SCOPE.split(" ").includes(p), `${p} is declared`);
+  }
   const prod = productionClientMetadata();
   assert.equal(prod.client_id, "https://foundry.thunderbird.cafe/oauth.json");
   assert.deepEqual(prod.redirect_uris, ["https://foundry.thunderbird.cafe/"]);
-  assert.equal(prod.scope, SCOPE);
+  assert.equal(prod.scope, DECLARED_SCOPE);
   assert.equal(prod.client_name, "Web Tile Foundry");
   assert.equal(prod.token_endpoint_auth_method, "none");
   assert.equal(prod.dpop_bound_access_tokens, true);
-  assert.equal(loopbackClientMetadata("http://127.0.0.1:5173/").scope, SCOPE);
+  assert.equal(loopbackClientMetadata("http://127.0.0.1:5173/").scope, DECLARED_SCOPE);
 });
 
 test("the development client ID carries the return address and the scope", () => {
@@ -58,7 +65,7 @@ test("the development client ID carries the return address and the scope", () =>
   assert.ok(id.startsWith("http://localhost?"), "origin must be exactly http://localhost, no port");
   const q = new URL(id).searchParams;
   assert.equal(q.get("redirect_uri"), "http://127.0.0.1:5173/");
-  assert.equal(q.get("scope"), SCOPE);
+  assert.equal(q.get("scope"), DECLARED_SCOPE);
   assert.ok(isLoopbackHost("127.0.0.1") && isLoopbackHost("localhost") && !isLoopbackHost("foundry.thunderbird.cafe"));
 });
 

@@ -19,10 +19,28 @@
 //                         screen. Sign-ins made before v0.32.0 lack it; the
 //                         post box asks those to sign in again (src/core/tile-post.js, canPost)
 //   blob:*/*              upload files (blob permission can't be tied to a collection)
+//   repo:cafe.thunderbird.audio.track
+//                         songs kept on the PDS (v0.35.0, Mixtape Burndown's
+//                         importer, pyxorium.com only). DECLARED in oauth.json
+//                         and the development client ID, but only ASKED FOR
+//                         when the importer signs that account in again
+//                         (IMPORT_SCOPE). Every ordinary sign-in passes SCOPE
+//                         itself (src/auth/auth.js), so nobody else is asked
+//                         anything new. A sign-in server only requires that what
+//                         a sign-in asks for is declared (checked in atproto's
+//                         oauth-client and oauth-provider, Nov 14:
+//                         claude/mixtape-v2-plan.md R3-A8).
 //
 // No browser-only code here, so Node (tests, the build) can import it too.
 
+/** What every ordinary sign-in asks for. */
 export const SCOPE = "atproto repo:ing.dasl.masl repo:cafe.thunderbird.tile.post blob:*/*";
+/** The importer's songs (lexicon: pyxorium/audio-tracks). */
+export const TRACK_COLLECTION = "cafe.thunderbird.audio.track";
+/** What the importer's "Sign in again to allow importing" asks for. */
+export const IMPORT_SCOPE = `${SCOPE} repo:${TRACK_COLLECTION}`;
+/** Everything the Foundry may ever ask for: oauth.json and the development client ID. */
+export const DECLARED_SCOPE = IMPORT_SCOPE;
 export const APP_NAME = "Web Tile Foundry";
 export const PRODUCTION_ORIGIN = "https://foundry.thunderbird.cafe";
 export const CLIENT_METADATA_FILE = "oauth.json";
@@ -37,7 +55,7 @@ export function productionClientMetadata() {
     client_name: APP_NAME,
     client_uri: `${PRODUCTION_ORIGIN}/`,
     redirect_uris: [`${PRODUCTION_ORIGIN}/`],
-    scope: SCOPE,
+    scope: DECLARED_SCOPE,
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
     token_endpoint_auth_method: "none",
@@ -55,7 +73,7 @@ export function isLoopbackHost(hostname) {
 export function loopbackClientId(redirectUri) {
   const q = new URLSearchParams();
   q.append("redirect_uri", redirectUri);
-  q.append("scope", SCOPE);
+  q.append("scope", DECLARED_SCOPE);
   return `http://localhost?${q.toString()}`;
 }
 
@@ -67,7 +85,7 @@ export function loopbackClientMetadata(redirectUri) {
   return {
     client_id: loopbackClientId(redirectUri),
     redirect_uris: [redirectUri],
-    scope: SCOPE,
+    scope: DECLARED_SCOPE,
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
     token_endpoint_auth_method: "none",

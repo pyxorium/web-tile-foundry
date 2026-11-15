@@ -7,6 +7,7 @@ import { listPlyrSongs, ownerNames, groupShows, REASONS } from "./plyr.js";
 import { createWorkshop, trackFromSong, sideFor } from "./workshop.js";
 import { sharedPool } from "./shared.js";
 import { searchWords, songMatches, sideMeters, tapeBurnedDown, showTick, showKey, readMemory, writeMemory, tapeLine } from "./library.js";
+import { IMPORT_DID } from "./tracks.js";
 
 // The song picker in the Songs input (v0.34.0: the Choose songs window).
 // In the panel: a short line about your songs and a "Choose songs" button.
@@ -20,6 +21,10 @@ import { searchWords, songMatches, sideMeters, tapeBurnedDown, showTick, showKey
 // with the reason. The window remembers which shows were open and where it
 // was scrolled (library.js). Plain DOM (the Foundry mounts it through the
 // tracks input's picker).
+//
+// v0.35.0: "Import songs…" under Choose songs, shown only when pyxorium.com
+// is signed in on this browser (V2-2, R3b-1), opens the importer's window
+// (importer.js, loaded the first time it's opened).
 //
 // mountPicker(element, { getTracks, setTracks, context, sides, maxTracks, getMaxSecondsPerSide, storage })
 //   -> { update(tracks, context), dispose() }
@@ -62,7 +67,11 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   status.setAttribute("aria-live", "polite");
   const open = button("Choose songs", "btn mx-open");
   open.disabled = true;
-  box.append(head, status, open);
+  const importBtn = button("Import songs…", "btn btn-quiet mx-import-open");
+  importBtn.hidden = true;
+  const importNote = el("p", "field-help mx-import-note", "Songs from Live Music Archive recordings, kept on @pyxorium.com.");
+  importNote.hidden = true;
+  box.append(head, status, open, importBtn, importNote);
 
   // The window (a modal <dialog>: Escape closes it, the page behind can't be reached).
   const dialog = el("dialog", "mx-window");
@@ -107,6 +116,8 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   const memory = readMemory(storage);
   const openShows = new Set(memory.open);
   let disposed = false;
+  let importer = null; // { open, dispose, key } once the importer window has been made
+  let importAccount = null; // pyxorium.com among your accounts: { did, handle, pds }
 
   function setStatus(text, error = false) {
     status.textContent = text || "";
@@ -114,8 +125,43 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     status.hidden = !text;
   }
 
+  // The importer is offered only while pyxorium.com is one of your accounts here.
+  function useImporter(list) {
+    const a = (list || []).find((x) => x.did === IMPORT_DID) || null;
+    const key = a ? `${a.did}@${a.pds}@${a.handle || ""}` : "";
+    if (importer && importer.key !== key) {
+      importer.dispose();
+      importer = null;
+    }
+    importAccount = a;
+    importBtn.hidden = importNote.hidden = !a;
+  }
+
+  async function openImporter() {
+    if (!importAccount) return;
+    importBtn.disabled = true;
+    try {
+      if (!importer) {
+        const key = `${importAccount.did}@${importAccount.pds}@${importAccount.handle || ""}`;
+        const made = (await import("./importer.js")).mountImporter(box, { account: importAccount, storage });
+        if (disposed) {
+          made.dispose();
+          return;
+        }
+        importer = { ...made, key };
+      }
+      await importer.open();
+    } catch (err) {
+      console.error("[import]", err);
+      setStatus(`The importer couldn't open: ${err.message}`, true);
+    } finally {
+      importBtn.disabled = false;
+    }
+  }
+
   function useAccounts(ctx) {
     const mine = myAccounts(ctx);
+    useImporter(mine.state === "ok" ? mine.list : []);
     if (mine.state !== "ok") {
       accounts = null;
       accountsKey = "";
@@ -478,6 +524,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   });
 
   refresh.addEventListener("click", () => accounts && load());
+  importBtn.addEventListener("click", openImporter);
   useAccounts(context);
 
   return {
@@ -491,6 +538,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
       hide();
       document.documentElement.classList.remove("mx-window-open");
       if (workshop) workshop.dispose();
+      if (importer) importer.dispose();
       // Only this picker's own box (see preview.js: React may mount twice).
       box.remove();
     },

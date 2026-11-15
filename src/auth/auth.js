@@ -1,6 +1,10 @@
 import { XrpcError } from "../core/publish.js";
+import { scopeAllows } from "../core/tile-post.js";
 import {
   HANDLE_RESOLVER,
+  SCOPE,
+  IMPORT_SCOPE,
+  TRACK_COLLECTION,
   isLoopbackHost,
   loopbackClientId,
   loopbackClientMetadata,
@@ -11,6 +15,11 @@ import {
 // does (init, signIn, revoke). Authenticated calls to the account's server go
 // through the session's own fetchHandler (what @atproto/api's Agent uses
 // underneath), so no further package is needed.
+//
+// Permissions (v0.35.0): the client declares more than an ordinary sign-in asks
+// for (DECLARED_SCOPE, src/auth/client-config.js), so every sign-in here says
+// what it asks for: SCOPE, or IMPORT_SCOPE for the Mixtape importer's "Sign in
+// again to allow importing".
 //
 // Development runs in atproto's localhost client mode. The library requires
 // the page to be opened at 127.0.0.1 (not "localhost"), so the Foundry moves
@@ -173,7 +182,7 @@ async function resetClient() {
 
 async function startSignIn(handle, state) {
   const client = await getClient();
-  await client.signIn(handle, state ? { state } : undefined);
+  await client.signIn(handle, state ? { state, scope: SCOPE } : { scope: SCOPE });
 }
 
 /**
@@ -258,7 +267,7 @@ async function withFreshStorage(run) {
 export async function addAccount(handle, { signal } = {}) {
   const clean = handle.trim().replace(/^@/, "");
   if (typeof indexedDB === "undefined" || indexedDB === null) throw new Error(NO_STORAGE_MESSAGE);
-  const session = await withFreshStorage((client) => client.signIn(clean, { display: "popup", popupName: SIGNIN_WINDOW, signal }));
+  const session = await withFreshStorage((client) => client.signIn(clean, { display: "popup", popupName: SIGNIN_WINDOW, signal, scope: SCOPE }));
   return use(session);
 }
 
@@ -306,16 +315,33 @@ export async function xrpcForAccount(did) {
 }
 
 /**
- * Signs `did` in again in the sign-in window (already opened with
- * openSignInWindow), with the permission the Foundry asks for now. The
- * library replaces that account's old sign-in. The account in use stays the
- * same; if it IS this account, its new sign-in is used from now on.
- * `handle` is the hint shown at the account's server (the DID if unknown).
+ * The permissions to ask for when `did` signs in again for something other
+ * than importing (the Post step): SCOPE, plus the importer's track permission
+ * if this account's sign-in has it now, so posting a tile doesn't quietly take
+ * importing away from pyxorium.com.
  */
-export async function signInAgain(did, handle, { signal } = {}) {
+async function keepingImport(did) {
+  try {
+    return scopeAllows(await grantedScope(did), TRACK_COLLECTION) ? IMPORT_SCOPE : SCOPE;
+  } catch {
+    return SCOPE;
+  }
+}
+
+/**
+ * Signs `did` in again in the sign-in window (already opened with
+ * openSignInWindow), with the permission the Foundry asks for now (`scope`:
+ * IMPORT_SCOPE for the importer; by default SCOPE, keeping importing if the
+ * account has it). The library replaces that account's old sign-in. The
+ * account in use stays the same; if it IS this account, its new sign-in is
+ * used from now on. `handle` is the hint shown at the account's server (the
+ * DID if unknown).
+ */
+export async function signInAgain(did, handle, { signal, scope = null } = {}) {
   if (typeof indexedDB === "undefined" || indexedDB === null) throw new Error(NO_STORAGE_MESSAGE);
   const hint = String(handle || "").trim().replace(/^@/, "") || did;
-  const session = await withFreshStorage((client) => client.signIn(hint, { display: "popup", popupName: SIGNIN_WINDOW, signal }));
+  const ask = scope || (await keepingImport(did));
+  const session = await withFreshStorage((client) => client.signIn(hint, { display: "popup", popupName: SIGNIN_WINDOW, signal, scope: ask }));
   // The library replaced this account's stored sign-in; the one in use must not keep the old copy.
   if (session && currentSession && currentSession.sub === session.sub) use(session);
   if (!session || session.sub !== did) {
