@@ -274,3 +274,19 @@ test("v0.36.1: Edit details finds only the songs that really changed, whatever o
   assert.ok(!sameRecord(renamed, { $type: TRACK_COLLECTION, ...fromServer }), "a new show name: rewritten");
   assert.ok(!sameRecord({ a: [1, 2] }, { a: [2, 1] }), "lists keep their order");
 });
+
+test("v0.36.2: a search finds a show by itself (name, or a recording's band, venue, place, date, taper) or by its songs (R3b-21)", async () => {
+  const { showMatches } = await import("../src/tile-types/mixtape/library.js");
+  const yonder = groupTrackShows([songFromTrack(trackFromRecord(trackRecord("3n2aaaaaaaa22", 2, "Loved You Enough", { taper: "Jim Smith" })))])[0];
+  const trueBlue = groupShows([songFromRecord(plyrRecord("3lzaaaaaaaa22", "Roll On", "Imagine at Quixote's True Blue 2011-10-02", "2026-10-01T00:00:00Z"))])[0];
+  const aladdin = groupShows([songFromRecord(plyrRecord("3lzaaaaaaab22", "White House Blues", "Aladdin Theater 1985-03-25", "2026-10-01T00:00:00Z"))])[0];
+  const w = searchWords;
+  assert.ok(showMatches(yonder, w("yonder")), "the band (and the show name)");
+  assert.ok(showMatches(yonder, w("auditorium denver")), "venue and place, from the record");
+  assert.ok(showMatches(yonder, w("smith 2002")), "taper and date");
+  assert.ok(!showMatches(yonder, w("yonder loved")), "a song title word: found by its songs, not by itself");
+  assert.ok(showMatches(trueBlue, w("blue")), "\"blue\" in a show's name: by itself");
+  assert.ok(!showMatches(aladdin, w("blue")), "\"blue\" only in song titles: by its songs");
+  assert.ok(!showMatches(trueBlue, w("pyxorium")), "a plyr.fm show's uploader isn't part of the show");
+  assert.ok(!showMatches(trueBlue, []), "no search: nothing");
+});

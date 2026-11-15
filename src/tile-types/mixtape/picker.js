@@ -8,7 +8,7 @@ import { createWorkshop, trackFromSong, sideFor } from "./workshop.js";
 import { sharedPool } from "./shared.js";
 import {
   searchWords, songMatches, sideMeters, tapeBurnedDown, showTick, showKey, readMemory, writeMemory, tapeLine,
-  SOURCE_FILTERS, sourceMatches, sourceLabel, sourceOf, mergeShows,
+  SOURCE_FILTERS, sourceMatches, sourceLabel, sourceOf, mergeShows, showMatches,
 } from "./library.js";
 import { IMPORT_DID, listTrackSongs, groupTrackShows } from "./tracks.js";
 
@@ -38,6 +38,12 @@ import { IMPORT_DID, listTrackSongs, groupTrackShows } from "./tracks.js";
 // is converted to the tape's MP3 like a plyr.fm song (its stored Opus
 // decoded by the browser). After the importer stores or edits songs, the
 // list is read again when its window closes.
+//
+// v0.36.2 (R3b-21): while a search is typed, a show found by itself (its
+// name, or a recording's band, venue, place, date or taper) starts closed,
+// any other show with matches starts open with just those songs, and every
+// heading opens and closes. Those clicks last for that search only
+// (searchOpen) and never change what's remembered.
 //
 // mountPicker(element, { getTracks, setTracks, context, sides, maxTracks, getMaxSecondsPerSide, storage })
 //   -> { update(tracks, context), dispose() }
@@ -145,6 +151,8 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   let shows = []; // [{ key, g, section, list, tick, toggle, count }]
   let summary = ""; // the panel's line once songs are listed
   let words = [];
+  let searchKey = ""; // the search the open/closed choices below belong to
+  const searchOpen = new Map(); // show key -> open, chosen by a click during this search
   const memory = readMemory(storage);
   const openShows = new Set(memory.open);
   let source = memory.source; // "all" | "plyr" | "archive"
@@ -379,18 +387,31 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
       else add(usable);
     });
     toggle.addEventListener("click", () => {
-      if (openShows.has(key)) openShows.delete(key);
-      else openShows.add(key);
-      remember();
+      if (words.length) {
+        // During a search: for this search only; what's remembered stays as it was.
+        searchOpen.set(key, !isOpenNow(entry));
+      } else {
+        if (openShows.has(key)) openShows.delete(key);
+        else openShows.add(key);
+        remember();
+      }
       drawOpen(entry);
     });
     drawOpen(entry);
     return section;
   }
 
-  // A show is open when you opened it, or while a search finds songs in it.
+  // A show is open when you opened it. While searching: as clicked during
+  // this search, else closed when the search found the show by itself and
+  // open when it found songs in it (R3b-21).
+  function isOpenNow(entry) {
+    if (!words.length) return openShows.has(entry.key);
+    if (searchOpen.has(entry.key)) return searchOpen.get(entry.key);
+    return !entry.byShow;
+  }
+
   function drawOpen(entry) {
-    const isOpen = words.length ? true : openShows.has(entry.key);
+    const isOpen = isOpenNow(entry);
     entry.section.classList.toggle("is-open", isOpen);
     entry.toggle.setAttribute("aria-expanded", String(isOpen));
     entry.list.hidden = !isOpen;
@@ -409,6 +430,11 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
 
   function applySearch() {
     words = searchWords(search.value);
+    const key = words.join(" ");
+    if (key !== searchKey) {
+      searchKey = key;
+      searchOpen.clear();
+    }
     const from = activeSource();
     let any = false;
     for (const entry of shows) {
@@ -423,6 +449,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
         if (row) row.li.hidden = !hit;
         if (hit) n++;
       }
+      entry.byShow = showMatches(entry.g, words);
       entry.section.hidden = n === 0;
       if (n) any = true;
       drawOpen(entry);

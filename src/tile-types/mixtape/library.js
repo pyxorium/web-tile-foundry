@@ -23,6 +23,22 @@ export function songMatches(song, words, album = "") {
   return words.every((w) => hay.includes(w));
 }
 
+/**
+ * Whether a search finds a show by the show itself (v0.36.2, R3b-21): every
+ * word in its name or, for an imported recording, its band, venue, place,
+ * date or taper (the same for every song in it). Such a show starts closed
+ * while searching ("yonder" lists the Yonder Mountain shows as single lines);
+ * a show found by song titles starts open with just those songs.
+ */
+export function showMatches(show, words) {
+  if (!words.length || !show) return false;
+  const first = (show.songs && show.songs[0]) || {};
+  const own = [show.album];
+  if (first.kind === "archive") own.push(first.artist, first.venue, first.place, first.date, first.taper);
+  const hay = own.filter(Boolean).join(" ").toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
+
 /** The source filter by the search box (v0.36.0): "all", "plyr" or "archive". */
 export const SOURCE_FILTERS = Object.freeze([
   { id: "all", label: "All" },
