@@ -1,5 +1,7 @@
 // Songs kept on the PDS as cafe.thunderbird.audio.track records (Foundry
 // v0.35.0, Mixtape Burndown's importer; lexicon: pyxorium/audio-tracks).
+// Since v0.36.0 the Choose songs window lists them beside plyr.fm's songs
+// (songFromTrack, listTrackSongs, groupTrackShows).
 // Listing is public (listRecords, no sign-in); storing and editing go through
 // the signed-in account's own server (`xrpc`, as for publishTile).
 // No DOM here, so Node (tests) can import it.
@@ -107,6 +109,66 @@ export function groupRecordings(tracks) {
   for (const g of list) g.tracks.sort((a, b) => (a.trackNumber ?? 9999) - (b.trackNumber ?? 9999) || a.title.localeCompare(b.title));
   list.sort((a, b) => (a.newest < b.newest ? 1 : a.newest > b.newest ? -1 : a.album.localeCompare(b.album)));
   return list;
+}
+
+/** Audio a browser can decode for converting to the tape's MP3 (the importer stores Opus in WebM). */
+const PLAYABLE = /^audio\/(webm|ogg|opus|mpeg|mp3|flac|x-flac|wav|x-wav|mp4|aac)\b/;
+
+/**
+ * A track record as a song in the Choose songs window, shaped like plyr.js's
+ * songFromRecord (uri, cid, title, trackNumber, album, artist, seconds,
+ * createdAt, blob, usable, reason), plus `kind: "archive"` and the
+ * recording's details (date, venue, place, set, taper, source, archiveUrl,
+ * policyUrl) for search and for the tape's credits.
+ */
+export function songFromTrack(t) {
+  const blobCid = t.blob && t.blob.ref && t.blob.ref.$link;
+  const mimeType = String((t.blob && t.blob.mimeType) || (t.value && t.value.fileType) || "");
+  const blob = typeof blobCid === "string" && /^b[a-z2-7]{20,}$/.test(blobCid) ? { cid: blobCid, size: Number(t.blob.size) || null, mimeType } : null;
+  const reason = !blob ? "noAudio" : !PLAYABLE.test(mimeType.toLowerCase()) ? "format" : null;
+  return {
+    uri: t.uri,
+    cid: t.cid,
+    kind: "archive",
+    title: t.title,
+    trackNumber: t.trackNumber,
+    album: t.album,
+    artist: t.artist,
+    seconds: t.seconds,
+    createdAt: t.createdAt,
+    blob,
+    usable: !reason,
+    reason,
+    date: t.date,
+    venue: t.venue,
+    place: t.place,
+    set: t.set,
+    taper: t.taper,
+    source: t.source,
+    archiveUrl: t.archiveUrl,
+    policyUrl: t.policyUrl,
+  };
+}
+
+/** Every track record of an account, as songs (songFromTrack). */
+export async function listTrackSongs({ did, pds, fetchImpl = fetch }) {
+  return (await listTracks({ did, pds, fetchImpl })).map(songFromTrack);
+}
+
+/**
+ * Track songs grouped by recording for the window, shaped like plyr.js's
+ * groupShows ({ album, songs, usable, newest }) plus `kind: "archive"` and
+ * `key` (the recording: its Archive address, else its show name).
+ */
+export function groupTrackShows(songs) {
+  return groupRecordings(songs).map((g) => ({
+    kind: "archive",
+    key: g.key,
+    album: g.album,
+    songs: g.tracks,
+    usable: g.tracks.filter((s) => s.usable).length,
+    newest: g.newest,
+  }));
 }
 
 function sameJson(a, b) {

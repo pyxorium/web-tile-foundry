@@ -13,12 +13,66 @@ export function searchWords(query) {
 /**
  * Whether a song matches a search: every word must appear somewhere in the
  * song's title, its performer, or its show's name (which usually carries the
- * venue and date, so years and venues are found too).
+ * venue and date, so years and venues are found too); for imported Archive
+ * songs also the recording's venue, place, taper and date (v0.36.0).
  */
 export function songMatches(song, words, album = "") {
   if (!words.length) return true;
-  const hay = [song && song.title, song && song.artist, album || (song && song.album)].filter(Boolean).join(" ").toLowerCase();
+  const s = song || {};
+  const hay = [s.title, s.artist, album || s.album, s.venue, s.place, s.taper, s.date].filter(Boolean).join(" ").toLowerCase();
   return words.every((w) => hay.includes(w));
+}
+
+/** The source filter by the search box (v0.36.0): "all", "plyr" or "archive". */
+export const SOURCE_FILTERS = Object.freeze([
+  { id: "all", label: "All" },
+  { id: "plyr", label: "plyr.fm" },
+  { id: "archive", label: "Archive" },
+]);
+
+/** A show's (or song's) source: "archive" for imported tracks, "plyr" otherwise. */
+export function sourceOf(item) {
+  return item && item.kind === "archive" ? "archive" : "plyr";
+}
+
+/** Whether a show passes the source filter. */
+export function sourceMatches(item, filter) {
+  return !filter || filter === "all" || sourceOf(item) === filter;
+}
+
+/** The small label on a show's heading. */
+export function sourceLabel(item) {
+  return sourceOf(item) === "archive" ? "Archive" : "plyr.fm";
+}
+
+/**
+ * Shows from both sources in one list, newest added first (a 1997 concert
+ * imported today lands at the top; R3b-10). Ties keep plyr.fm's shows first,
+ * then by name.
+ */
+export function mergeShows(...lists) {
+  return lists
+    .flat()
+    .map((g, i) => ({ g, i }))
+    .sort((a, b) => {
+      const x = a.g.newest || "", y = b.g.newest || "";
+      if (x !== y) return x < y ? 1 : -1;
+      return a.i - b.i;
+    })
+    .map((e) => e.g);
+}
+
+/**
+ * The "artist · show" line without the band twice (R3b-18): an imported
+ * show's name starts with its band ("Yonder Mountain String Band · The
+ * Fillmore · 2002-04-20"), so the artist is left out when the show name
+ * already begins with it. The same rule is in runtime/player.js.
+ */
+export function artistShowLine(artist, album) {
+  const a = String(artist || "").trim();
+  const b = String(album || "").trim();
+  if (a && b && b.toLowerCase().startsWith(`${a.toLowerCase()} · `)) return b;
+  return [a, b].filter(Boolean).join(" · ");
 }
 
 /**
@@ -66,23 +120,26 @@ export function showKey(did, album) {
 export const MEMORY_KEY = "foundry.mixtape.chooser";
 const OPEN_MAX = 400;
 
-/** What the window remembers: { open: [show keys], scroll }. Safe with no storage or a broken entry. */
+const FILTER_IDS = SOURCE_FILTERS.map((f) => f.id);
+
+/** What the window remembers: { open: [show keys], scroll, source }. Safe with no storage or a broken entry. */
 export function readMemory(storage) {
   try {
     const raw = storage && storage.getItem(MEMORY_KEY);
     const v = raw ? JSON.parse(raw) : null;
     const open = v && Array.isArray(v.open) ? v.open.filter((k) => typeof k === "string").slice(0, OPEN_MAX) : [];
     const scroll = v && Number.isFinite(v.scroll) && v.scroll > 0 ? Math.round(v.scroll) : 0;
-    return { open, scroll };
+    const source = v && FILTER_IDS.includes(v.source) ? v.source : "all";
+    return { open, scroll, source };
   } catch {
-    return { open: [], scroll: 0 };
+    return { open: [], scroll: 0, source: "all" };
   }
 }
 
-export function writeMemory(storage, { open = [], scroll = 0 } = {}) {
+export function writeMemory(storage, { open = [], scroll = 0, source = "all" } = {}) {
   try {
     if (!storage) return;
-    storage.setItem(MEMORY_KEY, JSON.stringify({ open: [...open].slice(0, OPEN_MAX), scroll: Math.max(0, Math.round(scroll) || 0) }));
+    storage.setItem(MEMORY_KEY, JSON.stringify({ open: [...open].slice(0, OPEN_MAX), scroll: Math.max(0, Math.round(scroll) || 0), source: FILTER_IDS.includes(source) ? source : "all" }));
   } catch {
     /* storage full or blocked: the window just won't remember */
   }

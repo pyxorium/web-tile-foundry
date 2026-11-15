@@ -79,7 +79,7 @@ async function readFlacHead(file) {
   throw new Error("This file's tags are too large to read.");
 }
 
-export function mountImporter(root, { account, storage = browserStorage() }) {
+export function mountImporter(root, { account, storage = browserStorage(), onClosed = null }) {
   const did = account.did;
   const handle = account.handle || null;
   const who = handle ? `@${handle}` : did;
@@ -209,6 +209,7 @@ export function mountImporter(root, { account, storage = browserStorage() }) {
 
   // ---- state ----
   let opened = false;
+  let changed = false; // songs stored or edited since the window opened (v0.36.0: Choose songs lists them again)
   let disposed = false;
   let allowed = null; // true, false, or null (can't tell)
   let encoderOk = true;
@@ -305,7 +306,7 @@ export function mountImporter(root, { account, storage = browserStorage() }) {
     }
     const groups = groupRecordings(stored);
     const bytes = stored.reduce((n, t) => n + t.size, 0);
-    doneStatus.textContent = `${stored.length} ${stored.length === 1 ? "song" : "songs"} from ${groups.length} ${groups.length === 1 ? "recording" : "recordings"}, ${formatSize(bytes)} in all. They'll be listed in Choose songs in the next Foundry update.`;
+    doneStatus.textContent = `${stored.length} ${stored.length === 1 ? "song" : "songs"} from ${groups.length} ${groups.length === 1 ? "recording" : "recordings"}, ${formatSize(bytes)} in all. They're listed in Choose songs.`;
     for (const g of groups) doneList.append(recordingBlock(g));
   }
 
@@ -424,6 +425,7 @@ export function mountImporter(root, { account, storage = browserStorage() }) {
         openRecs.add(key);
         savedNotes.clear();
         savedNotes.set(key, `Saved ${changes.length} ${changes.length === 1 ? "song" : "songs"}.`);
+        changed = true;
         await loadStored();
       } catch (err) {
         console.error("[import] edit", err);
@@ -720,6 +722,7 @@ export function mountImporter(root, { account, storage = browserStorage() }) {
       for (const input of Object.values(inputs)) input.disabled = false;
       pickFolder.disabled = pickFiles.disabled = tickAll.disabled = untickAll.disabled = rights.disabled = false;
       for (const s of list) if (s.status === "Stored.") s.tick = false;
+      if (done) changed = true;
       await loadStored();
       drawSongs();
       refreshGo();
@@ -765,6 +768,9 @@ export function mountImporter(root, { account, storage = browserStorage() }) {
   dialog.addEventListener("close", () => {
     document.documentElement.classList.remove("mx-window-open");
     if (signInAbort) signInAbort.abort();
+    const was = changed;
+    changed = false;
+    if (typeof onClosed === "function") onClosed(was);
   });
 
   function hide() {

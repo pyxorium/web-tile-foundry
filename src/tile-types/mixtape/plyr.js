@@ -22,6 +22,7 @@ export const REASONS = Object.freeze({
   storage: "Only on plyr.fm's storage, which other sites can't read. In plyr.fm, copy its audio to your PDS to use it here.",
   gated: "For supporters only.",
   noAudio: "No audio file in the record.",
+  format: "Its audio file isn't one this browser can convert.",
 });
 
 /** "15 My Sweet Lord" -> "My Sweet Lord"; titles without a leading number stay as they are. */
@@ -66,7 +67,7 @@ export async function ownerNames({ did, pds, handle = null, fetchImpl = fetch })
 
 /**
  * One record as a song:
- *   { uri, cid, title, trackNumber, album, artist, seconds, createdAt,
+ *   { uri, cid, kind: "plyr", title, trackNumber, album, artist, seconds, createdAt,
  *     blob: { cid, size, mimeType } | null, usable, reason }
  * `owner` is the account's handle, or a list of the account's names (handle
  * and display name): plyr.fm puts the uploader in `artist` (newer uploads
@@ -87,6 +88,7 @@ export function songFromRecord(rec, { owner = null } = {}) {
   return {
     uri: String(rec.uri || ""),
     cid: String(rec.cid || ""),
+    kind: "plyr",
     title: stripTrackNumber(rawTitle) || rawTitle || "Untitled",
     trackNumber: trackNumberOf(rawTitle),
     album: typeof v.album === "string" && v.album.trim() ? v.album.trim() : "",
@@ -101,7 +103,7 @@ export function songFromRecord(rec, { owner = null } = {}) {
 
 /**
  * Songs grouped by show (album), newest show first; songs in track-number
- * order. Each show: { album, songs, usable (count), newest }.
+ * order. Each show: { kind: "plyr", album, songs, usable (count), newest }.
  */
 export function groupShows(songs) {
   const byAlbum = new Map();
@@ -111,6 +113,7 @@ export function groupShows(songs) {
     byAlbum.get(key).push(s);
   }
   const shows = [...byAlbum.entries()].map(([album, list]) => ({
+    kind: "plyr",
     album,
     songs: list.slice().sort((a, b) => {
       if (a.trackNumber != null && b.trackNumber != null && a.trackNumber !== b.trackNumber) return a.trackNumber - b.trackNumber;

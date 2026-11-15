@@ -426,11 +426,20 @@ html.mx-window-open { overflow: hidden; }
 .mx-window::backdrop { background: rgba(10, 10, 25, 0.55); }
 .mx-win { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .mx-win-head {
-  display: grid; grid-template-columns: auto minmax(180px, 1fr) minmax(300px, 1.3fr) auto; align-items: center; gap: 10px 16px;
+  display: grid; grid-template-columns: auto minmax(360px, 1.3fr) minmax(280px, 1.1fr) auto; align-items: center; gap: 10px 16px;
   padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface);
 }
 .mx-win-title { margin: 0; font-size: 18px; }
 .mx-search { min-width: 0; }
+/* v0.36.0: the search box with the source filter (All · plyr.fm · Archive) beside it. */
+.mx-finder { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mx-finder .mx-search { flex: 1; }
+.mx-filter { flex: none; display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--bg); }
+.mx-filter[hidden] { display: none; }
+.mx-filter-btn { border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 13px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+.mx-filter-btn + .mx-filter-btn { border-left: 1px solid var(--line); }
+.mx-filter-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.mx-filter-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -3px; }
 .mx-meters { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 14px; min-width: 0; }
 .mx-meter { min-width: 0; }
 .mx-meter-line { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
@@ -461,6 +470,9 @@ html.mx-window-open { overflow: hidden; }
 .mx-show.is-open .mx-caret { transform: rotate(90deg); }
 .mx-album { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .mx-count { flex: none; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* Where a show's songs come from (v0.36.0): a small label on its heading. */
+.mx-src { flex: none; align-self: center; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-2); background: var(--surface); }
+.mx-src-archive { border-color: color-mix(in srgb, var(--gold) 70%, var(--line)); background: var(--gold-soft); color: var(--ink); }
 .mx-songs { list-style: none; margin: 0 0 10px; padding: 0 0 0 28px; display: grid; gap: 1px; }
 .mx-song { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 10px; padding: 3px 6px; border-radius: 8px; }
 .mx-song.is-on { background: color-mix(in srgb, var(--accent) 9%, transparent); }
@@ -493,7 +505,7 @@ html.mx-window-open { overflow: hidden; }
 @media (max-width: 760px) {
   .mx-window { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; border: 0; }
   .mx-win-head { grid-template-columns: 1fr auto; padding: 10px 12px; }
-  .mx-search { grid-column: 1 / -1; grid-row: 2; }
+  .mx-finder { grid-column: 1 / -1; grid-row: 2; }
   .mx-meters { grid-column: 1 / -1; grid-row: 3; }
   .mx-win-bar { flex-wrap: wrap; padding: 6px 12px; }
   .mx-win-status { flex-basis: 100%; }

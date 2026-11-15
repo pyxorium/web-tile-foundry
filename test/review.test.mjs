@@ -9,7 +9,7 @@ import { spriteWalker } from "../src/tile-types/sprite-walker/index.js";
 test("the card's words and the confirmations move to the review; what's drawn in the tile stays", () => {
   assert.deepEqual([...reviewInputs(spriteWalker)].sort(), ["description", "name"]);
   assert.deepEqual([...reviewInputs(zine)].sort(), ["description", "soundRights"], "the zine's title is on its cover");
-  assert.deepEqual([...reviewInputs(mixtape)].sort(), ["confirm", "description"], "the tape's title is on the cassette");
+  assert.deepEqual([...reviewInputs(mixtape)].sort(), ["confirm", "confirmShared", "description"], "the tape's title is on the cassette; one confirmation shows at a time");
   assert.equal(mixtape.inputs.find((i) => i.key === "name").group, "tape");
   for (const t of [zine, mixtape, spriteWalker]) checkTileType(t);
   assert.throws(() => checkTileType({ ...spriteWalker, reviewSummary: "no" }), /reviewSummary/);

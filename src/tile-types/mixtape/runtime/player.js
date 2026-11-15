@@ -52,6 +52,19 @@ function el(tag, className, text) {
   return e;
 }
 
+/**
+ * A song's "artist · show" line, without the band twice: a show name that
+ * already starts with the artist ("Yonder Mountain String Band · The Fillmore
+ * · 2002-04-20", as the Foundry's importer names shows) is shown alone
+ * (v0.36.0, R3b-18; the same rule as library.js artistShowLine).
+ */
+export function songLine(artist, album) {
+  const a = String(artist || "").trim();
+  const b = String(album || "").trim();
+  if (a && b && b.toLowerCase().startsWith(`${a.toLowerCase()} · `)) return b;
+  return [a, b].filter(Boolean).join(" · ");
+}
+
 /** 0:07, 3:45, 1:02:03 */
 export function clock(seconds) {
   const s = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -568,7 +581,7 @@ export function mountPlayer(root, { tape, getBlob = defaultGetBlob, artwork = nu
       body.append(el("span", "mt-tt", text(t.title) || "Untitled"));
       const who = artistOf(t);
       const album = text(t.album);
-      if (who || album) body.append(el("span", "mt-ta", [who, album].filter(Boolean).join(" · ")));
+      if (who || album) body.append(el("span", "mt-ta", songLine(who, album)));
       row.append(el("span", "mt-n", i + 1), body, el("span", "mt-d", t.duration ? clock(t.duration) : ""));
       row.addEventListener("click", () => {
         if (isCur && !audio.paused) audio.pause();

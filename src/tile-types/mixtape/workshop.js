@@ -54,11 +54,31 @@ export function sideFor(tracks, sides, seconds, limit = SIDE_SECONDS) {
 }
 
 /**
- * A song from the picker (plyr.js songFromRecord) as an entry in the song list.
- * Its id is the record's address, so the same song is never on a tape twice.
+ * The credits line for an imported Archive song (tape.json `source.note`):
+ * "Taper: Jim Smith · SBD > DAT > CDR > FLAC"; "" when neither is known.
+ */
+export function archiveNote(song) {
+  const taper = String((song && song.taper) || "").trim();
+  const source = String((song && song.source) || "").trim().replace(/\s+/g, " ");
+  return [taper ? `Taper: ${taper}` : "", source].filter(Boolean).join(" · ").slice(0, 300);
+}
+
+/** The year from a recording date ("2002-04-20", "2002-04" or "2002"), or undefined. */
+export function yearOf(date) {
+  const m = /^(\d{4})(?:-\d{2}){0,2}$/.exec(String(date || "").trim());
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * A song from the picker (plyr.js songFromRecord, or tracks.js songFromTrack
+ * for imported Archive songs) as an entry in the song list. Its id is the
+ * record's address, so the same song is never on a tape twice. An Archive
+ * song also carries `kind: "archive"`, its year, and its credits for
+ * tape.json: `source.url` (the Archive address), `source.note` (taper and
+ * source) and `rights.url` (the policy link, when there is one).
  */
 export function trackFromSong(song, side) {
-  return {
+  const t = {
     id: song.uri,
     title: song.title,
     artist: song.artist || undefined,
@@ -70,6 +90,21 @@ export function trackFromSong(song, side) {
     source: { record: { uri: song.uri, cid: song.cid } },
     blobCid: song.blob.cid,
   };
+  if (song.kind === "archive") {
+    t.kind = "archive";
+    const year = yearOf(song.date);
+    if (year) t.year = year;
+    if (song.archiveUrl) t.source.url = song.archiveUrl;
+    const note = archiveNote(song);
+    if (note) t.source.note = note;
+    if (song.policyUrl) t.rights = { url: song.policyUrl };
+  }
+  return t;
+}
+
+/** Whether any song on the tape is an imported Archive song (V2-6's broader confirmation). */
+export function hasArchiveSongs(tracks) {
+  return (tracks || []).some((t) => t && (t.kind === "archive" || /\/cafe\.thunderbird\.audio\.track\//.test(String(t.id || ""))));
 }
 
 /** Simple limit on how many jobs run at once. */

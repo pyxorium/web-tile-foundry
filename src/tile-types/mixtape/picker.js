@@ -6,8 +6,11 @@ import { convertSong } from "../../core/audio/convert.js";
 import { listPlyrSongs, ownerNames, groupShows, REASONS } from "./plyr.js";
 import { createWorkshop, trackFromSong, sideFor } from "./workshop.js";
 import { sharedPool } from "./shared.js";
-import { searchWords, songMatches, sideMeters, tapeBurnedDown, showTick, showKey, readMemory, writeMemory, tapeLine } from "./library.js";
-import { IMPORT_DID } from "./tracks.js";
+import {
+  searchWords, songMatches, sideMeters, tapeBurnedDown, showTick, showKey, readMemory, writeMemory, tapeLine,
+  SOURCE_FILTERS, sourceMatches, sourceLabel, sourceOf, mergeShows,
+} from "./library.js";
+import { IMPORT_DID, listTrackSongs, groupTrackShows } from "./tracks.js";
 
 // The song picker in the Songs input (v0.34.0: the Choose songs window).
 // In the panel: a short line about your songs and a "Choose songs" button.
@@ -25,6 +28,16 @@ import { IMPORT_DID } from "./tracks.js";
 // v0.35.0: "Import songs…" under Choose songs, shown only when pyxorium.com
 // is signed in on this browser (V2-2, R3b-1), opens the importer's window
 // (importer.js, loaded the first time it's opened).
+//
+// v0.36.0: the window also lists the songs imported from Live Music Archive
+// recordings (cafe.thunderbird.audio.track records, tracks.js) beside the
+// plyr.fm songs, grouped by recording, newest added first; each show's
+// heading says "Archive" or "plyr.fm", a filter by the search box picks
+// All, plyr.fm or Archive (shown when there are both), and the search also
+// looks at an imported song's venue, place, taper and date. An imported song
+// is converted to the tape's MP3 like a plyr.fm song (its stored Opus
+// decoded by the browser). After the importer stores or edits songs, the
+// list is read again when its window closes.
 //
 // mountPicker(element, { getTracks, setTracks, context, sides, maxTracks, getMaxSecondsPerSide, storage })
 //   -> { update(tracks, context), dispose() }
@@ -60,7 +73,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     box.append(el("p", "mx-note", "Best on a computer: converting songs takes a lot of memory, and long songs may not fit on a phone."));
   }
   const head = el("div", "mx-head");
-  const who = el("span", "mx-who", "Your plyr.fm songs");
+  const who = el("span", "mx-who", "Your songs");
   const refresh = button("Refresh");
   head.append(who, refresh);
   const status = el("p", "mx-status");
@@ -81,11 +94,30 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   const title = el("h2", "mx-win-title", "Choose songs");
   const search = el("input", "text mx-search");
   search.type = "search";
-  search.placeholder = "Search songs, shows, venues, years";
+  search.placeholder = "Search songs, shows, venues, tapers, years";
   search.setAttribute("aria-label", "Search your songs");
+  // All · plyr.fm · Archive (v0.36.0), shown when there are songs of both kinds.
+  const filter = el("div", "mx-filter");
+  filter.setAttribute("role", "group");
+  filter.setAttribute("aria-label", "Songs from");
+  filter.hidden = true;
+  const filterButtons = SOURCE_FILTERS.map((f) => {
+    const b = button(f.label, "mx-filter-btn");
+    b.dataset.source = f.id;
+    b.addEventListener("click", () => {
+      source = f.id;
+      remember();
+      drawFilter();
+      applySearch();
+    });
+    filter.append(b);
+    return b;
+  });
   const meters = el("div", "mx-meters");
   const done = button("Done", "btn mx-done");
-  top.append(title, search, meters, done);
+  const finder = el("div", "mx-finder");
+  finder.append(search, filter);
+  top.append(title, finder, meters, done);
   const bar = el("div", "mx-win-bar");
   const winStatus = el("p", "mx-win-status");
   winStatus.setAttribute("aria-live", "polite");
@@ -115,6 +147,8 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   let words = [];
   const memory = readMemory(storage);
   const openShows = new Set(memory.open);
+  let source = memory.source; // "all" | "plyr" | "archive"
+  let bothKinds = false; // songs of both kinds can be used: the filter shows
   let disposed = false;
   let importer = null; // { open, dispose, key } once the importer window has been made
   let importAccount = null; // pyxorium.com among your accounts: { did, handle, pds }
@@ -143,7 +177,9 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     try {
       if (!importer) {
         const key = `${importAccount.did}@${importAccount.pds}@${importAccount.handle || ""}`;
-        const made = (await import("./importer.js")).mountImporter(box, { account: importAccount, storage });
+        // Songs stored or edited in the importer: list the songs again when it closes.
+        const onClosed = (changed) => changed && !disposed && accounts && load();
+        const made = (await import("./importer.js")).mountImporter(box, { account: importAccount, storage, onClosed });
         if (disposed) {
           made.dispose();
           return;
@@ -166,10 +202,10 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
       accounts = null;
       accountsKey = "";
       clearLibrary();
-      who.textContent = "Your plyr.fm songs";
+      who.textContent = "Your songs";
       refresh.hidden = true;
       setStatus(
-        mine.state === "out" ? "Sign in to list your plyr.fm songs." :
+        mine.state === "out" ? "Sign in to list your songs." :
         mine.state === "lookup" ? "Your account's details couldn't be looked up, so your songs can't be listed yet. Use Try again above." :
         "Looking up your account…"
       );
@@ -188,7 +224,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
           convertSong(bytes, { pool: sharedPool(), ...fades, onProgress }).then((r) => ({ bytes: r.bytes, seconds: r.seconds })),
       });
     }
-    who.textContent = accounts.length > 1 ? "Your plyr.fm songs" : accounts[0].handle ? `Songs from @${accounts[0].handle} on plyr.fm` : "Your plyr.fm songs";
+    who.textContent = accounts.length > 1 ? "Your songs" : accounts[0].handle ? `Songs from @${accounts[0].handle}` : "Your songs";
     refresh.hidden = false;
     load();
     workshop.sync(getTracks());
@@ -205,9 +241,20 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     return bytes;
   }
 
+  // An account's plyr.fm songs and its imported songs. The account's songs
+  // fail only if its plyr.fm songs can't be listed; imported songs that can't
+  // be listed are said as a note (trackError).
   async function songsFrom(a) {
-    const names = await ownerNames({ did: a.did, pds: a.pds, handle: a.handle });
-    return listPlyrSongs({ did: a.did, pds: a.pds, owner: names });
+    const plyr = (async () => {
+      const names = await ownerNames({ did: a.did, pds: a.pds, handle: a.handle });
+      return listPlyrSongs({ did: a.did, pds: a.pds, owner: names });
+    })();
+    const tracks = listTrackSongs({ did: a.did, pds: a.pds }).then(
+      (list) => ({ list, err: null }),
+      (err) => ({ list: [], err })
+    );
+    const [songs, t] = await Promise.all([plyr, tracks]);
+    return { songs, tracks: t.list, trackError: t.err };
   }
 
   function clearLibrary() {
@@ -222,45 +269,56 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   async function load() {
     const mine = ++loadTicket;
     const list = accounts;
-    setStatus("Looking for your plyr.fm songs…");
+    setStatus("Looking for your songs…");
     const scroll = lib.scrollTop;
     clearLibrary();
     const results = await Promise.allSettled(list.map(songsFrom));
     if (mine !== loadTicket || disposed) return;
     const found = [];
     const failed = [];
-    results.forEach((r, i) => (r.status === "fulfilled" ? found.push({ a: list[i], songs: r.value }) : failed.push({ a: list[i], err: r.reason })));
-    for (const f of failed) console.error("[plyr.fm songs]", f.a.did, f.err);
+    results.forEach((r, i) => (r.status === "fulfilled" ? found.push({ a: list[i], ...r.value }) : failed.push({ a: list[i], err: r.reason })));
+    for (const f of failed) console.error("[songs]", f.a.did, f.err);
+    for (const f of found) if (f.trackError) console.error("[imported songs]", f.a.did, f.trackError);
     if (!found.length) {
-      setStatus(`Your plyr.fm songs couldn't be listed (${failed[0].err.message}). Press Refresh to try again.`, true);
+      setStatus(`Your songs couldn't be listed (${failed[0].err.message}). Press Refresh to try again.`, true);
       return;
     }
     render(found, failed);
     if (scroll) lib.scrollTop = scroll;
   }
 
-  // found: [{ a, songs }] per account; failed: [{ a, err }].
+  // found: [{ a, songs, tracks, trackError }] per account; failed: [{ a, err }].
   function render(found, failed = []) {
-    const songs = found.flatMap((f) => f.songs);
-    const lost = failed.length ? ` ${failed.map((f) => nameOf(f.a)).join(", ")}: songs couldn't be listed (${failed[0].err.message}).` : "";
+    const songs = found.flatMap((f) => [...f.songs, ...(f.tracks || [])]);
+    const lostTracks = found.filter((f) => f.trackError);
+    const lost =
+      (failed.length ? ` ${failed.map((f) => nameOf(f.a)).join(", ")}: songs couldn't be listed (${failed[0].err.message}).` : "") +
+      (lostTracks.length ? ` Imported songs on ${lostTracks.map((f) => nameOf(f.a)).join(", ")} couldn't be listed (${lostTracks[0].trackError.message}).` : "");
     if (!songs.length) {
-      setStatus(`No plyr.fm songs were found on ${found.length > 1 ? "your accounts" : "this account"}.${lost}`, Boolean(lost));
+      setStatus(`No songs were found on ${found.length > 1 ? "your accounts" : "this account"}.${lost}`, Boolean(lost));
       return;
     }
-    const several = found.filter((f) => f.songs.length).length > 1;
+    const several = found.filter((f) => f.songs.length || (f.tracks || []).length).length > 1;
     let usableCount = 0;
+    let archiveCount = 0;
     let showCount = 0;
+    const kinds = new Set();
     const unusable = [];
     for (const f of found) {
-      const groups = groupShows(f.songs);
+      // plyr.fm's shows and the imported recordings in one list, newest added first (R3b-10).
+      const groups = mergeShows(groupShows(f.songs), groupTrackShows(f.tracks || []));
       const usable = groups.filter((g) => g.usable > 0);
       unusable.push(...groups.filter((g) => g.usable === 0));
       usableCount += usable.reduce((n, g) => n + g.usable, 0);
+      archiveCount += usable.filter((g) => sourceOf(g) === "archive").reduce((n, g) => n + g.usable, 0);
       showCount += usable.length;
+      for (const g of usable) kinds.add(sourceOf(g));
       // With songs in more than one of your accounts, each account's shows come under its name.
       if (several && usable.length) lib.append(el("p", "mx-account", nameOf(f.a)));
-      for (const g of usable) lib.append(showBlock(g, showKey(f.a.did, g.album)));
+      for (const g of usable) lib.append(showBlock(g, sourceOf(g) === "archive" ? showKey(f.a.did, `archive|${g.key}`) : showKey(f.a.did, g.album)));
     }
+    bothKinds = kinds.size > 1;
+    drawFilter();
     if (unusable.length) {
       const d = el("details", "mx-unusable");
       const count = unusable.reduce((n, g) => n + g.songs.length, 0);
@@ -273,8 +331,9 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
       lib.append(d);
     }
     lib.append(el("p", "mx-none", "No songs match your search."));
+    const imported = archiveCount ? ` (${archiveCount} imported from Archive recordings)` : "";
     summary = usableCount
-      ? `${usableCount} of your ${songs.length} songs, in ${showCount} ${showCount === 1 ? "show" : "shows"}, can go on a tape.`
+      ? `${usableCount} of your ${songs.length} songs${imported}, in ${showCount} ${showCount === 1 ? "show" : "shows"}, can go on a tape.`
       : `None of your ${songs.length} songs can go on a tape yet: their audio is only on plyr.fm's storage, which other sites can't read.`;
     setStatus(summary + (usableCount ? " Choose songs to pick them; they start converting right away." : "") + lost);
     open.disabled = !usableCount;
@@ -292,7 +351,8 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     toggle.type = "button";
     const total = g.songs.filter((s) => s.usable).reduce((n, s) => n + s.seconds, 0);
     const count = el("span", "mx-count", `${g.usable} ${g.usable === 1 ? "song" : "songs"} · ${formatDuration(total)}`);
-    toggle.append(el("span", "mx-caret", ""), el("span", "mx-album", g.album), count);
+    const kind = el("span", `mx-src mx-src-${sourceOf(g)}`, sourceLabel(g));
+    toggle.append(el("span", "mx-caret", ""), el("span", "mx-album", g.album), kind, count);
     headRow.append(tick, toggle);
     const ul = el("ul", "mx-songs");
     for (const s of g.songs) {
@@ -336,10 +396,26 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     entry.list.hidden = !isOpen;
   }
 
+  // The filter's buttons, and the filter itself only when there are songs of both kinds.
+  function drawFilter() {
+    filter.hidden = !bothKinds;
+    for (const b of filterButtons) b.setAttribute("aria-pressed", String(b.dataset.source === activeSource()));
+  }
+
+  // The filter in use: what was chosen, or All while there is only one kind.
+  function activeSource() {
+    return bothKinds ? source : "all";
+  }
+
   function applySearch() {
     words = searchWords(search.value);
+    const from = activeSource();
     let any = false;
     for (const entry of shows) {
+      if (!sourceMatches(entry.g, from)) {
+        entry.section.hidden = true;
+        continue;
+      }
       let n = 0;
       for (const s of entry.g.songs) {
         const row = rows.get(s.uri);
@@ -351,9 +427,13 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
       if (n) any = true;
       drawOpen(entry);
     }
-    for (const n of lib.querySelectorAll(".mx-account, .mx-unusable")) n.hidden = words.length > 0;
+    const narrowed = words.length > 0 || from !== "all";
+    for (const n of lib.querySelectorAll(".mx-account, .mx-unusable")) n.hidden = narrowed;
     const none = lib.querySelector(".mx-none");
-    if (none) none.hidden = any || !words.length;
+    if (none) {
+      none.textContent = words.length ? "No songs match your search." : from === "archive" ? "No Archive songs yet." : "No plyr.fm songs.";
+      none.hidden = any || !narrowed;
+    }
     openAll.disabled = closeAll.disabled = words.length > 0;
   }
 
@@ -361,7 +441,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   let lastScroll = memory.scroll;
   function remember() {
     if (dialog.open) lastScroll = lib.scrollTop;
-    writeMemory(storage, { open: [...openShows], scroll: lastScroll });
+    writeMemory(storage, { open: [...openShows], scroll: lastScroll, source });
   }
 
   function add(songs) {

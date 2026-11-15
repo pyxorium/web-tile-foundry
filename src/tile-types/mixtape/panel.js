@@ -2,7 +2,7 @@
 // them in Node): starting values, the shows in the liner notes, free words,
 // and what goes in the public recipe.
 
-import { normalizeTracks, SIDE_SECONDS } from "./workshop.js";
+import { normalizeTracks, hasArchiveSongs, SIDE_SECONDS } from "./workshop.js";
 import { DEFAULT_KIT, kitById, kitColors } from "./kits.js";
 
 export const SIDES = Object.freeze(["A", "B"]);
@@ -49,6 +49,7 @@ export function panelDefaults({ handle = null } = {}) {
     name: handle ? `A mixtape from @${handle}` : "A mixtape",
     description: "",
     confirm: false,
+    confirmShared: false,
     handle,
   };
 }
@@ -82,7 +83,14 @@ export function splitWords(s) {
 
 /** Changes that touch other values (see applyChange in src/core/contract.js). */
 export function applyPanelChange(key, value, values) {
-  if (key === "tracks") return { values: { ...values, tracks: normalizeTracks(value, SIDES) } };
+  if (key === "tracks") {
+    const tracks = normalizeTracks(value, SIDES);
+    // The confirmation's words follow the songs (R3b-20): when they change
+    // (the first Archive song added, or the last one taken off), the box is
+    // ticked again against the words now shown.
+    if (hasArchiveSongs(tracks) !== hasArchiveSongs(values.tracks)) return { values: { ...values, tracks, confirm: false, confirmShared: false } };
+    return { values: { ...values, tracks } };
+  }
   if (key === "addShows") return { values: { ...values, notes: addShowsToNotes(values.notes, values.tracks) } };
   return null;
 }
@@ -100,13 +108,25 @@ export function tapeDetails(values) {
 
 /** The panel's choices for the public recipe (/foundry.json): no file names, nothing private. */
 export function panelRecipe(values) {
-  const songsFrom = (values.tracks || []).map((t) => (t.source && t.source.record ? t.source.record.uri.split("/")[2] : null));
-  const owners = [...new Set(songsFrom.filter(Boolean))];
+  // Each account the songs came from, once per kind: plyr.fm songs (fm.plyr.track)
+  // and imported Archive songs (cafe.thunderbird.audio.track, v0.36.0).
+  const seen = new Set();
+  const songsFrom = [];
+  for (const t of values.tracks || []) {
+    const uri = t.source && t.source.record ? t.source.record.uri : "";
+    const [, , did, collection] = uri.split("/");
+    if (!did) continue;
+    const kind = collection === "cafe.thunderbird.audio.track" ? "audio.track" : "plyr.fm";
+    if (seen.has(`${kind}|${did}`)) continue;
+    seen.add(`${kind}|${did}`);
+    songsFrom.push({ kind, did });
+  }
+  const shared = hasArchiveSongs(values.tracks);
   return {
-    songsFrom: owners.map((did) => ({ kind: "plyr.fm", did })),
+    songsFrom,
     kit: kitById(values.kit).id,
     tapeLength: lengthById(values.tapeLength).id,
     chosenTransitions: (values.tracks || []).filter((t) => t.transitionChosen).length,
-    confirmed: values.confirm === true,
+    confirmed: (shared ? values.confirmShared : values.confirm) === true,
   };
 }

@@ -6,11 +6,13 @@ import {
   LENGTHS, lengthById, sideSecondsOf, panelDefaults, applyPanelChange, tapeDetails, panelRecipe,
 } from "./panel.js";
 import { KITS } from "./kits.js";
+import { hasArchiveSongs } from "./workshop.js";
 
 // Tile type: Mixtape Burndown (the card's name since v0.34.0; the type id stays "mixtape").
 // The name: the bonfire at the end of a festival night, each side's minutes
 // counting down to a full tape, and burning a mix for a friend.
-// The creator's own songs (plyr.fm uploads, for now) on a cassette, Side A and Side B, with the
+// The creator's own songs (plyr.fm uploads and, since v0.36.0, songs imported
+// from Live Music Archive recordings, tracks.js) on a cassette, Side A and Side B, with the
 // changes between songs baked into the audio. Three tape lengths (v0.33.0):
 // C60, C90 and C120, 30, 45 or 60 minutes a side (panel.js LENGTHS). The song picker lives in
 // picker.js, the song list's rules in workshop.js and panel.js, the tile's
@@ -92,12 +94,24 @@ export const mixtape = {
     { key: "moods", kind: "text", label: "Moods", help: "Like mellow, upbeat.", maxLength: WORDS_MAX, group: "words" },
     { key: "tags", kind: "text", label: "Tags", help: "Anything else, like live, road trip.", maxLength: WORDS_MAX, group: "words" },
     { key: "description", kind: "text", label: "Description (optional)", maxLength: DESCRIPTION_MAX, multiline: true, group: "card" },
+    // One confirmation, its words following the songs (R3b-20): plyr.fm songs
+    // only, or (V2-6) the broader words once any imported Archive song is on
+    // the tape. panel.js unticks it when the words change.
     {
       key: "confirm",
       kind: "toggle",
       label: "These are my plyr.fm uploads, and I'm happy to publish them in a tile.",
-      help: "A copy of each song goes into the tile in your account, and stays there even if you later delete it from plyr.fm.",
+      help: "A copy of each song goes into the tape, in your account.",
       mustBeOn: "Tick this to publish your tape.",
+      showIf: (v) => !hasArchiveSongs(v.tracks),
+    },
+    {
+      key: "confirmShared",
+      kind: "toggle",
+      label: "These songs are my own uploads or recordings, or come from artists who allow non-commercial sharing (such as the Live Music Archive), and this tape is free to listen to.",
+      help: "A copy of each song goes into the tape, in your account.",
+      mustBeOn: "Tick this to publish your tape.",
+      showIf: (v) => hasArchiveSongs(v.tracks),
     },
   ],
 

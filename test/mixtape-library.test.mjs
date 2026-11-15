@@ -59,14 +59,14 @@ function fakeStorage(start = {}) {
 
 test("the window remembers open shows and where it was scrolled, and survives bad storage", () => {
   const st = fakeStorage();
-  assert.deepEqual(readMemory(st), { open: [], scroll: 0 });
+  assert.deepEqual(readMemory(st), { open: [], scroll: 0, source: "all" });
   writeMemory(st, { open: ["d|A", "d|B"], scroll: 812.4 });
-  assert.deepEqual(readMemory(st), { open: ["d|A", "d|B"], scroll: 812 });
-  assert.deepEqual(readMemory(fakeStorage({ [MEMORY_KEY]: "{not json" })), { open: [], scroll: 0 });
-  assert.deepEqual(readMemory(fakeStorage({ [MEMORY_KEY]: JSON.stringify({ open: [1, "x"], scroll: -4 }) })), { open: ["x"], scroll: 0 });
-  assert.deepEqual(readMemory(null), { open: [], scroll: 0 });
+  assert.deepEqual(readMemory(st), { open: ["d|A", "d|B"], scroll: 812, source: "all" });
+  assert.deepEqual(readMemory(fakeStorage({ [MEMORY_KEY]: "{not json" })), { open: [], scroll: 0, source: "all" });
+  assert.deepEqual(readMemory(fakeStorage({ [MEMORY_KEY]: JSON.stringify({ open: [1, "x"], scroll: -4 }) })), { open: ["x"], scroll: 0, source: "all" });
+  assert.deepEqual(readMemory(null), { open: [], scroll: 0, source: "all" });
   const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("full"); } };
-  assert.deepEqual(readMemory(broken), { open: [], scroll: 0 });
+  assert.deepEqual(readMemory(broken), { open: [], scroll: 0, source: "all" });
   assert.doesNotThrow(() => writeMemory(broken, { open: ["x"], scroll: 3 }));
 });
 

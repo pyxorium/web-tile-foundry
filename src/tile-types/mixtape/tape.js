@@ -20,6 +20,7 @@ export const LIMITS = Object.freeze({
   notes: 5000,
   term: 40,
   terms: 20,
+  note: 300,
 });
 
 const AT_URI = /^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/[A-Za-z0-9.-]+\/[A-Za-z0-9._~:-]+$/;
@@ -108,7 +109,7 @@ export function cleanLabel(label) {
   return Object.keys(out).length ? out : null;
 }
 
-/** Where a song came from: { record: { uri, cid }, url } (each part only if valid), or null. */
+/** Where a song came from: { record: { uri, cid }, url, note } (each part only if valid), or null. */
 export function cleanSource(s) {
   if (!s || typeof s !== "object") return null;
   const out = {};
@@ -118,7 +119,16 @@ export function cleanSource(s) {
   }
   const url = cleanUrl(s.url);
   if (url) out.url = url;
+  const note = cleanText(s.note, LIMITS.note);
+  if (note) out.note = note;
   return Object.keys(out).length ? out : null;
+}
+
+/** A song's rights (v0.36.0 writes only `url`, the band's sharing-policy link): { url }, or null. */
+export function cleanRights(r) {
+  if (!r || typeof r !== "object") return null;
+  const url = cleanUrl(r.url);
+  return url ? { url } : null;
 }
 
 /** The side letter used in file names: "A" -> "a"; other names -> "s1", "s2"… by position. */
@@ -135,7 +145,7 @@ const round2 = (n) => Math.round(n * 100) / 100;
 
 /**
  * The tape.json object. `sides`: [{ name, tracks: [{ path, cid, title, artist?,
- * album?, year?, duration, source?, transition? }] }]; the other fields are the
+ * album?, year?, duration, rights?, source?, transition? }] }]; the other fields are the
  * tape's own (title, artist, madeBy, dedication, notes, label, describe, cover).
  * Empty or invalid optional fields are left out.
  */
@@ -170,6 +180,8 @@ export function makeTape({ title, artist, madeBy, dedication, notes, label, desc
         if (al) track.album = al;
         if (Number.isInteger(t.year) && t.year > 1800 && t.year < 3000) track.year = t.year;
         track.duration = round2(t.duration);
+        const rights = cleanRights(t.rights);
+        if (rights) track.rights = rights;
         const src = cleanSource(t.source);
         if (src) track.source = src;
         if (t.transition) track.transition = t.transition;

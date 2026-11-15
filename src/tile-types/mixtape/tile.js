@@ -14,7 +14,7 @@ import { mixtapeConfig, renderMixtapeHtml } from "./runtime/template.js";
 //   tape     { artist?, madeBy?, dedication?, notes?, label?: { text }, describe? }
 //   sides    the side names in order, e.g. ["A", "B"]
 //   tracks   the song list (the tracks input's value), in order: each
-//            { id, title, artist?, album?, year?, side, transition?, source?,
+//            { id, title, artist?, album?, year?, side, transition?, source?, rights?,
 //              bytes (the converted song), fades? ({ fadeIn, fadeOut } it was
 //              converted with; checked against its place on the tape) }
 //   silence  a silent MP3 in the tape format, at least as long as the longest
@@ -64,6 +64,7 @@ export async function makeMixtapeTile({ name, description = "", tape = {}, sides
         album: t.album,
         year: t.year,
         duration: joined.total,
+        rights: t.rights,
         source: t.source,
         transition: transitionRecord(shape),
       });
