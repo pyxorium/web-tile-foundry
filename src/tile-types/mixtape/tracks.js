@@ -113,6 +113,20 @@ export function groupRecordings(tracks) {
 
 /** Audio a browser can decode for converting to the tape's MP3 (the importer stores Opus in WebM). */
 const PLAYABLE = /^audio\/(webm|ogg|opus|mpeg|mp3|flac|x-flac|wav|x-wav|mp4|aac)\b/;
+// v0.36.1: Bluesky's server labels a stored file by looking at its contents,
+// not by the type it was uploaded as, and calls any WebM file `video/webm`
+// (the importer's Opus WebM included; found in the live test, Nov 15). The
+// browser decodes the audio whatever the label, so a WebM or Ogg label, or a
+// record whose own `fileType` names an audio format, is accepted too.
+const PLAYABLE_CONTAINER = /^(video|application)\/(webm|ogg)\b/;
+const AUDIO_FILE_TYPES = new Set(["webm", "ogg", "opus", "mp3", "mpeg", "flac", "wav", "m4a", "mp4", "aac"]);
+
+/** Whether a track's audio can be converted for a tape (its blob's label, else its record's fileType). */
+export function playableAudio(mimeType, fileType) {
+  const m = String(mimeType || "").toLowerCase();
+  if (PLAYABLE.test(m) || PLAYABLE_CONTAINER.test(m)) return true;
+  return AUDIO_FILE_TYPES.has(String(fileType || "").toLowerCase().replace(/^\./, "").replace(/^audio\//, ""));
+}
 
 /**
  * A track record as a song in the Choose songs window, shaped like plyr.js's
@@ -125,7 +139,7 @@ export function songFromTrack(t) {
   const blobCid = t.blob && t.blob.ref && t.blob.ref.$link;
   const mimeType = String((t.blob && t.blob.mimeType) || (t.value && t.value.fileType) || "");
   const blob = typeof blobCid === "string" && /^b[a-z2-7]{20,}$/.test(blobCid) ? { cid: blobCid, size: Number(t.blob.size) || null, mimeType } : null;
-  const reason = !blob ? "noAudio" : !PLAYABLE.test(mimeType.toLowerCase()) ? "format" : null;
+  const reason = !blob ? "noAudio" : !playableAudio(mimeType, t.value && t.value.fileType) ? "format" : null;
   return {
     uri: t.uri,
     cid: t.cid,
@@ -169,6 +183,16 @@ export function groupTrackShows(songs) {
     usable: g.tracks.filter((s) => s.usable).length,
     newest: g.newest,
   }));
+}
+
+/**
+ * Whether two records hold the same thing, field order aside (v0.36.1): a PDS
+ * hands records back in its own field order, so comparing them as text
+ * finds every record changed (Edit details rewrote all 26 songs of a show
+ * for one changed show name, Nov 15).
+ */
+export function sameRecord(a, b) {
+  return sameJson(a, b);
 }
 
 function sameJson(a, b) {

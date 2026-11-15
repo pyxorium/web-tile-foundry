@@ -405,7 +405,7 @@ export function mountImporter(root, { account, storage = browserStorage(), onClo
           ...show, artist: show.band, description: fitDescription(show.description).text,
           title: s.name.value, trackNumber: s.n.value, set: s.set.value,
         }),
-      })).filter((c) => JSON.stringify(c.record) !== JSON.stringify({ $type: TRACK_COLLECTION, ...c.s.t.value }));
+      })).filter((c) => !sameRecord(c.record, { $type: TRACK_COLLECTION, ...c.s.t.value }));
       if (!changes.length) {
         status.textContent = "Nothing changed.";
         save.disabled = cancel.disabled = false;

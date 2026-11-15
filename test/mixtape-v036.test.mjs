@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { trackFromRecord, songFromTrack, listTrackSongs, groupTrackShows, TRACK_COLLECTION } from "../src/tile-types/mixtape/tracks.js";
+import { trackFromRecord, songFromTrack, listTrackSongs, groupTrackShows, TRACK_COLLECTION, playableAudio, sameRecord, editedRecord } from "../src/tile-types/mixtape/tracks.js";
 import { songFromRecord, groupShows, REASONS } from "../src/tile-types/mixtape/plyr.js";
 import {
   songMatches, searchWords, sourceOf, sourceMatches, sourceLabel, mergeShows, artistShowLine,
@@ -75,8 +75,11 @@ test("an imported track becomes a song like a plyr.fm one, with its recording's 
   const none = songFromTrack(trackFromRecord(trackRecord("3n2aaaaaaab22", 3, "x", { blob: false })));
   assert.equal(none.usable, false);
   assert.equal(none.reason, "noAudio");
-  const odd = songFromTrack(trackFromRecord(trackRecord("3n2aaaaaaac22", 4, "y", { mimeType: "application/octet-stream" })));
-  assert.equal(odd.reason, "format");
+  const odd = songFromTrack(trackFromRecord(trackRecord("3n2aaaaaaac22", 4, "y", { mimeType: "image/png" })));
+  assert.equal(odd.reason, null, "the record's fileType (webm) still says it's audio");
+  const r = trackRecord("3n2aaaaaaac22", 4, "y", { mimeType: "image/png" });
+  delete r.value.fileType;
+  assert.equal(songFromTrack(trackFromRecord(r)).reason, "format", "no audio label and no fileType: can't be converted");
   assert.ok(REASONS.format && REASONS.noAudio);
   assert.equal(songFromRecord(plyrRecord("3lzaaaaaaaa22", "Jam", "Show", "2026-10-01T00:00:00Z")).kind, "plyr");
 });
@@ -241,4 +244,33 @@ test("the confirmation follows the songs (R3b-20) and unticks when its words cha
   assert.equal(panelRecipe(v).confirmed, false);
   assert.ok(hasArchiveSongs([{ id: `at://${DID}/${TRACK_COLLECTION}/3n2x` }]), "known by its record type too (a draft made before kind was kept)");
   assert.ok(!hasArchiveSongs([plyr]));
+});
+
+test("v0.36.1: a stored WebM labelled video/webm by the server is still a usable song (the live test's 26 songs)", () => {
+  // Bluesky's PDS labels the importer's Opus WebM by its contents: video/webm.
+  const s = songFromTrack(trackFromRecord(trackRecord("3n2czaj2hlr23", 26, "Half Moon Rising", { mimeType: "video/webm" })));
+  assert.equal(s.usable, true);
+  assert.equal(s.reason, null);
+  assert.equal(s.blob.mimeType, "video/webm");
+  const plain = trackRecord("3n2czaj2hlr24", 25, "Rag Mama", { mimeType: "application/octet-stream" });
+  assert.equal(songFromTrack(trackFromRecord(plain)).usable, true, "an unknown label: the record's fileType decides");
+  for (const [m, f, want] of [
+    ["audio/webm", "", true], ["video/webm", "", true], ["video/webm;codecs=opus", "", true], ["application/ogg", "", true], ["audio/mpeg", "", true],
+    ["application/octet-stream", "webm", true], ["", "flac", true], ["", ".mp3", true], ["", "audio/webm", true],
+    ["video/mp4", "", false], ["image/png", "", false], ["", "", false], ["text/plain", "txt", false],
+  ]) assert.equal(playableAudio(m, f), want, `${m} / ${f}`);
+});
+
+test("v0.36.1: Edit details finds only the songs that really changed, whatever order the server keeps fields in", () => {
+  const stored = trackRecord("3n2cvsqgktb2e", 2, "Loved You Enough").value;
+  // The PDS answers in its own field order (shorter keys first, as DAG-CBOR sorts them).
+  const fromServer = Object.fromEntries(Object.entries(stored).sort(([a], [b]) => a.length - b.length || (a < b ? -1 : 1)));
+  fromServer.recording = Object.fromEntries(Object.entries(stored.recording).reverse());
+  const show = { band: BAND, album: SHOW, date: "2002-04-20", venue: "The Fillmore Auditorium", place: "Denver, CO", taper: "", source: LINEAGE, archiveUrl: ARCHIVE, policyUrl: "", description: stored.description };
+  const same = editedRecord(fromServer, { ...show, artist: show.band, title: "Loved You Enough", trackNumber: 2, set: "Set 1" });
+  assert.notEqual(JSON.stringify(same), JSON.stringify({ $type: TRACK_COLLECTION, ...fromServer }), "as text they differ (what v0.36.0 compared)");
+  assert.ok(sameRecord(same, { $type: TRACK_COLLECTION, ...fromServer }), "nothing changed: not rewritten");
+  const renamed = editedRecord(fromServer, { ...show, album: `${BAND} · The Fillmore Auditorium · 2002-04-20`, artist: show.band, title: "Loved You Enough", trackNumber: 2, set: "Set 1" });
+  assert.ok(!sameRecord(renamed, { $type: TRACK_COLLECTION, ...fromServer }), "a new show name: rewritten");
+  assert.ok(!sameRecord({ a: [1, 2] }, { a: [2, 1] }), "lists keep their order");
 });
