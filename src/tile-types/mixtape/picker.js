@@ -9,6 +9,8 @@ import { sharedPool } from "./shared.js";
 import {
   searchWords, songMatches, sideMeters, tapeBurnedDown, showTick, showKey, readMemory, writeMemory, tapeLine,
   SOURCE_FILTERS, sourceMatches, sourceLabel, sourceOf, mergeShows, showMatches,
+  TAPE_WIDTH, SHOW_LINE_WIDTH, tapeWidth, sideSongs, placeOf, putTrack, moveTrack, stepTrack, crossTrack,
+  selectAfterRemove, movedLine, artistShowLine,
 } from "./library.js";
 import { IMPORT_DID, listTrackSongs, groupTrackShows } from "./tracks.js";
 
@@ -45,6 +47,19 @@ import { IMPORT_DID, listTrackSongs, groupTrackShows } from "./tracks.js";
 // heading opens and closes. Those clicks last for that search only
 // (searchOpen) and never change what's remembered.
 //
+// v0.37.0, the tape desk (R3d-1 to R3d-9, claude/mixtape-3d-tape-desk-notes.md):
+// a divider between the library and the tape column drags left to widen the
+// column (230 px up to about half the window, the library keeping 480 px;
+// double-click snaps back; the width is remembered). From 320 px each song
+// shows its show under its title. Songs are arranged in the column: dragged
+// with the mouse within a side or across sides (a line shows where it lands;
+// let go outside the column and it snaps back), dragged in from the library
+// at a chosen spot, or moved with the buttons a row shows when the mouse is
+// over it or it's selected (↑ ↓, to Side B / to Side A, ×) and their keys
+// (Alt+↑/↓, Alt+→/←, Delete). Removing can be undone from the window's bar
+// (or Ctrl+Z). Escape steps back: a drag, then the selection, then the
+// window. Phones and narrow windows: buttons only, no divider, no dragging.
+//
 // mountPicker(element, { getTracks, setTracks, context, sides, maxTracks, getMaxSecondsPerSide, storage })
 //   -> { update(tracks, context), dispose() }
 
@@ -60,6 +75,10 @@ function button(text, className = "btn btn-quiet btn-small") {
   b.type = "button";
   return b;
 }
+
+const narrowWindow = () => typeof matchMedia === "function" && matchMedia("(max-width: 760px)").matches;
+const DRAG_START = 5; // px the mouse moves before a press becomes a drag
+const EDGE = 36; // px from the column's top or bottom edge where a drag scrolls it
 
 const onPhone = () => typeof matchMedia === "function" && (matchMedia("(pointer: coarse)").matches || matchMedia("(max-width: 700px)").matches);
 const browserStorage = () => {
@@ -129,16 +148,30 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   winStatus.setAttribute("aria-live", "polite");
   const openAll = button("Open all shows");
   const closeAll = button("Close all shows");
-  bar.append(winStatus, openAll, closeAll);
+  // Undo after removing a song from the column (R3d-7).
+  const undoBtn = button("Undo", "btn btn-small mx-undo");
+  undoBtn.hidden = true;
+  undoBtn.title = "Put the song back where it was (Ctrl+Z)";
+  bar.append(winStatus, undoBtn, openAll, closeAll);
   const body = el("div", "mx-win-body");
   const lib = el("div", "mx-lib");
+  // The divider (R3d-3): drag left to widen the tape column, double-click to snap back.
+  const split = el("div", "mx-split");
+  split.setAttribute("role", "separator");
+  split.setAttribute("aria-orientation", "vertical");
+  split.setAttribute("aria-label", "Tape column width");
+  split.setAttribute("aria-valuemin", String(TAPE_WIDTH));
+  split.tabIndex = 0;
+  split.title = "Drag to widen the tape column; double-click to put it back";
   const tape = el("aside", "mx-tape");
   tape.setAttribute("aria-label", "On the tape");
   const tapeToggle = button("", "mx-tape-toggle");
   tapeToggle.setAttribute("aria-expanded", "false");
   const tapeList = el("div", "mx-tape-list");
-  tape.append(tapeToggle, tapeList);
-  body.append(lib, tape);
+  const live = el("p", "mx-sr");
+  live.setAttribute("aria-live", "polite");
+  tape.append(tapeToggle, tapeList, live);
+  body.append(lib, split, tape);
   win.append(top, bar, body);
   dialog.append(win);
   box.append(dialog);
@@ -160,6 +193,16 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   let disposed = false;
   let importer = null; // { open, dispose, key } once the importer window has been made
   let importAccount = null; // pyxorium.com among your accounts: { did, handle, pds }
+  // The tape desk (v0.37.0).
+  let wantWidth = memory.width; // the column width asked for (0: the narrow default)
+  let lastTracks = []; // the song list as last drawn
+  let selected = null; // the selected song's id in the column
+  let undoInfo = null; // { track, side, index } of the song last removed with ×
+  let announce = null; // a song whose new place is read out once the list arrives
+  let drag = null; // { kind: "tape" | "lib", id, song, x, y, started, target, ghost }
+  let suppressClick = false; // the click that ends a drag isn't a click
+  const tapeRows = new Map(); // track id -> { li, n, title, len, show, up, down, cross, x }
+  const sideBoxes = new Map(); // side -> { box, empty, ol }
 
   function setStatus(text, error = false) {
     status.textContent = text || "";
@@ -365,6 +408,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     const ul = el("ul", "mx-songs");
     for (const s of g.songs) {
       const li = el("li", `mx-song ${s.usable ? "" : "is-off"}`);
+      li.dataset.uri = s.uri;
       const label = el("label");
       const input = el("input");
       input.type = "checkbox";
@@ -468,10 +512,11 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   let lastScroll = memory.scroll;
   function remember() {
     if (dialog.open) lastScroll = lib.scrollTop;
-    writeMemory(storage, { open: [...openShows], scroll: lastScroll, source });
+    writeMemory(storage, { open: [...openShows], scroll: lastScroll, source, width: wantWidth });
   }
 
   function add(songs) {
+    forgetUndo();
     setTracks((list) => {
       let next = list;
       let full = false;
@@ -489,6 +534,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   }
 
   function remove(songs) {
+    forgetUndo();
     const gone = new Set(songs.map((s) => s.uri));
     setTracks((list) => list.filter((t) => !gone.has(t.id)));
   }
@@ -518,7 +564,11 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
       }
       meters.append(one);
     }
-    if (!winStatus.classList.contains("is-error")) {
+    undoBtn.hidden = !undoInfo;
+    if (undoInfo) {
+      winStatus.classList.remove("is-error");
+      winStatus.textContent = `Removed "${undoInfo.track.title || "Untitled"}".`;
+    } else if (!winStatus.classList.contains("is-error")) {
       const n = tracks.length;
       winStatus.textContent = tapeBurnedDown(list)
         ? "Burned down: tape full."
@@ -528,31 +578,484 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     }
   }
 
+  // ---- The tape column (v0.37.0: the tape desk) ----
+
+  // Each side's heading, "Nothing yet" and list, made once.
+  function sideBox(side) {
+    if (!sideBoxes.has(side)) {
+      const box = el("section", "mx-tape-sidebox");
+      box.dataset.side = side;
+      box.append(el("h3", "mx-tape-side", sides.length > 1 ? `Side ${side}` : "Songs"));
+      const empty = el("p", "mx-tape-empty", "Nothing yet");
+      const ol = el("ol", "mx-tape-songs");
+      box.append(empty, ol);
+      tapeList.append(box);
+      sideBoxes.set(side, { box, empty, ol });
+    }
+    return sideBoxes.get(side);
+  }
+
+  function actButton(text, cls, onClick) {
+    const b = button("", `mx-act ${cls}`);
+    if (Array.isArray(text)) b.append(el("span", "mx-act-short", text[0]), el("span", "mx-act-long", text[1]));
+    else b.textContent = text;
+    b.tabIndex = -1;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    return b;
+  }
+
+  function tapeRow(t) {
+    let r = tapeRows.get(t.id);
+    if (r) return r;
+    const li = el("li", "mx-tape-song");
+    li.dataset.id = t.id;
+    li.tabIndex = -1;
+    const main = el("div", "mx-tape-main");
+    const n = el("span", "mx-tape-n");
+    const title = el("span", "mx-tape-title");
+    const len = el("span", "mx-tape-len");
+    main.append(n, title, len);
+    const show = el("div", "mx-tape-show");
+    const acts = el("div", "mx-tape-acts");
+    const id = t.id;
+    const up = actButton("↑", "mx-act-up", () => stepSong(id, -1));
+    const down = actButton("↓", "mx-act-down", () => stepSong(id, 1));
+    const cross = actButton(["→B", "to Side B"], "mx-act-cross", () => crossSong(id, Number(cross.dataset.dir) || 1));
+    const x = actButton("×", "mx-act-x", () => removeSong(id));
+    x.title = "Remove from the tape (Delete)";
+    x.setAttribute("aria-label", "Remove from the tape");
+    acts.append(up, down, cross, x);
+    li.append(main, show, acts);
+    r = { li, n, title, len, show, up, down, cross, x };
+    tapeRows.set(id, r);
+    return r;
+  }
+
   function drawTape(tracks) {
     tapeToggle.textContent = tapeLine(tracks, sides);
-    tapeList.replaceChildren();
-    for (const side of sides) {
-      const list = tracks.filter((t) => t.side === side);
-      tapeList.append(el("h3", "mx-tape-side", sides.length > 1 ? `Side ${side}` : "Songs"));
-      if (!list.length) {
-        tapeList.append(el("p", "mx-tape-empty", "Nothing yet"));
-        continue;
-      }
-      const ol = el("ol", "mx-tape-songs");
-      list.forEach((t, k) => {
-        const li = el("li", `mx-tape-song ${t.status === "error" ? "is-error" : ""}`);
-        const name = el("span", "mx-tape-title", t.title || "Untitled");
-        name.title = t.title || "";
-        const when = t.status === "converting" ? (Number.isFinite(t.progress) ? `${Math.round(t.progress)}%` : "…") : t.status === "error" ? "!" : formatDuration(t.seconds);
-        li.append(el("span", "mx-tape-n", k + 1), name, el("span", "mx-tape-len", when));
-        ol.append(li);
+    const active = document.activeElement;
+    const hadFocus = !!active && tapeList.contains(active);
+    const seen = new Set();
+    const ids = new Set(tracks.map((t) => t.id));
+    if (selected && !ids.has(selected)) selected = null;
+    const firstId = tracks.length ? (sides.map((sd) => sideSongs(tracks, sd)[0]).find(Boolean) || {}).id : null;
+    sides.forEach((side, si) => {
+      const { empty, ol } = sideBox(side);
+      const list = sideSongs(tracks, side);
+      empty.hidden = list.length > 0;
+      const lis = list.map((t, k) => {
+        seen.add(t.id);
+        const r = tapeRow(t);
+        r.li.className = `mx-tape-song${t.status === "error" ? " is-error" : ""}${t.id === selected ? " is-selected" : ""}${drag && drag.started && drag.id === t.id ? " is-dragging" : ""}`;
+        r.li.tabIndex = t.id === (selected || firstId) ? 0 : -1;
+        r.n.textContent = String(k + 1);
+        r.title.textContent = t.title || "Untitled";
+        r.title.title = t.title || "";
+        r.len.textContent = t.status === "converting" ? (Number.isFinite(t.progress) ? `${Math.round(t.progress)}%` : "…") : t.status === "error" ? "!" : formatDuration(t.seconds);
+        const showLine = artistShowLine(t.artist, t.album);
+        r.show.textContent = showLine;
+        r.show.title = showLine;
+        r.show.hidden = !showLine;
+        r.up.disabled = k === 0;
+        r.down.disabled = k === list.length - 1;
+        r.up.title = "Move up (Alt+↑)";
+        r.down.title = "Move down (Alt+↓)";
+        r.up.setAttribute("aria-label", "Move up");
+        r.down.setAttribute("aria-label", "Move down");
+        // Across the flip: the next side when there is one, else the side before.
+        const dir = si < sides.length - 1 ? 1 : -1;
+        const to = sides[si + dir];
+        r.cross.hidden = !to;
+        if (to) {
+          r.cross.dataset.dir = String(dir);
+          r.cross.firstChild.textContent = dir > 0 ? `→${to}` : `←${to}`;
+          r.cross.lastChild.textContent = `to Side ${to}`;
+          r.cross.title = `To Side ${to} (Alt+${dir > 0 ? "→" : "←"})`;
+          r.cross.setAttribute("aria-label", `To Side ${to}`);
+        }
+        r.li.setAttribute("aria-label", `${t.title || "Untitled"}, ${sides.length > 1 ? `Side ${side}, ` : ""}position ${k + 1}`);
+        return r.li;
       });
-      tapeList.append(ol);
+      const now = [...ol.children];
+      if (now.length !== lis.length || now.some((n, i) => n !== lis[i])) ol.replaceChildren(...lis);
+    });
+    for (const [id, r] of tapeRows) {
+      if (!seen.has(id)) {
+        r.li.remove();
+        tapeRows.delete(id);
+      }
+    }
+    // Keep the keyboard where it was: on the selected song (moved, or the next one after a removal).
+    if (hadFocus && !tapeList.contains(document.activeElement)) {
+      const r = selected && tapeRows.get(selected);
+      if (r) r.li.focus({ preventScroll: true });
+    }
+    if (selected && tapeRows.get(selected) && announce === selected) {
+      tapeRows.get(selected).li.scrollIntoView({ block: "nearest" });
+    }
+    if (announce && ids.has(announce)) {
+      live.textContent = movedLine(tracks, announce, sides);
+      announce = null;
     }
   }
 
+  function select(id, focus = false) {
+    selected = id;
+    for (const [rid, r] of tapeRows) {
+      r.li.classList.toggle("is-selected", rid === id);
+      r.li.tabIndex = rid === id ? 0 : -1;
+    }
+    if (!id) {
+      const first = tapeList.querySelector(".mx-tape-song");
+      if (first) first.tabIndex = 0;
+    }
+    if (focus && id && tapeRows.get(id)) tapeRows.get(id).li.focus();
+  }
+
+  function forgetUndo() {
+    if (!undoInfo) return;
+    undoInfo = null;
+    undoBtn.hidden = true;
+  }
+
+  // Every change from the column goes through here (the list's own rules
+  // re-convert the songs whose fades change).
+  function arrange(id, fn) {
+    forgetUndo();
+    announce = id;
+    select(id);
+    setTracks((list) => fn(list));
+  }
+
+  const stepSong = (id, dir) => arrange(id, (list) => stepTrack(list, id, dir));
+  const crossSong = (id, dir) => arrange(id, (list) => crossTrack(list, id, sides, dir));
+
+  function removeSong(id) {
+    const t = lastTracks.find((x) => x.id === id);
+    const at = placeOf(lastTracks, id);
+    if (!t || !at) return;
+    const next = selectAfterRemove(lastTracks, id);
+    undoInfo = { track: t, side: at.side, index: at.index };
+    select(next);
+    live.textContent = `Removed ${t.title || "Untitled"}`;
+    setTracks((list) => list.filter((x) => x.id !== id));
+  }
+
+  function undoRemove() {
+    if (!undoInfo) return;
+    const u = undoInfo;
+    undoInfo = null;
+    undoBtn.hidden = true;
+    if (lastTracks.length >= maxTracks) {
+      say(`A tape holds up to ${maxTracks} songs.`, true);
+      return;
+    }
+    announce = u.track.id;
+    select(u.track.id);
+    setTracks((list) => (list.some((x) => x.id === u.track.id) || list.length >= maxTracks ? list : putTrack(list, u.track, u.side, u.index)));
+  }
+
+  // ---- Dragging (mouse only; not on phones or narrow windows) ----
+
+  function dragStart(e, d) {
+    if (e.button !== 0 || narrowWindow()) return;
+    if (e.pointerType && e.pointerType !== "mouse" && e.pointerType !== "pen") return;
+    drag = { ...d, x: e.clientX, y: e.clientY, started: false, target: null, ghost: null, pointerId: e.pointerId, px: e.clientX, py: e.clientY };
+    window.addEventListener("pointermove", dragMove, true);
+    window.addEventListener("pointerup", dragEnd, true);
+    window.addEventListener("pointercancel", dragCancel, true);
+  }
+
+  function dragMove(e) {
+    if (!drag || (drag.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
+    drag.px = e.clientX;
+    drag.py = e.clientY;
+    if (!drag.started) {
+      if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < DRAG_START) return;
+      drag.started = true;
+      dialog.classList.add("is-dragging");
+      try {
+        const sel = window.getSelection && window.getSelection();
+        if (sel) sel.removeAllRanges();
+      } catch {
+        /* nothing selected */
+      }
+      const ghost = el("div", "mx-ghost", drag.title || "Untitled");
+      dialog.append(ghost);
+      drag.ghost = ghost;
+      if (drag.kind === "tape" && tapeRows.get(drag.id)) tapeRows.get(drag.id).li.classList.add("is-dragging");
+      const line = el("div", "mx-drop-line");
+      line.hidden = true;
+      tapeList.append(line);
+      drag.line = line;
+      drag.timer = requestAnimationFrame(dragTick);
+    }
+    e.preventDefault();
+    drag.ghost.style.left = `${e.clientX}px`;
+    drag.ghost.style.top = `${e.clientY}px`;
+    dropAt(e.clientX, e.clientY);
+  }
+
+  // Scroll the column while the song is held near its top or bottom edge.
+  function dragTick() {
+    if (!drag || !drag.started) return;
+    const r = tape.getBoundingClientRect();
+    if (drag.px >= r.left && drag.px <= r.right) {
+      const step = drag.py < r.top + EDGE ? -1 : drag.py > r.bottom - EDGE ? 1 : 0;
+      if (step && (step < 0 ? tape.scrollTop > 0 : tape.scrollTop < tape.scrollHeight - tape.clientHeight)) {
+        tape.scrollTop += step * 10;
+        dropAt(drag.px, drag.py);
+      }
+    }
+    drag.timer = requestAnimationFrame(dragTick);
+  }
+
+  // Where a song let go at (x, y) would land: { side, index } or null outside the column; draws the line.
+  function dropAt(x, y) {
+    const r = tape.getBoundingClientRect();
+    const inside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    drag.target = null;
+    tape.classList.toggle("is-drop", inside);
+    if (!inside) {
+      drag.line.hidden = true;
+      return;
+    }
+    // The side: the one under the pointer, else the nearest.
+    let best = null;
+    for (const side of sides) {
+      const b = sideBox(side).box.getBoundingClientRect();
+      const dist = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
+      if (!best || dist < best.dist) best = { side, dist };
+    }
+    const { box, empty, ol } = sideBox(best.side);
+    const items = [...ol.children].filter((li) => li.dataset.id !== drag.id);
+    let index = 0;
+    for (const li of items) {
+      const b = li.getBoundingClientRect();
+      if (b.top + b.height / 2 < y) index++;
+    }
+    drag.target = { side: best.side, index };
+    const base = tapeList.getBoundingClientRect().top;
+    let top;
+    if (!items.length) top = (empty.hidden ? box.getBoundingClientRect().bottom : empty.getBoundingClientRect().top) - base;
+    else if (index < items.length) top = items[index].getBoundingClientRect().top - base - 1;
+    else top = items[items.length - 1].getBoundingClientRect().bottom - base + 1;
+    drag.line.style.top = `${Math.round(top)}px`;
+    drag.line.hidden = false;
+  }
+
+  function dragStop() {
+    window.removeEventListener("pointermove", dragMove, true);
+    window.removeEventListener("pointerup", dragEnd, true);
+    window.removeEventListener("pointercancel", dragCancel, true);
+    if (!drag) return null;
+    const d = drag;
+    drag = null;
+    if (d.started) {
+      cancelAnimationFrame(d.timer);
+      if (d.ghost) d.ghost.remove();
+      if (d.line) d.line.remove();
+      dialog.classList.remove("is-dragging");
+      tape.classList.remove("is-drop");
+      for (const r of tapeRows.values()) r.li.classList.remove("is-dragging");
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 0);
+    }
+    return d;
+  }
+
+  function dragEnd(e) {
+    if (!drag || (drag.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
+    const d = dragStop();
+    if (!d || !d.started || !d.target) return; // a click, or let go outside the column: nothing changes
+    const { side, index } = d.target;
+    if (d.kind === "tape") {
+      arrange(d.id, (list) => moveTrack(list, d.id, side, index));
+      return;
+    }
+    // From the library: a song not on the tape yet, put where it was dropped.
+    if (lastTracks.some((t) => t.id === d.song.uri)) return;
+    if (lastTracks.length >= maxTracks) {
+      say(`A tape holds up to ${maxTracks} songs.`, true);
+      return;
+    }
+    const song = d.song;
+    arrange(song.uri, (list) => (list.some((t) => t.id === song.uri) || list.length >= maxTracks ? list : putTrack(list, trackFromSong(song, side), side, index)));
+  }
+
+  function dragCancel() {
+    dragStop();
+  }
+
+  let pressedSelected = false; // the pressed song was already selected (pressing focuses, which selects)
+  tapeList.addEventListener("pointerdown", (e) => {
+    const li = e.target.closest(".mx-tape-song");
+    if (!li || e.target.closest("button")) return;
+    pressedSelected = selected === li.dataset.id;
+    const t = lastTracks.find((x) => x.id === li.dataset.id);
+    if (t) dragStart(e, { kind: "tape", id: t.id, title: t.title });
+  });
+  lib.addEventListener("pointerdown", (e) => {
+    const li = e.target.closest(".mx-song");
+    if (!li || !li.dataset.uri) return;
+    const row = rows.get(li.dataset.uri);
+    if (!row || !row.song.usable || lastTracks.some((t) => t.id === row.song.uri)) return;
+    dragStart(e, { kind: "lib", id: row.song.uri, song: row.song, title: row.song.title });
+  });
+  // The click that ends a drag doesn't tick or select anything.
+  dialog.addEventListener("click", (e) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
+  // Clicking a song selects it (and again deselects it); a tap on phones too.
+  tapeList.addEventListener("click", (e) => {
+    const li = e.target.closest(".mx-tape-song");
+    if (!li || e.target.closest("button")) return;
+    const was = pressedSelected;
+    pressedSelected = false;
+    if (was && selected === li.dataset.id) {
+      select(null);
+      li.tabIndex = 0;
+    } else select(li.dataset.id, true);
+  });
+  tapeList.addEventListener("focusin", (e) => {
+    const li = e.target.closest && e.target.closest(".mx-tape-song");
+    if (li && e.target === li && selected !== li.dataset.id) select(li.dataset.id);
+  });
+  // Clicking anywhere outside the column deselects.
+  dialog.addEventListener("pointerdown", (e) => {
+    if (selected && !tape.contains(e.target)) select(null);
+  });
+
+  // Keys in the column: ↑/↓ between songs, Alt+↑/↓ move, Alt+→/← across the flip, Delete removes.
+  tapeList.addEventListener("keydown", (e) => {
+    const li = e.target.closest && e.target.closest(".mx-tape-song");
+    if (!li) return;
+    const id = li.dataset.id;
+    const order = sides.flatMap((sd) => sideSongs(lastTracks, sd)).map((t) => t.id);
+    const k = order.indexOf(id);
+    let handled = true;
+    if (e.altKey && e.key === "ArrowUp") stepSong(id, -1);
+    else if (e.altKey && e.key === "ArrowDown") stepSong(id, 1);
+    else if (e.altKey && e.key === "ArrowRight") crossSong(id, 1);
+    else if (e.altKey && e.key === "ArrowLeft") crossSong(id, -1);
+    else if (!e.altKey && !e.ctrlKey && !e.metaKey && e.key === "ArrowDown" && k < order.length - 1) select(order[k + 1], true);
+    else if (!e.altKey && !e.ctrlKey && !e.metaKey && e.key === "ArrowUp" && k > 0) select(order[k - 1], true);
+    else if (e.key === "Delete") removeSong(id);
+    else if ((e.key === "Enter" || e.key === " ") && e.target === li) select(selected === id ? null : id, true);
+    else handled = false;
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+
+  // Escape steps back one thing at a time (R3d-6): a drag, then the selection, then the window.
+  let keepOpen = false;
+  dialog.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (drag) {
+        dragStop();
+        keepOpen = true;
+      } else if (selected) {
+        const r = tapeRows.get(selected);
+        select(null);
+        if (r) {
+          r.li.tabIndex = 0;
+          r.li.focus();
+        }
+        keepOpen = true;
+      }
+      if (keepOpen) {
+        e.preventDefault();
+        setTimeout(() => (keepOpen = false), 0);
+      }
+      return;
+    }
+    // Ctrl+Z puts back the song last removed (not while typing in the search).
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z" && undoInfo && e.target !== search) {
+      e.preventDefault();
+      undoRemove();
+    }
+  }, true);
+  dialog.addEventListener("cancel", (e) => {
+    if (keepOpen) e.preventDefault();
+  });
+  undoBtn.addEventListener("click", undoRemove);
+
+  // ---- The divider (R3d-3) ----
+
+  function applyWidth() {
+    if (narrowWindow() || !dialog.open) {
+      tape.classList.remove("is-wide");
+      return;
+    }
+    const space = body.clientWidth - split.offsetWidth;
+    const w = tapeWidth(wantWidth, space);
+    body.style.setProperty("--mx-tape-w", `${w}px`);
+    tape.classList.toggle("is-wide", w >= SHOW_LINE_WIDTH);
+    split.setAttribute("aria-valuenow", String(w));
+    split.setAttribute("aria-valuemax", String(tapeWidth(1e6, space)));
+    return w;
+  }
+
+  function setWidth(w, save = false) {
+    const space = body.clientWidth - split.offsetWidth;
+    const drawn = tapeWidth(w, space);
+    wantWidth = drawn > TAPE_WIDTH ? drawn : 0;
+    applyWidth();
+    if (save) remember();
+  }
+
+  let splitting = null;
+  split.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    splitting = { id: e.pointerId };
+    try {
+      split.setPointerCapture(e.pointerId);
+    } catch {
+      /* not capturable */
+    }
+    dialog.classList.add("is-splitting");
+  });
+  split.addEventListener("pointermove", (e) => {
+    if (!splitting) return;
+    const r = body.getBoundingClientRect();
+    setWidth(r.right - e.clientX - split.offsetWidth / 2);
+  });
+  const endSplit = () => {
+    if (!splitting) return;
+    splitting = null;
+    dialog.classList.remove("is-splitting");
+    remember();
+  };
+  split.addEventListener("pointerup", endSplit);
+  split.addEventListener("pointercancel", endSplit);
+  split.addEventListener("dblclick", () => setWidth(0, true));
+  split.addEventListener("keydown", (e) => {
+    const now = tapeWidth(wantWidth, body.clientWidth - split.offsetWidth);
+    let w = null;
+    if (e.key === "ArrowLeft") w = now + 16;
+    else if (e.key === "ArrowRight") w = now - 16;
+    else if (e.key === "Home") w = 0;
+    else if (e.key === "End") w = 1e6;
+    if (w === null) return;
+    e.preventDefault();
+    setWidth(w, true);
+  });
+  const onResize = () => dialog.open && applyWidth();
+  if (typeof window !== "undefined") window.addEventListener("resize", onResize);
+
   function update(tracks) {
     tracks = tracks || [];
+    lastTracks = tracks;
     const byId = new Map(tracks.map((t) => [t.id, t]));
     for (const [uri, row] of rows) {
       const t = byId.get(uri);
@@ -584,6 +1087,7 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
     document.documentElement.classList.add("mx-window-open");
+    applyWidth();
     update(getTracks());
     lib.scrollTop = lastScroll;
     search.focus();
@@ -600,6 +1104,9 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
   done.addEventListener("click", hide);
   dialog.addEventListener("close", () => {
     document.documentElement.classList.remove("mx-window-open");
+    dragStop();
+    forgetUndo();
+    select(null);
     // Closed because the list is being fetched again: nothing to remember or say.
     if (!rows.size) return;
     remember();
@@ -642,6 +1149,8 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     dispose() {
       disposed = true;
       clearTimeout(scrollTimer);
+      dragStop();
+      if (typeof window !== "undefined") window.removeEventListener("resize", onResize);
       hide();
       document.documentElement.classList.remove("mx-window-open");
       if (workshop) workshop.dispose();

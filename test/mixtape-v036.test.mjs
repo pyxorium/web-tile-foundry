@@ -136,7 +136,7 @@ test("the window remembers the source filter; anything else reads as All", () =>
   const m = new Map();
   const st = { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
   writeMemory(st, { open: ["x"], scroll: 10, source: "archive" });
-  assert.deepEqual(readMemory(st), { open: ["x"], scroll: 10, source: "archive" });
+  assert.deepEqual(readMemory(st), { open: ["x"], scroll: 10, source: "archive", width: 0 });
   m.set(MEMORY_KEY, JSON.stringify({ open: [], scroll: 0, source: "spotify" }));
   assert.equal(readMemory(st).source, "all");
 });

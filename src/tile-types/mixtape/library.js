@@ -138,7 +138,10 @@ const OPEN_MAX = 400;
 
 const FILTER_IDS = SOURCE_FILTERS.map((f) => f.id);
 
-/** What the window remembers: { open: [show keys], scroll, source }. Safe with no storage or a broken entry. */
+// A remembered column width (v0.37.0): 0 means the narrow default.
+const cleanWidth = (w) => (Number.isFinite(w) && w > TAPE_WIDTH ? Math.min(4000, Math.round(w)) : 0);
+
+/** What the window remembers: { open: [show keys], scroll, source, width }. Safe with no storage or a broken entry. */
 export function readMemory(storage) {
   try {
     const raw = storage && storage.getItem(MEMORY_KEY);
@@ -146,16 +149,20 @@ export function readMemory(storage) {
     const open = v && Array.isArray(v.open) ? v.open.filter((k) => typeof k === "string").slice(0, OPEN_MAX) : [];
     const scroll = v && Number.isFinite(v.scroll) && v.scroll > 0 ? Math.round(v.scroll) : 0;
     const source = v && FILTER_IDS.includes(v.source) ? v.source : "all";
-    return { open, scroll, source };
+    const width = cleanWidth(v && v.width);
+    return { open, scroll, source, width };
   } catch {
-    return { open: [], scroll: 0, source: "all" };
+    return { open: [], scroll: 0, source: "all", width: 0 };
   }
 }
 
-export function writeMemory(storage, { open = [], scroll = 0, source = "all" } = {}) {
+export function writeMemory(storage, { open = [], scroll = 0, source = "all", width = 0 } = {}) {
   try {
     if (!storage) return;
-    storage.setItem(MEMORY_KEY, JSON.stringify({ open: [...open].slice(0, OPEN_MAX), scroll: Math.max(0, Math.round(scroll) || 0), source: FILTER_IDS.includes(source) ? source : "all" }));
+    const v = { open: [...open].slice(0, OPEN_MAX), scroll: Math.max(0, Math.round(scroll) || 0), source: FILTER_IDS.includes(source) ? source : "all" };
+    const w = cleanWidth(width);
+    if (w) v.width = w;
+    storage.setItem(MEMORY_KEY, JSON.stringify(v));
   } catch {
     /* storage full or blocked: the window just won't remember */
   }
@@ -169,4 +176,110 @@ export function tapeLine(tracks, sides) {
       return `Side ${s} · ${n} ${n === 1 ? "song" : "songs"}`;
     })
     .join(" · ");
+}
+
+// ---- The tape desk (v0.37.0, R3d-1 to R3d-9) ----
+
+/** The tape column's narrowest (and default) width, px. */
+export const TAPE_WIDTH = 230;
+/** The library keeps at least this much beside a widened column, px. */
+export const LIBRARY_MIN = 480;
+/** From this width the column shows each song's show under its title (R3d-1), px. */
+export const SHOW_LINE_WIDTH = 320;
+
+/**
+ * The column's width as drawn (R3d-3): the wanted width (0 = default) kept
+ * between 230 px and about half the window, the library keeping at least
+ * 480 px. A window too small for what's wanted shrinks the column without
+ * changing what's remembered. `space`: the window body's width.
+ */
+export function tapeWidth(want, space) {
+  const w = Number(want) > 0 ? Number(want) : TAPE_WIDTH;
+  const room = Number(space) > 0 ? Number(space) : 0;
+  if (!room) return TAPE_WIDTH;
+  const max = Math.max(TAPE_WIDTH, Math.floor(Math.min(room / 2, room - LIBRARY_MIN)));
+  return Math.round(Math.min(max, Math.max(TAPE_WIDTH, w)));
+}
+
+/** The songs on one side, in playing order. */
+export function sideSongs(tracks, side) {
+  return (tracks || []).filter((t) => t && t.side === side);
+}
+
+/** Where a song is: { side, index } (its place on its side), or null. */
+export function placeOf(tracks, id) {
+  const t = (tracks || []).find((x) => x && x.id === id);
+  if (!t) return null;
+  return { side: t.side, index: sideSongs(tracks, t.side).indexOf(t) };
+}
+
+/**
+ * The list with `track` put on `side` at `index` (its place among that
+ * side's songs, counted without it; past the end means last). Songs keep
+ * their order in the list; only the side's order matters for playing.
+ */
+export function putTrack(tracks, track, side, index) {
+  const rest = (tracks || []).filter((t) => t && t.id !== track.id);
+  const moved = track.side === side ? track : { ...track, side };
+  const same = rest.filter((t) => t.side === side);
+  const k = Math.max(0, Math.min(same.length, Math.floor(Number(index) || 0)));
+  if (k < same.length) {
+    const at = rest.indexOf(same[k]);
+    return [...rest.slice(0, at), moved, ...rest.slice(at)];
+  }
+  if (same.length) {
+    const at = rest.indexOf(same[same.length - 1]) + 1;
+    return [...rest.slice(0, at), moved, ...rest.slice(at)];
+  }
+  return [...rest, moved];
+}
+
+/** A song moved to `side` at `index` (see putTrack); the same list when it's already there or not on the tape. */
+export function moveTrack(tracks, id, side, index) {
+  const t = (tracks || []).find((x) => x && x.id === id);
+  if (!t) return tracks;
+  const at = placeOf(tracks, id);
+  const k = Math.max(0, Math.min(sideSongs(tracks, side).filter((x) => x.id !== id).length, Math.floor(Number(index) || 0)));
+  if (at.side === side && at.index === k) return tracks;
+  return putTrack(tracks, t, side, k);
+}
+
+/** ↑ (dir -1) or ↓ (dir 1) within its side; the same list at the side's end. */
+export function stepTrack(tracks, id, dir) {
+  const at = placeOf(tracks, id);
+  if (!at) return tracks;
+  const k = at.index + (dir < 0 ? -1 : 1);
+  if (k < 0 || k >= sideSongs(tracks, at.side).length) return tracks;
+  return moveTrack(tracks, id, at.side, k);
+}
+
+/**
+ * "to Side B" / "to Side A": across the flip. To a later side the song goes
+ * first on it, to an earlier side last, so it stays next to the songs it was
+ * beside (Side A's last song becomes Side B's first, and back).
+ * `dir`: 1 to the next side, -1 to the one before; the same list when there's none.
+ */
+export function crossTrack(tracks, id, sides, dir) {
+  const at = placeOf(tracks, id);
+  if (!at) return tracks;
+  const i = (sides || []).indexOf(at.side) + (dir < 0 ? -1 : 1);
+  if (i < 0 || i >= sides.length) return tracks;
+  const to = sides[i];
+  return moveTrack(tracks, id, to, dir < 0 ? sideSongs(tracks, to).length : 0);
+}
+
+/** Which song is selected after one is removed (R3d-6): the next on its side, else the one before, else none. */
+export function selectAfterRemove(tracks, id) {
+  const at = placeOf(tracks, id);
+  if (!at) return null;
+  const same = sideSongs(tracks, at.side);
+  const next = same[at.index + 1] || same[at.index - 1];
+  return next ? next.id : null;
+}
+
+/** The words a screen reader hears after a move (R3d-2): "Moved to Side B, position 3". */
+export function movedLine(tracks, id, sides) {
+  const at = placeOf(tracks, id);
+  if (!at) return "";
+  return `Moved to ${(sides || []).length > 1 ? `Side ${at.side}` : "the tape"}, position ${at.index + 1}`;
 }
