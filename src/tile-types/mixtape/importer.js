@@ -8,7 +8,7 @@ import {
   TRACK_COLLECTION, folderOf, sortFiles, pickInfo, readFlacMeta, buildSongs, prefill, showName, readPolicies, policyFor,
   rememberPolicy, showProblems, songProblems, buildTrackRecord, fitDescription, importedKeys, isImported,
 } from "./archive.js";
-import { listTracks, groupRecordings, storeTrack, updateTrack, editedRecord, TrackError } from "./tracks.js";
+import { listTracks, groupRecordings, storeTrack, updateTrack, editedRecord, sameRecord, TrackError } from "./tracks.js";
 
 // Mixtape Burndown's importer (Foundry v0.35.0; claude/mixtape-3b-importer-notes.md
 // R3b-1 to R3b-9, R3b-15, R3b-16). pyxorium.com only for now (V2-2).
@@ -53,6 +53,9 @@ const POPUP_BLOCKED = "Your browser blocked the sign-in window. Allow pop-ups fo
 /** The rights tick's words (R3b-6, approved Nov 14). */
 export const RIGHTS_TEXT =
   "They're my own recordings, or the performer allows non-commercial sharing (such as on the Live Music Archive), the Archive offers this recording as a download, and I've checked the taper's notes. They'll be public on my account as Opus files, free to listen to.";
+
+/** Shown under "Found …" when the folder has no info file (v0.38.0). */
+export const NO_INFO_HINT = "No info file found: download the recording's .txt from the Archive page for the taper, source and notes, put it in the folder, and choose the folder again.";
 
 const FORM_FIELDS = [
   { key: "band", label: "Band", help: "The performer (each song's artist)." },
@@ -136,7 +139,10 @@ export function mountImporter(root, { account, storage = browserStorage(), onClo
   const found = el("p", "mx-status");
   found.setAttribute("aria-live", "polite");
   found.hidden = true;
-  pickSec.append(pickRow, found);
+  // v0.38.0: an Archive zip often leaves the info .txt out (four of five shows, Nov 15 to 17).
+  const noInfo = el("p", "mx-note mx-imp-noinfo", NO_INFO_HINT);
+  noInfo.hidden = true;
+  pickSec.append(pickRow, found, noInfo);
 
   // ---- 2. Where these came from ----
   const whereSec = el("section", "mx-imp-sec");
@@ -446,6 +452,7 @@ export function mountImporter(root, { account, storage = browserStorage(), onClo
   async function readPicked(files) {
     if (running || !files.length) return;
     found.hidden = false;
+    noInfo.hidden = true;
     found.classList.remove("is-error");
     found.textContent = "Reading the folder…";
     const folder = folderOf(files);
@@ -483,6 +490,7 @@ export function mountImporter(root, { account, storage = browserStorage(), onClo
       (folder ? ` in ${folder}` : "") +
       (left ? `; ${left} other ${left === 1 ? "file" : "files"} left out.` : ".") +
       (unreadable.length ? ` ${unreadable.length} couldn't be read: ${unreadable.join(", ")}.` : "");
+    noInfo.hidden = Boolean(info);
     const values = prefill({ folder, info: info ? info.info : null, infoText: info ? info.text : "", songs, policies: readPolicies(storage) });
     for (const f of FORM_FIELDS) inputs[f.key].value = values[f.key] || "";
     albumEdited = false;

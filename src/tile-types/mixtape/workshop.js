@@ -54,6 +54,31 @@ export function sideFor(tracks, sides, seconds, limit = SIDE_SECONDS) {
 }
 
 /**
+ * Sides for several songs added at once in their running order (a whole
+ * show's tick, v0.38.0): each goes on the side the one before it went on
+ * while it fits there, then on the next side, never back to an earlier one,
+ * so a short later song can't jump back into Side A's gap. The first goes
+ * where sideFor puts it. Returns one side per song, in order.
+ */
+export function sidesInOrder(tracks, sides, songs, limit = SIDE_SECONDS) {
+  const used = new Map(sides.map((sd) => [sd, 0]));
+  for (const t of tracks) if (used.has(t.side)) used.set(t.side, used.get(t.side) + (Number(t.seconds) || 0));
+  const out = [];
+  let at = -1;
+  for (const song of songs) {
+    const secs = Number(song.seconds) || 0;
+    if (at < 0) {
+      at = Math.max(0, sides.indexOf(sideFor(tracks, sides, secs, limit)));
+    } else if (used.get(sides[at]) + secs > limit && at < sides.length - 1) {
+      at++;
+    }
+    used.set(sides[at], used.get(sides[at]) + secs);
+    out.push(sides[at]);
+  }
+  return out;
+}
+
+/**
  * The credits line for an imported Archive song (tape.json `source.note`):
  * "Taper: Jim Smith · SBD > DAT > CDR > FLAC"; "" when neither is known.
  */

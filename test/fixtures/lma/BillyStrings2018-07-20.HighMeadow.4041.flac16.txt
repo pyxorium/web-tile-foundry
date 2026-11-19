@@ -1,0 +1,40 @@
+Billy Strings
+2018-07-20
+Grey Fox Bluegrass Festival,
+High Meadow Stage, 
+Walsh Farm,
+Oak Hill, NY
+[10:15 pm start]
+
+Source:  Audio-Technica 4041s > NADY Audio DMP-2 > Tascam DR-05 [24/48]
+Config: DIN Location: front right corner at sbd, ~8 ft high
+Transfer: MicroSD > PC > Sound Forge Pro 11.0 [Dither (16-bit Triangular) & Resample to 44,100 Hz] > CD Wav > Flac16 (329 MB)
+Recorded & Transfered by: Seth Nochajski & Keith Januszak
+
+One Set: 					71:46.02				
+01 intro					00:32.24				
+02 Slow Train					04:24.24
+03 While I'm Waiting Here			06:43.54	
+04 instrumental	> How Mountain Girls Can Love	12:33.44	
+05 Train That Carried My Girl From Town *	06:16.74
+06 Turmoil & Tinfoil				11:11.38
+07 And Am I Born to Die?			03:40.44
+08 Dust In A Baggie				03:16.20
+09 Molly Tuttle intro				01:36.69
+10 To Lay Me Down ^				08:24.06
+11 Little Maggie				08:09.43
+12 Long Gone					04:56.12
+
+* = w/ Mark & Eileen Schatz: clogs
+^ = w/ Molly Tuttle: guitar	
+
+guitar: William Apostol (Billy Strings)
+mandolin: Jared Walker
+banjo: Billy Failing
+bass: Royal Masat
+
+https://www.billystrings.com
+http://greyfoxbluegrass.com
+
+Never For Sale
+please support bands & venues that allow taping by buying merch. & attending shows

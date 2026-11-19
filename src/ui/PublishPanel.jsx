@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { publishTile, deleteTile, tileViewUrl } from "../core/publish.js";
 import { fetchPublicBlob } from "../core/atproto.js";
 import { xrpcFor, xrpcForAccount, grantedScope, openSignInWindow, signInAgain, isStorageError } from "../auth/auth.js";
@@ -49,11 +49,17 @@ function CopyButton({ text, label = "Copy" }) {
 function ReviewCard({ tile, name, description }) {
   const banner = tile.screenshots[0] && tile.files.find((f) => f.path === tile.screenshots[0].src);
   const icon = tile.icons[0] && tile.files.find((f) => f.path === tile.icons[0].src);
-  const urls = useMemo(() => {
+  // The pictures' addresses are made inside the effect that also revokes them
+  // (v0.38.0): made in a useMemo, React's strict mode in development ran the
+  // effect's cleanup and then reused the memo, so the card showed broken
+  // pictures on `npm run dev` (the live site was fine).
+  const [urls, setUrls] = useState({ banner: null, icon: null });
+  useEffect(() => {
     const make = (f) => (f ? URL.createObjectURL(new Blob([f.bytes], { type: f.contentType || "image/png" })) : null);
-    return { banner: make(banner), icon: make(icon) };
+    const made = { banner: make(banner), icon: make(icon) };
+    setUrls(made);
+    return () => Object.values(made).forEach((u) => u && URL.revokeObjectURL(u));
   }, [banner, icon]);
-  useEffect(() => () => Object.values(urls).forEach((u) => u && URL.revokeObjectURL(u)), [urls]);
   return (
     <div className="review-card" aria-label="The link preview card">
       {urls.banner && <img className="tile-card-banner" src={urls.banner} alt="" />}
@@ -66,6 +72,21 @@ function ReviewCard({ tile, name, description }) {
       </span>
     </div>
   );
+}
+
+/**
+ * Whether two input values hold the same thing (v0.38.0): lists and objects by
+ * their contents, so a list rebuilt with the same songs isn't a change; file
+ * bytes by length (they're replaced, not edited).
+ */
+export function sameValue(a, b) {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (ArrayBuffer.isView(a) || ArrayBuffer.isView(b)) return ArrayBuffer.isView(a) && ArrayBuffer.isView(b) && a.byteLength === b.byteLength;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => sameValue(x, b[i]));
+  const ka = Object.keys(a), kb = Object.keys(b);
+  return ka.length === kb.length && ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && sameValue(a[k], b[k]));
 }
 
 const POPUP_BLOCKED = "Your browser blocked the sign-in window. Allow pop-ups for this page, then try again.";
@@ -248,7 +269,7 @@ export function PostBox({ out, to, description = "" }) {
     <section className="post-box" aria-labelledby="post-h" data-post={box.phase}>
       <p className="share-label" id="post-h">Post it to Tile posts</p>
       <p className="field-help">
-        Share your tile in Raku's Tile posts, where people can play it right in the post. A few words, or just the tile. Optional.
+        Share your tile in Raku's Tile posts, where people can play it right in the post. A few words, or just the tile. You can post it later from Raku, or skip this.
       </p>
       <div className="field">
         <label className="field-label" htmlFor="post-text">Your words</label>
@@ -307,6 +328,21 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
 
   // Something other than the card's words changed since the card was drawn.
   const changed = review && Object.keys({ ...values, ...review.values }).some((k) => !reviewKeys.has(k) && values[k] !== review.values[k]);
+  // v0.38.0: after publishing, the next tile starts with a clear Publish step.
+  // Changing the tile (a song, a side, the title, anything but the card's own
+  // words) leaves the "published" screen, as "Make another tile" does, and
+  // either way the confirmations are unticked, to be ticked for the new tile.
+  function clearPublished() {
+    for (const i of type.inputs || []) if (i.kind === "toggle" && i.mustBeOn && values[i.key]) setValue(i.key, false);
+    setState({ phase: "idle" });
+  }
+  const publishedFrom = state.phase === "done" ? state.values : null;
+  const movedOn = Boolean(publishedFrom) && Object.keys({ ...values, ...publishedFrom }).some((k) => !reviewKeys.has(k) && !sameValue(values[k], publishedFrom[k]));
+  useEffect(() => {
+    if (movedOn) clearPublished();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movedOn]);
+
   // Another tile type, or the tile can't be built at all any more: back to the start.
   useEffect(() => {
     if (state.phase === "review" && review && review.tile.typeId !== (tile && tile.typeId)) { setReview(null); setState({ phase: "idle" }); }
@@ -351,7 +387,7 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
         },
       });
       setReview(null);
-      setState({ phase: "done", out, name: tile.name, description: tile.description || "", to });
+      setState({ phase: "done", out, name: tile.name, description: tile.description || "", to, values });
     } catch (err) {
       console.error("[publish]", err);
       setState({ phase: "error", message: err.message, step: err.step, progress: { ...progress } });
@@ -390,7 +426,7 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
               <p>“{state.name}” is now in {who}.</p>
               <div className="button-row">
                 <a className="btn" href={link} target="_blank" rel="noopener">View on lexicographer.space</a>
-                <button type="button" className="btn btn-quiet" onClick={() => setState({ phase: "idle" })}>Make another tile</button>
+                <button type="button" className="btn btn-quiet" onClick={clearPublished}>Make another tile</button>
               </div>
               <PostBox out={out} to={to} description={state.description} />
               <div className="share">

@@ -4,7 +4,7 @@ import { rawCid } from "../../core/cid.js";
 import { formatDuration } from "../../core/contract.js";
 import { convertSong } from "../../core/audio/convert.js";
 import { listPlyrSongs, ownerNames, groupShows, REASONS } from "./plyr.js";
-import { createWorkshop, trackFromSong, sideFor } from "./workshop.js";
+import { createWorkshop, trackFromSong, sideFor, sidesInOrder } from "./workshop.js";
 import { sharedPool } from "./shared.js";
 import {
   searchWords, songMatches, sideMeters, tapeBurnedDown, showTick, showKey, readMemory, writeMemory, tapeLine,
@@ -520,13 +520,17 @@ export function mountPicker(root, { getTracks, setTracks, context, sides, maxTra
     setTracks((list) => {
       let next = list;
       let full = false;
-      for (const s of songs) {
-        if (next.some((t) => t.id === s.uri)) continue;
+      const limit = (getMaxSecondsPerSide && getMaxSecondsPerSide()) || undefined;
+      const fresh = songs.filter((s) => !list.some((t) => t.id === s.uri));
+      // A whole show at once keeps its running order across the flip (v0.38.0);
+      // a single song goes to the first side with room, as before.
+      const placed = fresh.length > 1 ? sidesInOrder(list, sides, fresh, limit) : null;
+      for (const [k, s] of fresh.entries()) {
         if (next.length >= maxTracks) {
           full = true;
           break;
         }
-        next = [...next, trackFromSong(s, sideFor(next, sides, s.seconds, (getMaxSecondsPerSide && getMaxSecondsPerSide()) || undefined))];
+        next = [...next, trackFromSong(s, placed ? placed[k] : sideFor(next, sides, s.seconds, limit))];
       }
       if (full) say(`A tape holds up to ${maxTracks} songs.`, true);
       return next;

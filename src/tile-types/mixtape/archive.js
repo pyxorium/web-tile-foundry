@@ -116,12 +116,14 @@ export function parseFolderName(name) {
   const looksLikeItem = /^[A-Za-z0-9][A-Za-z0-9._-]{2,99}$/.test(identifier) && /\d/.test(identifier);
   const found = findDate(identifier);
   const lower = identifier.toLowerCase();
-  const sourceHint = /(^|[._-])(sbd|soundboard)([._-]|$)/.test(lower)
-    ? "Soundboard"
-    : /(^|[._-])(aud|audience)([._-]|$)/.test(lower)
-      ? "Audience"
-      : /(^|[._-])(mtx|matrix)([._-]|$)/.test(lower)
-        ? "Matrix"
+  // "mtx" or "matrix" anywhere means a matrix, even when "sbd" (one of its
+  // parts) is named too, as in tsr2018-11-30.akg460_AT853_sbd.mtx (v0.38.0).
+  const sourceHint = /(^|[._-])(mtx|matrix)([._-]|$)/.test(lower)
+    ? "Matrix"
+    : /(^|[._-])(sbd|soundboard)([._-]|$)/.test(lower)
+      ? "Soundboard"
+      : /(^|[._-])(aud|audience)([._-]|$)/.test(lower)
+        ? "Audience"
         : "";
   return {
     identifier,
@@ -138,9 +140,24 @@ export function parseSongFileName(name) {
   if (m) return { disc: Number(m[1]), track: Number(m[2]) };
   m = /(?:^|[^a-z])t(?:rack)?\s*(\d{1,3})(?!\d)/i.exec(stem);
   if (m) return { disc: 1, track: Number(m[1]) };
+  // "1-02 I Can't Complain.flac": disc 1, track 2 (Todd Snider 2005, v0.38.0;
+  // read as track 1 before, so every song was stored as number 1).
+  m = /^(\d{1,2})-(\d{1,3})(?=[\s._-]|$)/.exec(stem);
+  if (m && Number(m[1]) >= 1) return { disc: Number(m[1]), track: Number(m[2]) };
   m = /^(\d{1,3})(?=[\s._-])/.exec(stem);
   if (m) return { disc: 1, track: Number(m[1]) };
   return null;
+}
+
+/**
+ * A track or disc tag's number: "7" and "7/15" are 7; "1-07" (disc and track
+ * in one tag) is 7. NaN when there's none.
+ */
+export function tagNumber(value) {
+  const s = String(value == null ? "" : value).trim();
+  const m = /^(\d{1,3})\s*-\s*(\d{1,3})\b/.exec(s);
+  if (m) return Number(m[2]);
+  return parseInt(s, 10);
 }
 
 /** "Lord Only Knows(Pt. 1) >" -> "Lord Only Knows (Pt. 1)"; an arrow between two names stays (R3b-16). */
@@ -245,8 +262,11 @@ const SET_RE = /^\s*[-=*~#\[(]*\s*(set\s*(?:\d+|[ivx]+|one|two|three|four)|encor
 const TRACK_RE = /^\s*(?:(?:d|disc|cd)\s*(\d{1,2})\s*)?(?:t|track)?\s*(\d{1,3})\s*[.):\-]?\s+(\S.*?)\s*$/i;
 const INLINE_ENCORE_RE = /^(?:e|enc|encore)\s*[:.\-]\s*/i;
 const UNDERLINE_RE = /^\s*[-=_~*]{3,}\s*$/;
-const TAPER_RE = /^\s*(?:taped|taper|recorded|recording)\s*(?:by)?\s*[:\-]\s*(.+?)\s*$/i;
-const SOURCE_RE = /^\s*(?:source|src|lineage|transfer|equipment|gear)\s*[:\-]\s*(.+?)\s*$/i;
+// "Taper: X", "Taped by: X", "TAPED BY: X", "Recorded by: X", and (v0.38.0)
+// "Recorded & Mastered By X" (no colon, but "by"), "Recorded & Transfered by: X".
+const TAPER_RE = /^\s*(?:taped|taper|recorded|recording)(?:\s*(?:&|and|,)\s*(?:mastered|mixed|edited|transfer\w*|produced))*\s*(?:by\s*[:\-]?|[:\-])\s*(.+?)\s*$/i;
+// "Source: …", "Lineage: …", and (v0.38.0) numbered ones, "Source 1: …".
+const SOURCE_RE = /^\s*(?:source|src|lineage|transfer|equipment|gear)(?:\s*#?\d{1,2})?\s*[:\-]\s*(.+?)\s*$/i;
 const LINEAGE_WORDS = /\b(sbd|aud|mtx|matrix|dat|cdr?|flac|wav|shn|dsm|schoeps|neumann|akg|dpa|senn\w*|mics?|microphones?|sony|tascam|zoom|edirol|marantz|sound devices|cassette|reel|minidisc|md|soundboard|audience|preamp|ua-?5|cmc\d|km\d+)\b/i;
 const TERMS_RE = /\b(lossless|lossy|mp3s?|sell|sale|sold|selling|commercial(?:ly)?|profit|permission|convert(?:ed|ing)?|re-?encod\w*|re-?distribut\w*|trade only|for trading|not for)\b/i;
 const NOTES_RE = /^\s*(?:notes?|comments?)\s*:/i;
@@ -320,9 +340,13 @@ export function parseInfoText(text) {
       return;
     }
     const t = TRACK_RE.exec(line);
-    if (!t || findDate(line) || TAPER_RE.test(line) || SOURCE_RE.test(line)) return;
-    const title = t[3];
-    if (/^[-=*~]+$/.test(title)) return;
+    // A dated line before the setlist is the header's; once the setlist has
+    // started, a song may carry a date ("11 [Trout Steak Revival 2018-11-30
+    // Track 11]", v0.38.0: skipping it put every later song one place off).
+    if (!t || (firstTrack < 0 && findDate(line)) || TAPER_RE.test(line) || SOURCE_RE.test(line)) return;
+    // A playing time after the name ("Slow Train\t\t04:24.24") isn't part of it (v0.38.0).
+    const title = t[3].replace(/\s+\(?\d{1,2}:\d{2}(?:[.:]\d{1,3})?\)?$/, "").trim();
+    if (!title || /^[-=*~]+$/.test(title)) return;
     if (t[1]) disc = Number(t[1]);
     let songSet = set;
     let inlineEncore = false;
@@ -343,21 +367,25 @@ export function parseInfoText(text) {
   const headEnd = firstTrack >= 0 ? firstTrack : Math.min(lines.length, 12);
   const head = lines.slice(0, headEnd);
   const sourceLines = [];
-  for (const raw of head) {
+  // Labelled lines ("Source:", "Lineage:", "Recorded by:", "TAPED BY:") count
+  // anywhere in the file: many info files put them after the setlist
+  // (Galactic 2007, Trout Steak Revival 2018; v0.38.0). Unlabelled lineage
+  // lines ("SBD > DAT > CDR") only in the header.
+  lines.forEach((raw, i) => {
     const line = raw.trim();
-    if (!line || UNDERLINE_RE.test(line) || DISC_RE.test(line) || SET_RE.test(line)) continue;
+    if (!line || UNDERLINE_RE.test(line) || DISC_RE.test(line) || SET_RE.test(line)) return;
     const tp = TAPER_RE.exec(line);
     if (tp) {
       if (!info.taper) info.taper = cleanPerson(tp[1]);
-      continue;
+      return;
     }
     const sr = SOURCE_RE.exec(line);
     if (sr) {
       sourceLines.push(sr[1]);
-      continue;
+      return;
     }
-    if ((line.includes(">") || /^(sbd|aud|mtx|matrix)\b/i.test(line)) && LINEAGE_WORDS.test(line)) sourceLines.push(line);
-  }
+    if (i < headEnd && (line.includes(">") || /^(sbd|aud|mtx|matrix)\b/i.test(line)) && LINEAGE_WORDS.test(line)) sourceLines.push(line);
+  });
   info.source = sourceLines.join(" · ");
 
   // Band, venue, place, date: the first lines of the header.
@@ -369,6 +397,14 @@ export function parseInfoText(text) {
       continue;
     }
     if (TAPER_RE.test(line) || SOURCE_RE.test(line) || sourceLines.includes(line)) break;
+    // "[10:15 pm start]": a note, not a venue or place.
+    if (/^\[.*\]$/.test(line)) continue;
+    // A line ending in a comma goes on with the next (Billy Strings 2018:
+    // "Grey Fox Bluegrass Festival," / "High Meadow Stage," / "Walsh Farm," / "Oak Hill, NY").
+    if (top.length && /,\s*$/.test(top[top.length - 1])) {
+      top[top.length - 1] = `${top[top.length - 1].replace(/\s+$/, "")} ${line}`;
+      continue;
+    }
     top.push(line);
     if (top.length >= 5) break;
   }
@@ -384,7 +420,16 @@ export function parseInfoText(text) {
     info.band = stripDate(top[0], dated[0]).replace(/[,\s]+$/, "");
     const restClean = top.slice(1).map((l, k) => stripDate(l, dated[k + 1])).filter(Boolean);
     const placeAt = restClean.findIndex((l) => /,\s*[A-Za-z .]{2,}$/.test(l) || /\b[A-Z]{2}$/.test(l));
-    if (placeAt >= 0) {
+    if (placeAt >= 0 && restClean.length === 1 && restClean[0].includes(",")) {
+      // "Hardly Strictly Bluegrass Festival, San Francisco CA" on its own line:
+      // the venue, then the place (Todd Snider 2005, v0.38.0).
+      // With a state or country code at the end ("…, Walsh Farm, Oak Hill, NY"),
+      // the place is the last two parts; otherwise everything after the first comma.
+      const parts = restClean[0].split(",").map((x) => x.trim()).filter(Boolean);
+      const cut = parts.length >= 3 && /^[A-Z]{2,3}$/.test(parts[parts.length - 1]) ? parts.length - 2 : 1;
+      info.venue = parts.slice(0, cut).join(", ");
+      info.place = parts.slice(cut).join(", ");
+    } else if (placeAt >= 0) {
       info.place = restClean[placeAt];
       info.venue = restClean.filter((_, k) => k !== placeAt).join(", ");
     } else if (restClean.length) {
@@ -449,7 +494,7 @@ export function buildSongs(flacs, setlist = []) {
     const meta = f.meta || null;
     const tags = (meta && meta.tags) || {};
     const fromName = parseSongFileName(f.name) || null;
-    const tagTrack = parseInt(tags.TRACKNUMBER || tags.TRACK || "", 10);
+    const tagTrack = tagNumber(tags.TRACKNUMBER || tags.TRACK || "");
     const tagDisc = parseInt(tags.DISCNUMBER || tags.DISC || "", 10);
     const disc = fromName ? fromName.disc : Number.isFinite(tagDisc) && tagDisc > 0 ? tagDisc : 1;
     const track = fromName ? fromName.track : Number.isFinite(tagTrack) && tagTrack > 0 ? tagTrack : null;
@@ -498,6 +543,13 @@ export function buildSongs(flacs, setlist = []) {
   });
   songs.sort((a, b) => a.disc - b.disc || (a.track ?? 999) - (b.track ?? 999) || a.name.localeCompare(b.name));
 
+  // Two songs with one number (v0.38.0): they'd be stored alike and confused
+  // with each other later ("Already imported", Edit details), so say so.
+  const byNumber = new Map();
+  for (const s of songs) if (s.trackNumber != null) byNumber.set(s.trackNumber, (byNumber.get(s.trackNumber) || 0) + 1);
+  const shared = [...byNumber].filter(([, k]) => k > 1).map(([n]) => n).sort((a, b) => a - b);
+  for (const s of songs) s.sharedNumber = s.trackNumber != null && byNumber.get(s.trackNumber) > 1;
+
   let note = "";
   if (setlist.length) {
     const unmatched = songs.filter((s) => !s.matched).length;
@@ -507,7 +559,10 @@ export function buildSongs(flacs, setlist = []) {
       note = `${unmatched} ${unmatched === 1 ? "file has" : "files have"} no matching song in the setlist: please check ${unmatched === 1 ? "its name" : "their names"}.`;
     }
   }
-  return { songs, note };
+  const numberNote = shared.length
+    ? `More than one song has the number ${shared.length === 1 ? shared[0] : `${shared.slice(0, -1).join(", ")} or ${shared[shared.length - 1]}`}: they'd be stored with the same number. Check the files' names, or fix the numbers afterwards with Edit details.`
+    : "";
+  return { songs, note: [note, numberNote].filter(Boolean).join(" "), sharedNumbers: shared };
 }
 
 // ---- "Where these came from" ----
@@ -531,9 +586,9 @@ export function prefill({ folder = "", info = null, infoText = "", songs = [], p
   const date = i.date || f.date || fromAlbum.date || "";
   const venue = i.venue || fromAlbum.venue || "";
   const place = i.place || fromAlbum.place || "";
-  let source = i.source || "";
-  const said = { Soundboard: /\b(sbd|soundboard)\b/i, Audience: /\b(aud|audience)\b/i, Matrix: /\b(mtx|matrix)\b/i }[f.sourceHint];
-  if (f.sourceHint && !said.test(source)) source = source ? `${f.sourceHint} · ${source}` : f.sourceHint;
+  // The info file's own source and lineage lines win over the folder name's
+  // guess, which is used only when the file says nothing (v0.38.0).
+  const source = i.source || f.sourceHint || "";
   return {
     band,
     album: showName({ band, venue, date }),
@@ -681,19 +736,45 @@ export function importKey(where, trackNumber) {
   return w && trackNumber ? `${w}#${Number(trackNumber)}` : "";
 }
 
-/** The keys of tracks already stored (trackFromRecord's shape: { archiveUrl, album, trackNumber }). */
+const titleKey = (t) => String(t || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * The keys of tracks already stored (trackFromRecord's shape: { archiveUrl,
+ * album, trackNumber, title }). A Set of keys; since v0.38.0 it also knows
+ * which keys more than one stored song shares (`shared`) and the titles under
+ * each key (`titles`), so songs stored with one number for all (Todd Snider
+ * 2005) don't mark every song of the folder.
+ */
 export function importedKeys(tracks) {
   const keys = new Set();
+  const count = new Map();
+  const titles = new Map();
   for (const t of tracks || []) {
-    if (t.archiveUrl) keys.add(importKey(t.archiveUrl, t.trackNumber));
-    if (t.album) keys.add(importKey(t.album, t.trackNumber));
+    const own = new Set([importKey(t.archiveUrl, t.trackNumber), importKey(t.album, t.trackNumber)]);
+    own.delete("");
+    for (const k of own) {
+      keys.add(k);
+      count.set(k, (count.get(k) || 0) + 1);
+      if (!titles.has(k)) titles.set(k, new Set());
+      titles.get(k).add(titleKey(t.title));
+    }
   }
-  keys.delete("");
+  keys.shared = new Set([...count].filter(([, n]) => n > 1).map(([k]) => k));
+  keys.titles = titles;
   return keys;
 }
 
-/** Whether a song in the list is already stored, given the show's form values. */
+/**
+ * Whether a song in the list is already stored, given the show's form values.
+ * When the number alone can't tell (several stored songs share it, or several
+ * songs in the folder do), the song's name must match too.
+ */
 export function isImported(keys, show, song) {
   const where = String(show.archiveUrl || "").trim() || String(show.album || "").trim();
-  return keys.has(importKey(where, song.trackNumber));
+  const k = importKey(where, song.trackNumber);
+  if (!keys.has(k)) return false;
+  const unsure = (keys.shared && keys.shared.has(k)) || song.sharedNumber;
+  if (!unsure) return true;
+  const names = keys.titles && keys.titles.get(k);
+  return Boolean(names && names.has(titleKey(song.title)));
 }

@@ -49,7 +49,6 @@ export const PLAYER_CSS = `
 .mt-sides[hidden], .mt-ded[hidden] { display: none; }
 .mt-notes p { margin: 0 0 8px; }
 .mt-jc-len { font-size: 13px; opacity: .75; font-variant-numeric: tabular-nums; margin-bottom: 2px; }
-.mt-jc-joke { font-size: 13px; font-style: italic; opacity: .75; }
 .mt-jc-ded { font-style: italic; }
 .mt-jc-notes { margin-bottom: 12px; }
 .mt-jc-side strong { color: var(--accent); font-weight: 600; }

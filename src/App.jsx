@@ -220,6 +220,7 @@ export default function App() {
                   ) : (
                     <p className="preview-status">Publish when your tile is ready.</p>
                   )}
+                  {type.preview.note && <p className="preview-note">{type.preview.note}</p>}
                 </>
               ) : result ? (
                 <>

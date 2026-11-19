@@ -141,6 +141,9 @@ export const mixtape = {
     needsResult: true,
     mount: async (element, options) => (await import("./preview.js")).mountPreview(element, options),
     caption: () => "Your tape as listeners will hear it. Your songs and Side A/B choices show up here, so keep mixing and playing until you're happy with it.",
+    // v0.38.0: for the maker only (never on the tape), whatever the songs:
+    // Mixtape Burndown's nod to the tapers' own notes it grew out of.
+    note: "Please support bands and venues that allow taping by buying merch and attending shows.",
   },
 
   // Each build joins and fingerprints every song (tens of MB), so it waits a little longer.
