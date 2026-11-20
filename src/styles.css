@@ -246,6 +246,10 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 .publish-note { margin-top: 4px !important; font-size: 14px; color: var(--ink-2); }
 /* Save as .tile (v0.39.0): its own row under Review and publish. */
 .publish .tile-file { flex-basis: 100%; }
+/* Save as .tile (v0.40.0): under Review and publish, and under the review's buttons. */
+.tile-file { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.tile-file .field-help, .tile-file .publish-note, .tile-file .field-error { margin: 0; }
+.review-side .tile-file { margin-top: 14px; }
 .debug-badge { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--gold-soft); }
 .sprite-from { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
 .sprite-from .field-help { margin: 0; }

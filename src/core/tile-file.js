@@ -1,7 +1,8 @@
 import { buildManifest } from "./publish.js";
 import { encodeDagCbor, cidBytes } from "./dagcbor.js";
 
-// Saving a built tile as a .tile file (v0.39.0, claude/tile-files-plan.md).
+// Saving a built tile as a .tile file (v0.39.0; every type and out of ?debug
+// in v0.40.0, for signed-in makers; claude/tile-files-plan.md).
 //
 // A .tile file is a "CARball", as the tiles spec describes it
 // (https://dasl.ing/tiles.html, "Tiles in CAR"; https://dasl.ing/masl.html):
@@ -20,12 +21,18 @@ import { encodeDagCbor, cidBytes } from "./dagcbor.js";
 // have once published. Robin's CARTileLoader (@dasl/tile-loader/car) reads
 // files made this way.
 //
-// Nothing here touches the network or needs a sign-in.
+// Nothing here touches the network. (The Foundry offers it to signed-in
+// makers, as Publish; signed out only with ?debug.)
 
 export const TILE_FILE_EXTENSION = ".tile";
 
-/** Tile types that offer "Save as .tile" (Glass Lantern first; more later). */
-export const TILE_FILE_TYPES = new Set(["glass-lantern"]);
+/**
+ * Tile types that offer "Save as .tile": every type (v0.40.0). Each Foundry tile
+ * is self-contained (its page's policy, src/core/policy.js, lets it reach
+ * nothing outside itself), so whatever it shows or plays is in the file:
+ * a tape's songs are its /tracks/ files, a zine's tiles its /tiles/ folders.
+ */
+export const TILE_FILE_TYPES = new Set(["sprite-walker", "glass-lantern", "coaster-carnival", "mixtape", "zine"]);
 
 /** The manifest as it goes into a .tile file's header (before version and roots). */
 export function fileManifest(result) {
@@ -47,11 +54,13 @@ export function varint(n) {
 }
 
 /**
- * The bytes of a .tile file for a built tile (the Foundry's build result:
- * { name, description, icons, screenshots, files: [{ path, bytes, contentType, cid }] }).
- * Files with the same bytes share one block.
+ * The pieces of a .tile file for a built tile (the Foundry's build result:
+ * { name, description, icons, screenshots, files: [{ path, bytes, contentType, cid }] }),
+ * in order, without joining them: a tape can be 90 MB, and a Blob made from
+ * the pieces needs no second whole copy. Files with the same bytes share one
+ * block. Returns { parts, size }.
  */
-export function encodeTileFile(result) {
+export function tileFileParts(result) {
   if (!result || !Array.isArray(result.files) || !result.files.some((f) => f.path === "/")) {
     throw new Error('A tile file needs a built tile with a "/" page.');
   }
@@ -64,8 +73,13 @@ export function encodeTileFile(result) {
     const cid = cidBytes(file.cid);
     parts.push(varint(cid.length + file.bytes.length), cid, file.bytes);
   }
-  const total = parts.reduce((n, p) => n + p.length, 0);
-  const out = new Uint8Array(total);
+  return { parts, size: parts.reduce((n, p) => n + p.length, 0) };
+}
+
+/** The bytes of a .tile file for a built tile, joined (tileFileParts, in one piece). */
+export function encodeTileFile(result) {
+  const { parts, size } = tileFileParts(result);
+  const out = new Uint8Array(size);
   let at = 0;
   for (const p of parts) {
     out.set(p, at);
@@ -87,9 +101,10 @@ export function tileFileName(name) {
   return (base || "tile") + TILE_FILE_EXTENSION;
 }
 
-/** Hands the file to the browser as a download (browser only). */
-export function downloadTileFile(bytes, fileName) {
-  const blob = new Blob([bytes], { type: "application/octet-stream" });
+/** Hands the file to the browser as a download (browser only): its bytes, or tileFileParts' parts. */
+export function downloadTileFile(bytesOrParts, fileName) {
+  const parts = Array.isArray(bytesOrParts) ? bytesOrParts : [bytesOrParts];
+  const blob = new Blob(parts, { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

@@ -137,12 +137,15 @@ exports an object following `src/core/contract.js`, and registering it in
 - Choreography follows House Dice's `SoloSpriteFrame` exactly: walk frames
   `[0,1,2,1]` at 190 ms, sidesteps `[0,1,2,1,0]` gliding over 760 ms, with the
   same 500 / 300 / 900 / 1000 ms beats.
-**Save as .tile (v0.39.0, `?debug` only for now; Glass Lantern only):** on the Publish step, under Review and
-publish, "Save as .tile" downloads the finished tile (card pictures drawn) as one file, a CARball as the tiles spec
-describes it: a CAR whose header is the manifest Publish would write (each `src` the file's plain address instead of a
-blob reference) plus `version: 1` and empty `roots`, every file inside as a block under the same raw sha-256 address it
-would have once published. No sign-in, nothing sent anywhere (`src/core/tile-file.js`, `TILE_FILE_TYPES`). Raku opens
-these files (the button beside its address box), and so does Robin's `CARTileLoader`. Plan: `claude/tile-files-plan.md`.
+**Save as .tile (v0.39.0 in `?debug`; v0.40.0: every type, for signed-in makers):** on the Publish step, under Review
+and publish and again under the review's buttons, "Save as .tile" downloads the finished tile (card pictures drawn) as
+one file, a CARball as the tiles spec describes it: a CAR whose header is the manifest Publish would write (each `src`
+the file's plain address instead of a blob reference) plus `version: 1` and empty `roots`, every file inside as a block
+under the same raw sha-256 address it would have once published. Nothing is sent anywhere; the file doesn't go to the
+account (`src/core/tile-file.js`, `TILE_FILE_TYPES`). Every type: each Foundry tile is self-contained (its policy lets it
+reach nothing outside itself), so a tape's songs and a zine's tiles are in the file. Making a tile still needs sign-in
+(signed out only with `?debug`). On the review screen the card already drawn is reused. Raku opens these files (the
+button beside its address box), and so does Robin's `CARTileLoader`. Plan: `claude/tile-files-plan.md`.
 
 - The sprite sheet is inlined in the page, so the tile works anywhere with no
   network access.

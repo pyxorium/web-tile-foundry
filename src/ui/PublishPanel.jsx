@@ -6,7 +6,7 @@ import { postTile, deletePost, buildPostRecord, canPost, graphemeCount, TEXT_MAX
 import { DEBUG } from "./debug.js";
 import { InputForm } from "./InputForm.jsx";
 import { formatSize } from "../core/fileset.js";
-import { encodeTileFile, tileFileName, downloadTileFile, TILE_FILE_TYPES } from "../core/tile-file.js";
+import { tileFileParts, tileFileName, downloadTileFile, TILE_FILE_TYPES } from "../core/tile-file.js";
 
 // The Publish step: "Review and publish" draws the tile's card pictures and
 // shows the card as feeds will show it, with the card's words to edit (the
@@ -321,36 +321,45 @@ export function PostBox({ out, to, description = "" }) {
  * reviewKeys: the inputs shown at the review step (and not while editing).
  */
 /**
- * "Save as .tile" (v0.39.0, claude/tile-files-plan.md): the finished tile,
- * card pictures included, as a file on this computer. No sign-in, nothing
- * sent anywhere. Debug only for now, and only for the types in TILE_FILE_TYPES.
+ * "Save as .tile" (v0.39.0; v0.40.0: every type, before the review and on it,
+ * out of ?debug; claude/tile-files-plan.md): the finished tile, card pictures
+ * included, as a file on this computer. Nothing is sent anywhere. Signed-in
+ * makers, as Publish (signed out only with ?debug, which shows its badge).
+ *   drawn     the tile as already drawn for the review, if nothing has changed
+ *             since (so it isn't drawn again); else getFinal() draws it
+ *   allowed   whether saving is offered (signed in, or ?debug)
+ *   busy      publishing is under way (saving waits)
  */
-export function SaveTileFile({ getFinal, result }) {
+export function SaveTileFile({ getFinal, result, drawn = null, allowed = true, debugOnly = false, busy = false }) {
   const [state, setState] = useState({ phase: "idle" });
   async function save() {
-    setState({ phase: "saving" });
+    setState({ phase: "drawing" });
     try {
-      const tile = getFinal ? await getFinal() : result;
-      const bytes = encodeTileFile(tile);
+      const tile = drawn || (getFinal ? await getFinal() : result);
+      setState({ phase: "packing" });
+      await new Promise((r) => setTimeout(r, 0)); // let the line show before a big tape is packed
+      const { parts, size } = tileFileParts(tile);
       const fileName = tileFileName(tile.name);
-      downloadTileFile(bytes, fileName);
-      setState({ phase: "saved", fileName, size: bytes.length });
+      downloadTileFile(parts, fileName);
+      setState({ phase: "saved", fileName, size });
     } catch (err) {
       console.error("[save .tile]", err);
       setState({ phase: "error", message: err.message });
     }
   }
-  const saving = state.phase === "saving";
+  const saving = state.phase === "drawing" || state.phase === "packing";
   return (
-    <div className="debug-tools tile-file" data-tile-file={state.phase}>
-      <span className="debug-badge">debug</span>
-      <button type="button" className="btn btn-quiet" disabled={!result || saving} onClick={save}>
+    <div className="tile-file" data-tile-file={state.phase}>
+      {debugOnly && <span className="debug-badge">debug</span>}
+      <button type="button" className="btn btn-quiet" disabled={!allowed || !(drawn || result) || saving || busy} onClick={save}>
         {saving ? "Saving…" : "Save as .tile"}
       </button>
       <p className="field-help">
-        The whole tile as one file on this computer. No sign-in needed, and nothing is sent anywhere.
+        The whole tile as a file, downloaded to this computer only. It doesn't go to your atproto account.
         Open it in Raku with the button beside the address box, or drag it onto Raku.
       </p>
+      {state.phase === "drawing" && <p className="publish-note" role="status">Getting your tile ready…</p>}
+      {state.phase === "packing" && <p className="publish-note" role="status">Packing the file…</p>}
       {state.phase === "saved" && (
         <p className="publish-note" role="status">Saved “{state.fileName}” ({formatSize(state.size)}) to your downloads.</p>
       )}
@@ -365,6 +374,9 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
   const signedIn = account.status === "signedIn" && account.did && account.pds;
   const who = account.handle ? `@${account.handle}` : "your account";
   const tile = result || shown;
+  // "Save as .tile" (v0.40.0): every type, for signed-in makers; signed out only with ?debug.
+  const offersFile = Boolean(type && TILE_FILE_TYPES.has(type.id)) && (signedIn || DEBUG);
+  const fileDebugOnly = !signedIn && DEBUG;
 
   // Something other than the card's words changed since the card was drawn.
   const changed = review && Object.keys({ ...values, ...review.values }).some((k) => !reviewKeys.has(k) && values[k] !== review.values[k]);
@@ -532,7 +544,7 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
         <button type="button" className="btn" disabled={!signedIn || !result || drawing} onClick={startReview}>
           {drawing ? "Drawing…" : "Review and publish"}
         </button>
-        {DEBUG && type && TILE_FILE_TYPES.has(type.id) && <SaveTileFile getFinal={getFinal} result={result} />}
+        {offersFile && <SaveTileFile getFinal={getFinal} result={result} debugOnly={fileDebugOnly} />}
       </div>
     );
   }
@@ -604,6 +616,9 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
             </button>
             <button type="button" className="btn btn-quiet" disabled={running} onClick={backToEditing}>Back to editing</button>
           </div>
+          {offersFile && (
+            <SaveTileFile getFinal={getFinal} result={result} drawn={review && review.values === values ? review.tile : null} debugOnly={fileDebugOnly} busy={running} />
+          )}
         </div>
       </div>
     </div>
