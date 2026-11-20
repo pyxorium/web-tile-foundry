@@ -1,0 +1,214 @@
+// "Save as .tile" (v0.39.0, claude/tile-files-plan.md): the CARball the
+// Foundry writes, read back here by a small reader of the test's own (so the
+// writer isn't checked by its own code), and compared with what Publish would
+// put in the account.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+
+import { encodeTileFile, fileManifest, tileFileName, varint, TILE_FILE_TYPES } from "../src/core/tile-file.js";
+import { buildTile } from "../src/core/build.js";
+import { publishTile } from "../src/core/publish.js";
+import { makeFile } from "../src/core/fileset.js";
+import { rawCid, base32Lower } from "../src/core/cid.js";
+import { TILE_CSP } from "../src/core/policy.js";
+import { glassLantern } from "../src/tile-types/glass-lantern/index.js";
+import { bundleRuntime } from "../src/tile-types/glass-lantern/runtime/bundle.js";
+import { makeLanternTile } from "../src/tile-types/glass-lantern/tile.js";
+import { panelDefaults, resolvePanel, panelRecipe } from "../src/tile-types/glass-lantern/panel.js";
+
+const SAMPLE = readFileSync(new URL("./fixtures/sample-sprite.png", import.meta.url));
+
+// ---- a small, independent CAR + DAG-CBOR reader ---------------------------
+function readVarint(buf, at) {
+  let n = 0, mul = 1, i = at;
+  for (;;) {
+    const b = buf[i++];
+    n += (b & 0x7f) * mul;
+    if (b < 0x80) return [n, i];
+    mul *= 0x80;
+  }
+}
+function decodeCbor(buf) {
+  let at = 0;
+  const td = new TextDecoder("utf-8", { fatal: true });
+  function arg(info) {
+    if (info < 24) return info;
+    const len = { 24: 1, 25: 2, 26: 4, 27: 8 }[info];
+    let n = 0;
+    for (let i = 0; i < len; i++) n = n * 256 + buf[at++];
+    return n;
+  }
+  function item() {
+    const first = buf[at++];
+    const major = first >> 5, info = first & 31;
+    if (major === 7) return info === 20 ? false : info === 21 ? true : info === 22 ? null : assert.fail(`simple ${info}`);
+    const n = arg(info);
+    if (major === 0) return n;
+    if (major === 1) return -1 - n;
+    if (major === 2) { const b = buf.slice(at, at + n); at += n; return b; }
+    if (major === 3) { const s = td.decode(buf.slice(at, at + n)); at += n; return s; }
+    if (major === 4) return Array.from({ length: n }, item);
+    if (major === 5) { const o = {}; for (let i = 0; i < n; i++) { const k = item(); o[k] = item(); } return o; }
+    if (major === 6) {
+      assert.equal(n, 42, "only CID tags");
+      const b = item();
+      assert.equal(b[0], 0, "identity multibase prefix");
+      return { $link: "b" + base32Lower(b.slice(1)) };
+    }
+    assert.fail(`major ${major}`);
+  }
+  const v = item();
+  assert.equal(at, buf.length, "nothing after the header");
+  return v;
+}
+function readCar(bytes) {
+  const [hlen, start] = readVarint(bytes, 0);
+  const header = decodeCbor(bytes.slice(start, start + hlen));
+  const blocks = new Map();
+  let at = start + hlen;
+  while (at < bytes.length) {
+    const [len, s] = readVarint(bytes, at);
+    const cid = bytes.slice(s, s + 36); // CIDv1, raw, sha-256: 4 + 32 bytes
+    const data = bytes.slice(s + 36, s + len);
+    blocks.set("b" + base32Lower(cid), data);
+    at = s + len;
+  }
+  assert.equal(at, bytes.length);
+  return { header, blocks };
+}
+const sha = (b) => new Uint8Array(createHash("sha256").update(b).digest());
+
+// ---- tiles to save ------------------------------------------------------------
+const fakeType = {
+  id: "fake-tile", version: 1, title: "Fake", summary: "For tests.",
+  inputs: [{ key: "name", kind: "text", required: true }],
+  defaults: () => ({ name: "x" }),
+  build: async (inputs) => ({
+    name: inputs.name,
+    description: "A test tile.",
+    files: [
+      makeFile("/", `<html><head><meta http-equiv="Content-Security-Policy" content="${TILE_CSP}" /></head><body>hi</body></html>`),
+      makeFile("/icon.png", SAMPLE),
+      makeFile("/banner.png", SAMPLE), // same bytes as the icon: one block
+    ],
+    icons: [{ src: "/icon.png" }],
+    screenshots: [{ src: "/banner.png" }],
+    recipeInputs: { hello: "world" },
+  }),
+};
+
+const esbuild = await import("esbuild");
+const runtime = (await bundleRuntime(esbuild)).code;
+async function lanternResult() {
+  const values = { ...panelDefaults(), ...glassLantern.defaults({}) };
+  const art = { icon: SAMPLE, banner: new Uint8Array(readFileSync(new URL("./fixtures/sample-sprite.png", import.meta.url))).reverse() };
+  const out = makeLanternTile({ name: values.name, parts: resolvePanel(values), recipe: panelRecipe(values), runtime, art });
+  const files = [];
+  for (const f of out.files) files.push({ ...f, cid: await rawCid(f.bytes) });
+  return { ...out, files };
+}
+
+// ---- the tests ------------------------------------------------------------------
+test("varints are LEB128, as CAR wants", () => {
+  assert.deepEqual([...varint(0)], [0]);
+  assert.deepEqual([...varint(127)], [127]);
+  assert.deepEqual([...varint(128)], [0x80, 1]);
+  assert.deepEqual([...varint(300)], [0xac, 0x02]);
+  assert.deepEqual(readVarint(varint(1_234_567), 0), [1_234_567, varint(1_234_567).length]);
+  assert.throws(() => varint(-1));
+});
+
+test("a saved tile is a CAR whose header is the manifest plus version 1 and empty roots", async () => {
+  const result = await buildTile(fakeType, { name: "My test tile" });
+  const { header } = readCar(encodeTileFile(result));
+  assert.equal(header.version, 1);
+  assert.deepEqual(header.roots, []);
+  assert.equal(header.name, "My test tile");
+  assert.equal(header.description, "A test tile.");
+  assert.deepEqual(header.icons, [{ src: "/icon.png" }]);
+  assert.deepEqual(header.screenshots, [{ src: "/banner.png" }]);
+  assert.deepEqual(Object.keys(header.resources).sort(), ["/", "/banner.png", "/foundry.json", "/icon.png"]);
+  assert.equal(header.resources["/"]["content-type"], "text/html");
+  assert.equal(header.resources["/"]["content-security-policy"], TILE_CSP);
+  assert.equal(header.resources["/icon.png"]["content-type"], "image/png");
+  for (const f of result.files) assert.deepEqual(header.resources[f.path].src, { $link: f.cid }, f.path);
+});
+
+test("every file is inside, under its own address; the same bytes are stored once", async () => {
+  const result = await buildTile(fakeType, { name: "T" });
+  const { header, blocks } = readCar(encodeTileFile(result));
+  assert.equal(blocks.size, 3, "page, picture (shared by icon and banner), recipe");
+  for (const [cid, data] of blocks) {
+    const expected = "b" + base32Lower(new Uint8Array([1, 0x55, 0x12, 0x20, ...sha(data)]));
+    assert.equal(cid, expected, "each block's address is the sha-256 of its bytes");
+  }
+  for (const [path, entry] of Object.entries(header.resources)) {
+    const data = blocks.get(entry.src.$link);
+    assert.ok(data, `${path} is in the file`);
+    assert.deepEqual(data, result.files.find((f) => f.path === path).bytes);
+  }
+});
+
+test("the file's addresses and manifest match what Publish puts in the account, apart from how src is written", async () => {
+  const result = await buildTile(fakeType, { name: "Same as published" });
+  // A stand-in server that stores what it's sent and echoes it back.
+  const blobs = new Map(); let record;
+  const xrpc = async (nsid, { params, body, contentType }) => {
+    if (nsid === "com.atproto.repo.uploadBlob") {
+      const cid = await rawCid(body); blobs.set(cid, body);
+      return { blob: { $type: "blob", ref: { $link: cid }, mimeType: contentType, size: body.length } };
+    }
+    if (nsid === "com.atproto.repo.createRecord") { record = structuredClone(body.record); return { uri: `at://${body.repo}/ing.dasl.masl/3mtest1`, cid: "bafyreirecord" }; }
+    if (nsid === "com.atproto.repo.getRecord") return { value: structuredClone(record) };
+    throw new Error(nsid);
+  };
+  const out = await publishTile({ xrpc, fetchBlob: async (cid) => blobs.get(cid), did: "did:plc:test", result });
+  const published = out.record.tile;
+  const { header } = readCar(encodeTileFile(result));
+  const { version, roots, ...fromFile } = header;
+  for (const [path, entry] of Object.entries(published.resources)) {
+    assert.equal(fromFile.resources[path].src.$link, entry.src.ref.$link, `${path}: same address`);
+    const { src: a, ...restPublished } = entry;
+    const { src: b, ...restFile } = fromFile.resources[path];
+    assert.deepEqual(restFile, restPublished, `${path}: same headers`);
+  }
+  const strip = (m) => ({ ...m, resources: Object.keys(m.resources).sort() });
+  assert.deepEqual(strip(fromFile), strip(published), "same name, description, icons, screenshots and paths");
+});
+
+test("a Glass Lantern tile saves whole: page, program, pictures and recipe, every byte intact", async () => {
+  const result = await lanternResult();
+  const bytes = encodeTileFile(result);
+  const { header, blocks } = readCar(bytes);
+  assert.deepEqual(Object.keys(header.resources).sort(), ["/", "/banner.png", "/icon.png", "/lantern.js"].sort());
+  assert.equal(header.resources["/lantern.js"]["content-type"], "text/javascript");
+  for (const f of result.files) assert.deepEqual(blocks.get(f.cid), f.bytes, f.path);
+  assert.ok(bytes.length < 5 * 1024 * 1024, `${bytes.length} bytes`);
+  assert.deepEqual(encodeTileFile(result), bytes, "the same tile always makes the same file");
+});
+
+test("only Glass Lantern offers it for now", () => {
+  assert.deepEqual([...TILE_FILE_TYPES], ["glass-lantern"]);
+  assert.equal(glassLantern.id, "glass-lantern");
+});
+
+test("a tile with no page can't be saved", () => {
+  assert.throws(() => encodeTileFile({ name: "x", files: [] }), /"\/" page/);
+});
+
+test("file names come from the tile's name", () => {
+  assert.equal(tileFileName("My Lantern!"), "my-lantern.tile");
+  assert.equal(tileFileName("@alice.test's glass lantern"), "alice-test-s-glass-lantern.tile");
+  assert.equal(tileFileName("Crème brûlée"), "creme-brulee.tile");
+  assert.equal(tileFileName("  "), "tile.tile");
+  assert.equal(tileFileName("../../etc/passwd"), "etc-passwd.tile");
+  assert.ok(tileFileName("x".repeat(200)).length <= 65);
+});
+
+test("fileManifest is buildManifest with plain address links", async () => {
+  const result = await buildTile(fakeType, { name: "T" });
+  const m = fileManifest(result);
+  for (const f of result.files) assert.deepEqual(m.resources[f.path].src, { $link: f.cid });
+});

@@ -244,6 +244,8 @@ h1 { margin: 4px 0 4px; font-family: Georgia, "Iowan Old Style", "Palatino Linot
 }
 .publish p { margin: 0; max-width: 56ch; }
 .publish-note { margin-top: 4px !important; font-size: 14px; color: var(--ink-2); }
+/* Save as .tile (v0.39.0): its own row under Review and publish. */
+.publish .tile-file { flex-basis: 100%; }
 .debug-badge { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--gold-soft); }
 .sprite-from { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
 .sprite-from .field-help { margin: 0; }

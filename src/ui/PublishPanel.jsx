@@ -6,6 +6,7 @@ import { postTile, deletePost, buildPostRecord, canPost, graphemeCount, TEXT_MAX
 import { DEBUG } from "./debug.js";
 import { InputForm } from "./InputForm.jsx";
 import { formatSize } from "../core/fileset.js";
+import { encodeTileFile, tileFileName, downloadTileFile, TILE_FILE_TYPES } from "../core/tile-file.js";
 
 // The Publish step: "Review and publish" draws the tile's card pictures and
 // shows the card as feeds will show it, with the card's words to edit (the
@@ -319,6 +320,45 @@ export function PostBox({ out, to, description = "" }) {
  * is being fixed). getFinal(): the complete tile (card pictures included).
  * reviewKeys: the inputs shown at the review step (and not while editing).
  */
+/**
+ * "Save as .tile" (v0.39.0, claude/tile-files-plan.md): the finished tile,
+ * card pictures included, as a file on this computer. No sign-in, nothing
+ * sent anywhere. Debug only for now, and only for the types in TILE_FILE_TYPES.
+ */
+export function SaveTileFile({ getFinal, result }) {
+  const [state, setState] = useState({ phase: "idle" });
+  async function save() {
+    setState({ phase: "saving" });
+    try {
+      const tile = getFinal ? await getFinal() : result;
+      const bytes = encodeTileFile(tile);
+      const fileName = tileFileName(tile.name);
+      downloadTileFile(bytes, fileName);
+      setState({ phase: "saved", fileName, size: bytes.length });
+    } catch (err) {
+      console.error("[save .tile]", err);
+      setState({ phase: "error", message: err.message });
+    }
+  }
+  const saving = state.phase === "saving";
+  return (
+    <div className="debug-tools tile-file" data-tile-file={state.phase}>
+      <span className="debug-badge">debug</span>
+      <button type="button" className="btn btn-quiet" disabled={!result || saving} onClick={save}>
+        {saving ? "Saving…" : "Save as .tile"}
+      </button>
+      <p className="field-help">
+        The whole tile as one file on this computer. No sign-in needed, and nothing is sent anywhere.
+        Open it in Raku with the button beside the address box, or drag it onto Raku.
+      </p>
+      {state.phase === "saved" && (
+        <p className="publish-note" role="status">Saved “{state.fileName}” ({formatSize(state.size)}) to your downloads.</p>
+      )}
+      {state.phase === "error" && <p className="field-error" role="alert">Couldn't save the file: {state.message}</p>}
+    </div>
+  );
+}
+
 export function PublishPanel({ result, shown, getFinal, account, type, values, setValue, problems, context, reviewKeys, onBack }) {
   const [state, setState] = useState({ phase: "idle" });
   const [review, setReview] = useState(null); // { tile, values }: the card as drawn, and the values it was drawn from
@@ -492,6 +532,7 @@ export function PublishPanel({ result, shown, getFinal, account, type, values, s
         <button type="button" className="btn" disabled={!signedIn || !result || drawing} onClick={startReview}>
           {drawing ? "Drawing…" : "Review and publish"}
         </button>
+        {DEBUG && type && TILE_FILE_TYPES.has(type.id) && <SaveTileFile getFinal={getFinal} result={result} />}
       </div>
     );
   }
